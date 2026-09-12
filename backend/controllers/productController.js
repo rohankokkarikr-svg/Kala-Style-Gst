@@ -359,21 +359,72 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   try {
+    const { id } = req.params;
     const {
       name, description, price, original_price, category, subcategory, sizes,
       stock_quantity, is_in_stock, image_url, barcode,
-      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags
+      is_handmade, material, style, ai_generated, ai_suggested_price, tags,
+      status // only admin can change status
     } = req.body;
+
+    // 1. Fetch product first to verify existence and ownership
+    const { data: existing, error: fetchErr } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const userRole = (req.user?.role || '').toLowerCase();
+
+    // 2. If caller is artisan, enforce strict ownership check
+    if (userRole === 'artisan') {
+      const { data: profile } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      const callerArtisanId = profile?.id;
+      if (!callerArtisanId || existing.artisan_id !== callerArtisanId) {
+        return res.status(403).json({ error: 'Forbidden: You do not have permission to modify another artisan’s product.' });
+      }
+    }
+
+    // 3. Prevent privilege escalation
+    const updatePayload = {
+      name: name !== undefined ? name : existing.name,
+      description: description !== undefined ? description : existing.description,
+      price: price !== undefined ? Number(price) : existing.price,
+      original_price: original_price !== undefined ? Number(original_price) : existing.original_price,
+      category: category !== undefined ? category : existing.category,
+      subcategory: subcategory !== undefined ? subcategory : existing.subcategory,
+      sizes: sizes !== undefined ? sizes : existing.sizes,
+      stock_quantity: stock_quantity !== undefined ? Math.max(0, Number(stock_quantity)) : existing.stock_quantity,
+      is_in_stock: is_in_stock !== undefined ? is_in_stock : existing.is_in_stock,
+      image_url: image_url !== undefined ? image_url : existing.image_url,
+      barcode: barcode ? barcode.trim() : existing.barcode,
+      is_handmade: is_handmade !== undefined ? is_handmade : existing.is_handmade,
+      material: material !== undefined ? material : existing.material,
+      style: style !== undefined ? style : existing.style,
+      ai_generated: ai_generated !== undefined ? ai_generated : existing.ai_generated,
+      ai_suggested_price: ai_suggested_price !== undefined ? ai_suggested_price : existing.ai_suggested_price,
+      tags: tags !== undefined ? tags : existing.tags,
+    };
+
+    // Only admin can directly update approval status or artisan attribution
+    if (userRole === 'admin') {
+      if (status !== undefined) updatePayload.status = status;
+      if (req.body.artisan_id !== undefined) updatePayload.artisan_id = req.body.artisan_id;
+    }
 
     const { data, error } = await supabase
       .from('products')
-      .update({ 
-        name, description, price, original_price, category, subcategory, sizes, 
-        stock_quantity, is_in_stock, image_url,
-        barcode: barcode ? barcode.trim() : null,
-        artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags
-      })
-      .eq('id', req.params.id)
+      .update(updatePayload)
+      .eq('id', id)
       .select()
       .single();
 
@@ -386,7 +437,7 @@ exports.updateProduct = async (req, res) => {
     
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
-    broadcastSync('PRODUCTS_UPDATED', { action: 'update', id: req.params.id, product: data });
+    broadcastSync('PRODUCTS_UPDATED', { action: 'update', id, product: data });
     res.json(data);
   } catch (error) {
     console.error('Update Error:', error);
@@ -396,16 +447,45 @@ exports.updateProduct = async (req, res) => {
 
 exports.deleteProduct = async (req, res) => {
   try {
+    const { id } = req.params;
+
+    // 1. Fetch product first to verify existence and ownership
+    const { data: existing, error: fetchErr } = await supabase
+      .from('products')
+      .select('id, artisan_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const userRole = (req.user?.role || '').toLowerCase();
+
+    // 2. If caller is artisan, enforce strict ownership check
+    if (userRole === 'artisan') {
+      const { data: profile } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      const callerArtisanId = profile?.id;
+      if (!callerArtisanId || existing.artisan_id !== callerArtisanId) {
+        return res.status(403).json({ error: 'Forbidden: You do not have permission to delete another artisan’s product.' });
+      }
+    }
+
     const { error } = await supabase
       .from('products')
       .delete()
-      .eq('id', req.params.id);
+      .eq('id', id);
 
     if (error) throw error;
     
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
-    broadcastSync('PRODUCTS_UPDATED', { action: 'delete', id: req.params.id });
+    broadcastSync('PRODUCTS_UPDATED', { action: 'delete', id });
     res.json({ message: 'Product removed' });
   } catch (error) {
     res.status(500).json({ error: 'Server Error' });

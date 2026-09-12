@@ -44,7 +44,10 @@ const io = new Server(server, {
 
 initRealtime(io);
 
-// CORS configuration
+// Rate limiting middleware
+const { generalLimiter } = require('./middleware/rateLimiter');
+
+// CORS configuration — strict explicit origins in production
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://kalastyle.netlify.app',
@@ -55,6 +58,7 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
     if (
       process.env.NODE_ENV !== 'production' ||
@@ -63,27 +67,57 @@ const corsOptions = {
     ) {
       return callback(null, true);
     }
-    return callback(null, true); // Permissive with credentials for mobile and client previews
+    return callback(new Error('CORS blocked: Origin not authorized'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature'],
+  maxAge: 86400,
 };
 
 // Middleware
 app.use(cors(corsOptions));
 app.use(helmet({
-  crossOriginResourcePolicy: false, // Important for showing images from Cloudinary/other domains
+  crossOriginResourcePolicy: false, // Allows cross-origin images for Cloudinary / CDNs
+  frameguard: { action: 'deny' },   // Anti-clickjacking
+  xContentTypeOptions: true,        // Anti-MIME sniffing
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://checkout.razorpay.com", "https://api.razorpay.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      imgSrc: ["'self'", "data:", "blob:", "https://res.cloudinary.com", "https://images.unsplash.com", "https://*.supabase.co"],
+      connectSrc: [
+        "'self'",
+        "https://*.supabase.co",
+        "https://api.razorpay.com",
+        "https://generativelanguage.googleapis.com",
+        "wss:",
+        "ws:",
+      ],
+      frameSrc: ["'self'", "https://api.razorpay.com"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+    },
+  },
 }));
 app.use(compression());
 app.use(morgan('dev'));
+app.use('/api/', generalLimiter);
 app.use(express.json({
-  limit: '50mb',
+  limit: '10mb',
   verify: (req, res, buf) => {
     req.rawBody = buf;
   },
 }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Payment routes (webhook uses req.rawBody, other endpoints use parsed req.body)
 const paymentsRouter = require('./routes/payments');
@@ -157,23 +191,33 @@ app.get('/health', async (req, res) => {
   });
 });
 
-// Error handling middleware
+// Error handling middleware — sanitized in production (no stack traces, no internal leaks)
 app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.message);
+  console.error('❌ Application Error:', err.message);
 
-  // Provide helpful error for Supabase connectivity issues
+  // Friendly error for Supabase connectivity issues
   if (err.code === 'ENOTFOUND' || err.message?.includes('fetch failed')) {
     return res.status(503).json({
-      error: 'Database unreachable',
-      details: 'Cannot connect to Supabase. The project may be paused or the URL is incorrect.',
-      action: 'Visit https://supabase.com, check your project is active, and verify SUPABASE_URL in backend/.env',
-      supabaseUrl: process.env.SUPABASE_URL
+      error: 'Database Service Unavailable',
+      message: 'The platform database is currently unreachable. Please try again shortly.',
     });
   }
 
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  // Handle CORS errors specifically
+  if (err.message && err.message.includes('CORS blocked')) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: err.message,
+    });
+  }
+
+  const statusCode = err.status || err.statusCode || 500;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  res.status(statusCode).json({
+    error: isProd && statusCode === 500 ? 'Internal Server Error' : err.message,
+    message: isProd && statusCode === 500 ? 'An unexpected error occurred. Please contact support if the issue persists.' : err.message,
+    stack: !isProd ? err.stack : undefined
   });
 });
 

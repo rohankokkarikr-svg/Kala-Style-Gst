@@ -33,6 +33,10 @@ const protect = async (req, res, next) => {
       return res.status(403).json({ error: 'Your account has been suspended by the administrator.' });
     }
 
+    // Never attach password hashes to req.user
+    delete user.password;
+    delete user.password_hash;
+
     req.user = user;
     next();
   } catch (error) {
@@ -84,9 +88,13 @@ const optionalProtect = async (req, res, next) => {
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key');
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) return next();
+    const decoded = jwt.verify(token, jwtSecret);
     const { data: user } = await supabase.from('users').select('*').eq('id', decoded.id).single();
     if (user && user.status !== 'blocked' && user.status !== 'suspended') {
+      delete user.password;
+      delete user.password_hash;
       req.user = user;
     }
   } catch {}

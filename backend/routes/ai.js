@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { protect } = require('../middleware/auth');
+const { aiLimiter } = require('../middleware/rateLimiter');
 const {
   analyzeProduct,
   generateDescription,
@@ -13,16 +15,20 @@ const {
   getHealth,
 } = require('../controllers/aiController');
 
-// All AI endpoints — called server-side only, key never exposed to client
-router.get('/health',              getHealth);
-router.post('/analyze-product',    analyzeProduct);
-router.post('/generate-description', generateDescription);
-router.post('/full-catalog',       generateFullCatalog);
-router.post('/detect-category',    detectCategory);
-router.post('/translate',          translateProduct);
-router.post('/suggest-price',      suggestPrice);
-router.post('/artisan-story',      generateArtisanStory);
-router.post('/insights',           getAIInsights);
-router.post('/smart-search',       smartSearch);
+// Health check endpoint (public)
+router.get('/health', getHealth);
+
+// Public smart search (rate-limited)
+router.post('/smart-search', aiLimiter, smartSearch);
+
+// Artisan & Platform AI Generation endpoints (Protected + Rate-limited)
+router.post('/analyze-product', protect, aiLimiter, analyzeProduct);
+router.post('/generate-description', protect, aiLimiter, generateDescription);
+router.post('/full-catalog', protect, aiLimiter, generateFullCatalog);
+router.post('/detect-category', protect, aiLimiter, detectCategory);
+router.post('/translate', protect, aiLimiter, translateProduct);
+router.post('/suggest-price', protect, aiLimiter, suggestPrice);
+router.post('/artisan-story', protect, aiLimiter, generateArtisanStory);
+router.post('/insights', protect, aiLimiter, getAIInsights);
 
 module.exports = router;

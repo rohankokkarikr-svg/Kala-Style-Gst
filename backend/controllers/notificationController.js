@@ -113,6 +113,11 @@ exports.sendMessage = async (req, res) => {
     let targetUserId = recipient_id || null;
     let targetAudience = target_audience || 'specific';
 
+    // Broadcast authorization: Only admin can broadcast to all, artisans, or customers
+    if (['all', 'artisans', 'customers'].includes(targetAudience) && (sender.role || '').toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Only platform administrators are permitted to send broadcast notifications.' });
+    }
+
     // 1. If recipient is 'admin' or recipient_role is 'admin'
     if (recipient_id === 'admin' || recipient_role === 'admin') {
       targetAudience = 'admins';

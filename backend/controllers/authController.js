@@ -6,14 +6,11 @@ const jwt = require('jsonwebtoken');
 const generateToken = (id) => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('CRITICAL: JWT_SECRET environment variable is not set in production. Failing closed.');
-    }
-    console.warn('WARNING: JWT_SECRET is not set. Using dev fallback only.');
-    return jwt.sign({ id }, 'dev_secret_fallback_key', { expiresIn: '30d' });
+    throw new Error('CRITICAL: JWT_SECRET environment variable is not configured. Authentication halted for security.');
   }
   return jwt.sign({ id }, secret, {
-    expiresIn: '30d',
+    expiresIn: '7d',
+    issuer: 'kalastyle-api',
   });
 };
 
@@ -53,7 +50,11 @@ exports.register = async (req, res) => {
     const { name, phone, password, role = 'user', store_name, artisan_type, upi_id, upi_qr_code } = req.body;
 
     if (!name || !phone || !password) {
-      return res.status(400).json({ error: 'Please provide all fields' });
+      return res.status(400).json({ error: 'Please provide name, phone number, and password' });
+    }
+
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long for security' });
     }
 
     const validRoles = ['user', 'artisan'];
@@ -169,7 +170,7 @@ exports.login = async (req, res) => {
     const user = users && users[0];
 
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid credentials. Account not found.' });
+      return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
     }
 
     // Check account status
@@ -181,7 +182,7 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
+      return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
     }
 
     // Normalize role string to prevent whitespace issues

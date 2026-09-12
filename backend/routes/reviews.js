@@ -6,8 +6,8 @@ const { protect, admin, optionalProtect } = require('../middleware/auth');
 // Public
 router.get('/', reviewController.getApprovedReviews);
 
-// Review submission (authenticated or guest with name)
-router.post('/', optionalProtect, reviewController.submitReview);
+// Review submission (Strictly requires authenticated customer)
+router.post('/', protect, reviewController.submitReview);
 
 // Admin
 router.get('/admin', protect, admin, reviewController.getAllReviews);

@@ -258,8 +258,12 @@ router.post('/webhook', async (req, res) => {
   const signature = req.headers['x-razorpay-signature'];
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-  // 1. Verify webhook signature if secret configured
-  if (webhookSecret && signature) {
+  // 1. Verify webhook signature (Fail closed if secret is configured)
+  if (webhookSecret) {
+    if (!signature) {
+      console.warn('[webhook] Missing x-razorpay-signature header');
+      return res.status(400).json({ error: 'Missing webhook signature' });
+    }
     const rawPayload = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
     const isValid = verifyWebhookSignature(rawPayload, signature, webhookSecret);
     if (!isValid) {
@@ -708,10 +712,25 @@ const verifyPaymentDirect = async (req, res) => {
       });
     }
 
-    // If orderId is provided, update internal records
+    // If orderId is provided, verify order mapping before updating
     const targetOrderId = orderId || req.body.order_id_internal;
     if (targetOrderId) {
       try {
+        const { data: matchedOrder } = await supabase
+          .from('orders')
+          .select('id, razorpay_order_id, payment_status')
+          .eq('id', targetOrderId)
+          .maybeSingle();
+
+        if (!matchedOrder) {
+          return res.status(404).json({ success: false, error: 'Target order not found' });
+        }
+
+        // Security check: Ensure payment belongs to this order
+        if (matchedOrder.razorpay_order_id && matchedOrder.razorpay_order_id !== finalOrderId) {
+          return res.status(403).json({ success: false, error: 'Payment signature does not correspond to target order' });
+        }
+
         const now = new Date().toISOString();
         await supabase
           .from('orders')

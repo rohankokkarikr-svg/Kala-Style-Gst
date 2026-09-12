@@ -8,8 +8,8 @@ let activeKeyId = null;
 let activeKeySecret = null;
 
 const getRazorpay = () => {
-  const key_id = process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl';
-  const key_secret = process.env.RAZORPAY_KEY_SECRET || '6UYg42iNEWzF2u0ViKHoBnNc';
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
   if (!key_id || !key_secret) {
     return null;
   }
@@ -55,19 +55,8 @@ exports.createRazorpayOrder = async (amount, receipt, notes = {}, isPaise = fals
 
     try {
       const order = await razorpay.orders.create(options);
-      return { success: true, order, key_id: activeKeyId || 'rzp_live_TamouXgJy9WoAl' };
+      return { success: true, order, key_id: activeKeyId };
     } catch (primaryErr) {
-      const primaryMsg = primaryErr?.error?.description || primaryErr?.description || primaryErr?.message || '';
-      // If primary auth failed (e.g. outdated/mismatched server env keys), fallback to confirmed live keys
-      if (primaryMsg.toLowerCase().includes('auth') || primaryErr.statusCode === 401) {
-        console.warn('[paymentService] Primary Razorpay auth failed, trying verified live keys fallback...');
-        const fallbackRzp = new Razorpay({
-          key_id: 'rzp_live_TamouXgJy9WoAl',
-          key_secret: '6UYg42iNEWzF2u0ViKHoBnNc',
-        });
-        const order = await fallbackRzp.orders.create(options);
-        return { success: true, order, key_id: 'rzp_live_TamouXgJy9WoAl' };
-      }
       throw primaryErr;
     }
   } catch (error) {
@@ -101,50 +90,47 @@ exports.generateQRCode = async (upiURI) => {
       margin: 2,
       color: {
         dark: '#000000',
-        light: '#FFFFFF',
-      },
+        light: '#ffffff'
+      }
     });
-    return { success: true, qrCode: qrDataUrl };
+    return qrDataUrl;
   } catch (error) {
-    console.error('QR Code generation failed:', error);
-    return { success: false, error: error.message };
+    console.error('QR code generation error:', error);
+    return null;
   }
 };
 
 /**
- * Get UPI app deep links for intent-based payments
+ * Generate deep-link intent URLs for major Indian UPI apps
  */
-exports.getUPIDeepLinks = (upiURI, amount, transactionId) => {
+exports.generateUPIAppLinks = (upiURI) => {
   return {
-    gpay: `tez://upi/pay?${upiURI.split('?')[1]}`,
+    gpay: `gpay://upi/pay?${upiURI.split('?')[1]}`,
     phonepe: `phonepe://pay?${upiURI.split('?')[1]}`,
     paytm: `paytmmp://upi/pay?${upiURI.split('?')[1]}`,
     bhim: `bhim://upi/pay?${upiURI.split('?')[1]}`,
     generic: upiURI,
   };
 };
+exports.getUPIDeepLinks = exports.generateUPIAppLinks;
 
 /**
  * Verify Razorpay payment signature using timing-safe comparison
  */
 exports.verifyRazorpaySignature = (orderId, paymentId, signature) => {
   try {
-    const secrets = [process.env.RAZORPAY_KEY_SECRET, '6UYg42iNEWzF2u0ViKHoBnNc'].filter(Boolean);
-    if (!orderId || !paymentId || !signature) return false;
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!secret || !orderId || !paymentId || !signature) return false;
     const body = `${orderId}|${paymentId}`;
 
-    for (const secret of secrets) {
-      try {
-        const expectedSignature = crypto
-          .createHmac('sha256', secret)
-          .update(body)
-          .digest('hex');
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(body)
+      .digest('hex');
 
-        if (expectedSignature.length === signature.length &&
-            crypto.timingSafeEqual(Buffer.from(expectedSignature, 'utf8'), Buffer.from(signature, 'utf8'))) {
-          return true;
-        }
-      } catch (e) {}
+    if (expectedSignature.length === signature.length &&
+        crypto.timingSafeEqual(Buffer.from(expectedSignature, 'utf8'), Buffer.from(signature, 'utf8'))) {
+      return true;
     }
     return false;
   } catch (error) {

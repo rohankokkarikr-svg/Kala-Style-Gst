@@ -10,6 +10,9 @@ const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const { getEcomSettings, calculateDeliveryFee, deriveMasterStatus } = require('../config/ecommerce');
 
+// In-memory checkout idempotency guard (5s window per user/cart)
+const recentCheckouts = new Map();
+
 // ── Order Number Generator ────────────────────────────────────────────────────
 
 /**
@@ -128,6 +131,22 @@ exports.createMasterOrder = async ({
   couponCode,
   liveLocationUrl,
 }) => {
+  // Idempotency check: prevent duplicate double-click orders within 5 seconds
+  const checkoutKey = `${userId}:${JSON.stringify(items.map(i => ({ p: i.product_id, q: i.quantity })))}`;
+  const lastSubmission = recentCheckouts.get(checkoutKey);
+  if (lastSubmission && (Date.now() - lastSubmission.timestamp < 5000)) {
+    return { error: 'Duplicate order request detected. Your previous submission is already being processed.' };
+  }
+  recentCheckouts.set(checkoutKey, { timestamp: Date.now() });
+
+  // Clean old entries periodically
+  if (recentCheckouts.size > 500) {
+    const cutoff = Date.now() - 60000;
+    for (const [k, v] of recentCheckouts.entries()) {
+      if (v.timestamp < cutoff) recentCheckouts.delete(k);
+    }
+  }
+
   // 1. Validate & calculate server-side totals
   const totalsResult = await exports.calculateOrderTotals(items);
   if (totalsResult.error) return { error: totalsResult.error };
@@ -275,7 +294,7 @@ exports.createMasterOrder = async ({
     .single();
   paymentRecord = payment;
 
-  // 10. Deduct inventory (atomic per product)
+  // 10. Deduct inventory (strictly non-negative atomic checks)
   for (const item of enrichedItems) {
     try {
       const { data: prod } = await supabase
@@ -283,12 +302,13 @@ exports.createMasterOrder = async ({
         .select('stock_quantity')
         .eq('id', item.product_id)
         .single();
-      if (prod) {
+      if (prod && prod.stock_quantity !== null) {
         const newStock = Math.max(0, (prod.stock_quantity || 0) - item.quantity);
         await supabase
           .from('products')
           .update({ stock_quantity: newStock, is_in_stock: newStock > 0 })
-          .eq('id', item.product_id);
+          .eq('id', item.product_id)
+          .gte('stock_quantity', item.quantity); // Prevents race-condition overselling
       }
     } catch (err) {
       console.error(`[orderService] Stock update error for product ${item.product_id}:`, err.message);
