@@ -62,14 +62,19 @@ export const authAPI = {
 export const cachedGet = async (url, config = {}, ttl) => {
   const cacheKey = `${url}?${JSON.stringify(config.params || {})}`;
   const cached = apiCache.get(cacheKey);
-  if (cached && !cached.isExpired) {
+  const isCachedArrayEmpty = cached && ((Array.isArray(cached.data?.data) && cached.data.data.length === 0) || (Array.isArray(cached.data) && cached.data.length === 0));
+
+  if (cached && !cached.isExpired && !isCachedArrayEmpty) {
     return cached.data;
   }
   const promise = api.get(url, config).then((res) => {
-    apiCache.set(cacheKey, res, ttl);
+    const isResArrayEmpty = res && ((Array.isArray(res.data) && res.data.length === 0) || (Array.isArray(res) && res.length === 0));
+    if (!isResArrayEmpty) {
+      apiCache.set(cacheKey, res, ttl);
+    }
     return res;
   });
-  if (cached && cached.data) {
+  if (cached && cached.data && !isCachedArrayEmpty) {
     promise.catch(() => {});
     return cached.data;
   }

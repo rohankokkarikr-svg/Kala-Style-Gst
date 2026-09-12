@@ -75,11 +75,11 @@ exports.getCategories = async (req, res) => {
 
 exports.getProducts = async (req, res) => {
   try {
-    const { category, subcategory, search, material, is_handmade, artisan_id, min_price, max_price } = req.query;
+    const { category, subcategory, search, material, is_handmade, artisan_id, min_price, max_price, sort } = req.query;
     
     // Check cache for basic requests (no search/filter)
-    const isBasicRequest = (!category || category === 'all') && (!subcategory || subcategory === 'all') && !search && !material && !is_handmade && !artisan_id && !min_price && !max_price;
-    if (isBasicRequest && productCache.all.data && (Date.now() - productCache.all.timestamp < CACHE_TTL)) {
+    const isBasicRequest = (!category || category === 'all') && (!subcategory || subcategory === 'all') && !search && !material && !is_handmade && !artisan_id && !min_price && !max_price && (!sort || sort === 'popular' || sort === 'newest');
+    if (isBasicRequest && productCache.all.data && productCache.all.data.length > 0 && (Date.now() - productCache.all.timestamp < CACHE_TTL)) {
       return res.json(productCache.all.data);
     }
 
@@ -89,7 +89,7 @@ exports.getProducts = async (req, res) => {
       // For public shoppers (no specific artisan query), strictly show approved, non-hidden products only
       if (!artisan_id) {
         query = query.neq('is_hidden', true);
-        query = query.eq('status', 'approved');
+        query = query.or('status.eq.approved,status.is.null');
       }
 
       if (category && category !== 'all') {
@@ -112,9 +112,9 @@ exports.getProducts = async (req, res) => {
         const cleanTerm = search.trim();
         query = query.or(`name.ilike.%${cleanTerm}%,description.ilike.%${cleanTerm}%,category.ilike.%${cleanTerm}%,material.ilike.%${cleanTerm}%,style.ilike.%${cleanTerm}%`);
       }
-      if (sort === 'price_asc') {
+      if (sort === 'price_asc' || sort === 'price-asc') {
         query = query.order('price', { ascending: true });
-      } else if (sort === 'price_desc') {
+      } else if (sort === 'price_desc' || sort === 'price-desc') {
         query = query.order('price', { ascending: false });
       }
       if (material && material !== 'all') {
@@ -135,21 +135,27 @@ exports.getProducts = async (req, res) => {
       return await query;
     });
 
+    if (error) {
+      console.error('getProducts safeQuery error:', error);
+      throw error;
+    }
+
     let filteredData = data || [];
 
     // Further sanitize raw data: shoppers only see approved, visible products
     if (!artisan_id) {
-      filteredData = filteredData.filter(p => !p.is_hidden && (p.status === 'approved' || (!p.status && p.is_in_stock)));
+      filteredData = filteredData.filter(p => !p.is_hidden && (p.status === 'approved' || !p.status));
     }
 
-    if (isBasicRequest) {
+    if (isBasicRequest && filteredData.length > 0) {
       productCache.all = { data: filteredData, timestamp: Date.now() };
     }
 
     res.json(filteredData);
   } catch (error) {
-    console.error('Products Fetch Error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch products' });
+    console.error('Products Fetch Error:', error.message || error);
+    const friendly = formatSupabaseError(error);
+    res.status(friendly ? 503 : 500).json(friendly || { error: 'Failed to fetch products' });
   }
 };
 

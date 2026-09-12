@@ -72,9 +72,10 @@ export default function ProductList() {
       if (activeSubcategory && activeSubcategory !== 'all') params.subcategory = activeSubcategory;
       if (searchQuery) params.search = searchQuery;
 
-      const { data } = await productAPI.getAll(params);
-      if (Array.isArray(data)) {
-        setProducts(data);
+      const res = await productAPI.getAll(params);
+      const rawData = res?.data !== undefined ? res.data : res;
+      if (Array.isArray(rawData)) {
+        setProducts(rawData);
       } else {
         setProducts([]);
       }
