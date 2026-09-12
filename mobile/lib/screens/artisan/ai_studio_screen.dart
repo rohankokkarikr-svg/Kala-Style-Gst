@@ -34,12 +34,13 @@ class _AiStudioScreenState extends ConsumerState<AiStudioScreen> {
   bool _isRegeneratingDesc = false;
 
   final List<String> _categories = [
-    'Textiles',
-    'Pottery',
-    'Jewelry',
-    'Woodcraft',
-    'Paintings',
-    'Home Decor',
+    'Handloom & Textiles',
+    'Pottery & Terracotta',
+    'Handmade Jewelry & Accessories',
+    'Wooden Handicrafts',
+    'Traditional Paintings & Wall Art',
+    'Home Décor & Furnishings',
+    'Eco-Friendly & Natural Products',
     'Crafts',
   ];
 

@@ -3,8 +3,10 @@ class ProductModel {
   final String name;
   final String description;
   final double price;
+  final double? originalPrice;
   final int stock;
   final String category;
+  final String? subcategory;
   final List<String> images;
   final String? artisanId;
   final String? artisanName;
@@ -16,8 +18,10 @@ class ProductModel {
     required this.name,
     required this.description,
     required this.price,
+    this.originalPrice,
     required this.stock,
     required this.category,
+    this.subcategory,
     required this.images,
     this.artisanId,
     this.artisanName,
@@ -39,7 +43,6 @@ class ProductModel {
       parsedImages = rawImages.map((e) => e.toString()).toList();
     } else if (rawImages is String && rawImages.isNotEmpty) {
       if (rawImages.startsWith('[') && rawImages.endsWith(']')) {
-        // May be stringified JSON array
         try {
           final clean = rawImages.replaceAll('[', '').replaceAll(']', '').replaceAll('"', '');
           parsedImages = clean.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
@@ -57,16 +60,52 @@ class ProductModel {
       parsedTags = rawTags.map((e) => e.toString()).toList();
     }
 
+    // Parse artisan store name
+    String? resolvedArtisanName = json['artisan_name']?.toString();
+    if (resolvedArtisanName == null || resolvedArtisanName.isEmpty) {
+      if (json['artisan_profiles'] is Map) {
+        resolvedArtisanName = json['artisan_profiles']['store_name']?.toString();
+      } else if (json['artisan'] is Map) {
+        resolvedArtisanName = json['artisan']['store_name']?.toString() ?? json['artisan']['name']?.toString();
+      }
+    }
+
+    // Parse stock count
+    int resolvedStock = 0;
+    if (json['stock_quantity'] != null) {
+      resolvedStock = (json['stock_quantity'] is num)
+          ? (json['stock_quantity'] as num).toInt()
+          : int.tryParse(json['stock_quantity'].toString()) ?? 0;
+    } else if (json['stock'] != null) {
+      resolvedStock = (json['stock'] is num)
+          ? (json['stock'] as num).toInt()
+          : int.tryParse(json['stock'].toString()) ?? 0;
+    }
+
+    // Parse prices safely
+    final double resolvedPrice = (json['price'] is num)
+        ? (json['price'] as num).toDouble()
+        : double.tryParse(json['price']?.toString() ?? '0') ?? 0.0;
+
+    double? resolvedOriginalPrice;
+    if (json['original_price'] != null) {
+      resolvedOriginalPrice = (json['original_price'] is num)
+          ? (json['original_price'] as num).toDouble()
+          : double.tryParse(json['original_price'].toString());
+    }
+
     return ProductModel(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Artisan Craft',
       description: json['description']?.toString() ?? '',
-      price: (json['price'] is num) ? (json['price'] as num).toDouble() : double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
-      stock: (json['stock'] is num) ? (json['stock'] as num).toInt() : int.tryParse(json['stock']?.toString() ?? '0') ?? 0,
+      price: resolvedPrice,
+      originalPrice: resolvedOriginalPrice,
+      stock: resolvedStock,
       category: json['category']?.toString() ?? 'Crafts',
+      subcategory: json['subcategory']?.toString(),
       images: parsedImages,
-      artisanId: json['artisan_id']?.toString() ?? json['artisan']?['id']?.toString(),
-      artisanName: json['artisan_name']?.toString() ?? json['artisan']?['store_name']?.toString() ?? json['artisan']?['name']?.toString(),
+      artisanId: json['artisan_id']?.toString() ?? json['artisan_profiles']?['id']?.toString(),
+      artisanName: resolvedArtisanName,
       tags: parsedTags,
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
     );
@@ -78,8 +117,10 @@ class ProductModel {
       'name': name,
       'description': description,
       'price': price,
+      if (originalPrice != null) 'original_price': originalPrice,
       'stock': stock,
       'category': category,
+      if (subcategory != null) 'subcategory': subcategory,
       'images': images,
       if (artisanId != null) 'artisan_id': artisanId,
       'tags': tags,

@@ -1,8 +1,8 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-
 class ApiConfig {
-  /// Default backend URL. Can be overridden via --dart-define=API_BASE_URL=https://your-api.com/api
+  /// Live Production Render Backend URL (Auto-deployed from GitHub main)
+  static const String liveProductionUrl = 'https://style-heaven-backend.onrender.com/api';
+
+  /// Default backend URL. Can be overridden via --dart-define=API_BASE_URL=...
   static const String _defaultDefinedUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: '',
@@ -12,17 +12,12 @@ class ApiConfig {
     if (_defaultDefinedUrl.isNotEmpty) {
       return _defaultDefinedUrl;
     }
-    if (kIsWeb) {
-      return 'http://localhost:5000/api';
-    }
-    if (Platform.isAndroid) {
-      // 10.0.2.2 is Android emulator's alias to host 127.0.0.1
-      return 'http://10.0.2.2:5000/api';
-    }
-    return 'http://localhost:5000/api';
+    // Default to the live cloud production backend so all devices (physical phone, emulator, tablet)
+    // immediately fetch live products, auth, orders, and Gemini AI operations.
+    return liveProductionUrl;
   }
 
-  // Active base URL in memory (can be changed dynamically if running on physical device)
+  // Active base URL in memory (can also be switched to local dev if desired)
   static String activeBaseUrl = defaultBaseUrl;
 
   // Endpoint constants matching KalaStyle Node.js API

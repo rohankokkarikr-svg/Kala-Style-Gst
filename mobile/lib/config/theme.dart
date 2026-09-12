@@ -164,6 +164,7 @@ class AppTheme {
           borderSide: const BorderSide(color: artisanGold, width: 1.5),
         ),
       ),
+      textTheme: baseTextTheme,
     );
   }
 }

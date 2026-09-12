@@ -38,9 +38,22 @@ class ProductService {
         listData = rawData['data'];
       }
 
-      return listData
-          .map((item) => ProductModel.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final List<ProductModel> products = [];
+      for (final item in listData) {
+        if (item is Map<String, dynamic>) {
+          try {
+            products.add(ProductModel.fromJson(item));
+          } catch (_) {
+            // gracefully continue past any individually malformed item
+          }
+        } else if (item is Map) {
+          try {
+            products.add(ProductModel.fromJson(Map<String, dynamic>.from(item)));
+          } catch (_) {}
+        }
+      }
+
+      return products;
     } on DioException catch (e) {
       final msg = e.response?.data?['error'] ?? e.message ?? 'Failed to load products';
       throw Exception(msg);
