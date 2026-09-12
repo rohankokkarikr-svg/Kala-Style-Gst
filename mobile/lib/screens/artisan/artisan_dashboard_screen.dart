@@ -37,6 +37,78 @@ class _ArtisanDashboardScreenState extends ConsumerState<ArtisanDashboardScreen>
     final user = authState.user;
     final currencyFormatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
+    if (user == null || !user.isArtisan) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            'Artisan Studio',
+            style: GoogleFonts.playfairDisplay(fontWeight: FontWeight.w700),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/home'),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: AppTheme.artisanTerracotta.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.storefront,
+                    size: 56,
+                    color: AppTheme.artisanTerracotta,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Artisan Portal Access',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Sign in or register your artisan store to use the Gemini AI camera studio, upload products, and fulfill orders.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton.icon(
+                  onPressed: () => context.push('/login'),
+                  icon: const Icon(Icons.login),
+                  label: const Text('Sign In to Artisan Store'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.royalIndigo,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => context.push('/register'),
+                  icon: const Icon(Icons.person_add_outlined),
+                  label: const Text('Register as Artisan / Creator'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                    side: const BorderSide(color: AppTheme.artisanTerracotta),
+                    foregroundColor: AppTheme.artisanTerracotta,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -55,7 +127,7 @@ class _ArtisanDashboardScreenState extends ConsumerState<ArtisanDashboardScreen>
             tooltip: 'View Marketplace',
             onPressed: () => context.go('/home'),
           ),
-          if (user?.isAdmin == true)
+          if (user.isAdmin)
             IconButton(
               icon: const Icon(Icons.admin_panel_settings_outlined),
               tooltip: 'AI Admin Manager',
@@ -78,7 +150,7 @@ class _ArtisanDashboardScreenState extends ConsumerState<ArtisanDashboardScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Namaste, ${user?.fullName ?? "Master Artisan"}',
+                        'Namaste, ${user.fullName ?? "Master Artisan"}',
                         style: GoogleFonts.playfairDisplay(
                           fontSize: 22,
                           fontWeight: FontWeight.w700,

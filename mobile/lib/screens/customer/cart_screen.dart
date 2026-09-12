@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../../config/theme.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 
 class CartScreen extends ConsumerWidget {
@@ -225,7 +226,20 @@ class CartScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: () => context.push('/checkout'),
+                          onPressed: () {
+                            final authState = ref.read(authProvider);
+                            if (authState.status != AuthStatus.authenticated || authState.user == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please sign in to proceed to checkout.'),
+                                  backgroundColor: AppTheme.artisanTerracotta,
+                                ),
+                              );
+                              context.push('/login');
+                            } else {
+                              context.push('/checkout');
+                            }
+                          },
                           child: const Text('Proceed to Checkout'),
                         ),
                       ],

@@ -110,23 +110,44 @@ class _AiAdminScreenState extends ConsumerState<AiAdminScreen> with SingleTicker
                   padding: EdgeInsets.all(40.0),
                   child: Center(child: CircularProgressIndicator(color: AppTheme.artisanGold)),
                 ),
-                error: (err, _) => Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: AppTheme.crimsonAlert),
-                        const SizedBox(height: 12),
-                        Text('Failed to reach AI Admin: $err'),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: () => ref.invalidate(aiAdminStatusProvider),
-                          child: const Text('Retry Connection'),
-                        ),
-                      ],
+                error: (err, _) {
+                  final isAuthError = err.toString().contains('401') || err.toString().contains('403');
+                  return Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(isAuthError ? Icons.lock_outline : Icons.error_outline, size: 52, color: AppTheme.artisanGold),
+                          const SizedBox(height: 14),
+                          Text(
+                            isAuthError ? 'Admin Authorization Required' : 'Connection Error',
+                            style: GoogleFonts.playfairDisplay(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isAuthError
+                                ? 'Sign in with your administrator account to access the autonomous AI manager console.'
+                                : 'Failed to reach AI Admin: $err',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 18),
+                          ElevatedButton(
+                            onPressed: () {
+                              if (isAuthError) {
+                                context.push('/login');
+                              } else {
+                                ref.invalidate(aiAdminStatusProvider);
+                              }
+                            },
+                            child: Text(isAuthError ? 'Sign In as Administrator' : 'Retry Connection'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),

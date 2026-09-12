@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../config/theme.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../routes/app_router.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String productId;
@@ -319,7 +320,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                                 action: SnackBarAction(
                                   label: 'View Bag',
                                   textColor: AppTheme.artisanGold,
-                                  onPressed: () => context.push('/cart'),
+                                  onPressed: () => appRouter.push('/cart'),
                                 ),
                               ),
                             );

@@ -16,10 +16,14 @@ class OrderItemModel {
   factory OrderItemModel.fromJson(Map<String, dynamic> json) {
     return OrderItemModel(
       productId: json['product_id']?.toString() ?? json['id']?.toString() ?? '',
-      title: json['title']?.toString() ?? json['name']?.toString() ?? 'Artisan Item',
+      title: json['title']?.toString() ?? json['name']?.toString() ?? json['product']?['name']?.toString() ?? 'Artisan Item',
       quantity: (json['quantity'] is num) ? (json['quantity'] as num).toInt() : 1,
-      price: (json['price'] is num) ? (json['price'] as num).toDouble() : double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
-      image: json['image']?.toString() ?? json['image_url']?.toString(),
+      price: (json['price'] is num)
+          ? (json['price'] as num).toDouble()
+          : (json['price_at_time'] is num)
+              ? (json['price_at_time'] as num).toDouble()
+              : double.tryParse(json['price']?.toString() ?? json['price_at_time']?.toString() ?? '0') ?? 0.0,
+      image: json['image']?.toString() ?? json['image_url']?.toString() ?? json['product']?['image_url']?.toString(),
     );
   }
 
@@ -36,6 +40,7 @@ class OrderItemModel {
 
 class OrderModel {
   final String id;
+  final String? orderNumber;
   final String? customerName;
   final String? customerPhone;
   final String? shippingAddress;
@@ -48,6 +53,7 @@ class OrderModel {
 
   OrderModel({
     required this.id,
+    this.orderNumber,
     this.customerName,
     this.customerPhone,
     this.shippingAddress,
@@ -59,29 +65,41 @@ class OrderModel {
     this.items = const [],
   });
 
+  String get displayOrderNumber => orderNumber ?? (id.length > 8 ? id.substring(0, 8) : id);
+
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     List<OrderItemModel> itemsList = [];
-    if (json['items'] is List) {
-      itemsList = (json['items'] as List)
-          .map((item) => OrderItemModel.fromJson(item as Map<String, dynamic>))
-          .toList();
-    } else if (json['order_items'] is List) {
-      itemsList = (json['order_items'] as List)
-          .map((item) => OrderItemModel.fromJson(item as Map<String, dynamic>))
-          .toList();
+    final rawItems = json['items'] ?? json['order_items'];
+    if (rawItems is List) {
+      for (final item in rawItems) {
+        if (item is Map<String, dynamic>) {
+          try {
+            itemsList.add(OrderItemModel.fromJson(item));
+          } catch (_) {}
+        } else if (item is Map) {
+          try {
+            itemsList.add(OrderItemModel.fromJson(Map<String, dynamic>.from(item)));
+          } catch (_) {}
+        }
+      }
     }
+
+    final double resolvedTotal = (json['total_amount'] is num)
+        ? (json['total_amount'] as num).toDouble()
+        : (json['total_price'] is num)
+            ? (json['total_price'] as num).toDouble()
+            : double.tryParse(json['total_amount']?.toString() ?? json['total_price']?.toString() ?? '0') ?? 0.0;
 
     return OrderModel(
       id: json['id']?.toString() ?? '',
-      customerName: json['customer_name']?.toString() ?? json['user']?['full_name']?.toString(),
-      customerPhone: json['customer_phone']?.toString() ?? json['user']?['phone']?.toString(),
+      orderNumber: json['order_number']?.toString(),
+      customerName: json['customer_name']?.toString() ?? json['shipping_name']?.toString() ?? json['user']?['full_name']?.toString() ?? json['user']?['name']?.toString(),
+      customerPhone: json['phone']?.toString() ?? json['customer_phone']?.toString() ?? json['user']?['phone']?.toString(),
       shippingAddress: json['shipping_address']?.toString() ?? json['address']?.toString(),
-      totalAmount: (json['total_amount'] is num)
-          ? (json['total_amount'] as num).toDouble()
-          : double.tryParse(json['total_amount']?.toString() ?? '0') ?? 0.0,
+      totalAmount: resolvedTotal,
       paymentStatus: json['payment_status']?.toString() ?? 'pending',
       orderStatus: json['order_status']?.toString() ?? json['status']?.toString() ?? 'placed',
-      trackingNumber: json['tracking_number']?.toString(),
+      trackingNumber: json['tracking_number']?.toString() ?? json['courier_tracking_id']?.toString(),
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
       items: itemsList,
     );

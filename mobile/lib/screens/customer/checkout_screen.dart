@@ -51,6 +51,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   Future<void> _placeOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final authState = ref.read(authProvider);
+    if (authState.status != AuthStatus.authenticated || authState.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in to place your artisan order.'),
+          backgroundColor: AppTheme.artisanTerracotta,
+        ),
+      );
+      context.push('/login');
+      return;
+    }
+
     final cartState = ref.read(cartProvider);
     if (cartState.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +89,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final orderService = OrderService();
       final order = await orderService.createOrder(
         items: itemsPayload,
+        phone: _phoneController.text.trim(),
         shippingAddress: fullAddress,
+        shippingName: _nameController.text.trim(),
+        shippingCity: _cityController.text.trim(),
+        shippingState: _stateController.text.trim(),
+        shippingPincode: _pincodeController.text.trim(),
         paymentMethod: _paymentMethod,
       );
 

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../config/theme.dart';
 import '../../models/order.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/order_service.dart';
 
 class OrderTrackingScreen extends ConsumerStatefulWidget {
@@ -141,6 +142,7 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                     );
                   }
                   if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                    final isNotLoggedIn = ref.read(authProvider).user == null;
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24.0),
@@ -148,11 +150,20 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                           children: [
                             const Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF94A3B8)),
                             const SizedBox(height: 12),
-                            const Text('No past orders found.'),
-                            const SizedBox(height: 12),
+                            Text(
+                              isNotLoggedIn ? 'Sign in to view your order history.' : 'No past orders found.',
+                              style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 14),
                             ElevatedButton(
-                              onPressed: () => context.go('/home'),
-                              child: const Text('Browse Crafts'),
+                              onPressed: () {
+                                if (isNotLoggedIn) {
+                                  context.push('/login');
+                                } else {
+                                  context.go('/home');
+                                }
+                              },
+                              child: Text(isNotLoggedIn ? 'Sign In' : 'Browse Crafts'),
                             ),
                           ],
                         ),
