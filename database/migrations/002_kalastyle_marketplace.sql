@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   moderation_flag VARCHAR(50) DEFAULT 'clean',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE CASCADE;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS product_name VARCHAR(255);
 
 -- 3. Rewards / Loyalty Table
 CREATE TABLE IF NOT EXISTS user_rewards (

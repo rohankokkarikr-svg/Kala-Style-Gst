@@ -73,5 +73,6 @@ CREATE INDEX IF NOT EXISTS idx_artisan_orders_artisan_id ON artisan_orders(artis
 CREATE INDEX IF NOT EXISTS idx_artisan_orders_order_id ON artisan_orders(order_id);
 CREATE INDEX IF NOT EXISTS idx_artisan_orders_status ON artisan_orders(status);
 
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
 CREATE INDEX IF NOT EXISTS idx_ai_admin_actions_created_at ON ai_admin_actions(created_at DESC);
