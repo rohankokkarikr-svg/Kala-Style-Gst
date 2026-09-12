@@ -40,7 +40,7 @@ export default function AIManagement() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hello Administrator! I am KalaStyle AI’s Autonomous Business Operations Manager powered by OpenAI. I analyze platform business events, verify artisans, monitor inventory, route multi-artisan orders, and enforce operational governance through secure backend tools. How can I assist you today?',
+      content: 'Hello Administrator! I am KalaStyle AI’s Autonomous Business Operations Manager powered by Google Gemini. I analyze platform business events, verify artisans, monitor inventory, route multi-artisan orders, and enforce operational governance through secure backend tools. How can I assist you today?',
       toolCalls: []
     }
   ]);
@@ -194,7 +194,7 @@ export default function AIManagement() {
                   Autonomous AI Operations Manager
                 </h1>
                 <p className="text-gray-400 text-sm mt-1">
-                  OpenAI Autonomous Platform Brain • Verifications, Order Routing, Stock Sentinel & Governance
+                  Google Gemini Autonomous Platform Brain • Verifications, Order Routing, Stock Sentinel & Governance
                 </p>
               </div>
             </div>
@@ -433,7 +433,7 @@ export default function AIManagement() {
                   <HiShieldCheck className="w-6 h-6 text-gold-400" /> Configurable Autonomous Policies
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
-                  Control which platform events OpenAI processes autonomously without manual administrative intervention.
+                  Control which platform events Google Gemini processes autonomously without manual administrative intervention.
                 </p>
               </div>
               <button

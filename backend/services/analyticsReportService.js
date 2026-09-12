@@ -7,6 +7,7 @@
 
 const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
+const { v4: uuidv4 } = require('uuid');
 
 let inMemoryReports = [];
 
@@ -99,7 +100,7 @@ exports.generateDailyReport = async (reportDate = new Date().toISOString().split
   ];
 
   const report = {
-    id: `rep-${Date.now()}`,
+    id: uuidv4(),
     title: `KalaStyle AI Daily Intelligence Report — ${reportDate}`,
     report_date: reportDate,
     summary: `Daily operational audit completed with ${metrics.allOrdersCount} total orders, ₹${metrics.totalRevenue.toLocaleString('en-IN')} lifetime gross revenue, and ${metrics.verifiedArtisans} verified master artisans.`,

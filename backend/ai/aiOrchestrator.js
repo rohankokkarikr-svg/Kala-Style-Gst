@@ -1,14 +1,14 @@
 /**
  * backend/ai/aiOrchestrator.js
  * ─────────────────────────────────────────────────────────────────
- * Autonomous AI Orchestrator running the OpenAI tool calling loop.
- * Flow: Admin / Event -> OpenAI -> Tool Call -> Backend Execution ->
- *       Tool Result -> OpenAI Evaluation -> Final Action & Audit Log.
+ * Autonomous AI Orchestrator running the Google Gemini tool calling loop.
+ * Flow: Admin / Event -> Gemini -> Tool Call -> Backend Execution ->
+ *       Tool Result -> Gemini Evaluation -> Final Action & Audit Log.
  */
 
-const { getClient, getModel, isConfigured } = require('./openaiClient');
+const { getClient, getModel, isConfigured } = require('./geminiClient');
 const { SYSTEM_PROMPT } = require('./aiSystemPrompt');
-const { AI_TOOLS } = require('./aiTools');
+const { GEMINI_TOOLS } = require('./aiTools');
 const { executeTool } = require('./aiToolExecutor');
 const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
@@ -35,7 +35,7 @@ async function logUsage({ feature, model, status = 'success', promptLength = 0, 
 }
 
 /**
- * Execute an autonomous agent loop powered by OpenAI.
+ * Execute an autonomous agent loop powered by Google Gemini.
  *
  * @param {object} params
  * @param {Array} params.messages - Input conversation history
@@ -47,122 +47,117 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
   const executionContext = { ...context, conversationId };
   const toolCallsExecuted = [];
 
-  // 1. Check if OpenAI is configured
+  // 1. Check if Gemini is configured
   if (!isConfigured()) {
-    console.warn('⚠️ [AI Orchestrator] OpenAI is unconfigured; providing deterministic fallback response.');
+    console.warn('⚠️ [AI Orchestrator] Google Gemini is unconfigured; providing deterministic fallback response.');
     return {
       success: true,
       mode: 'deterministic_fallback',
-      message: 'KalaStyle AI Operations Manager is active in secure fallback mode. Configure OPENAI_API_KEY in backend/.env to enable autonomous GPT-4o tool calling. Platform data, orders, and payments remain fully operational.',
+      message: 'KalaStyle AI Operations Manager is active in secure fallback mode. Configure GEMINI_ADMIN_API_KEY / GEMINI_API_KEY in backend/.env to enable autonomous Gemini tool calling. Platform data, orders, and payments remain fully operational.',
       toolCallsExecuted: [],
       actionsCount: 0,
       conversationId,
     };
   }
 
-  const client = getClient();
+  const ai = getClient();
   const model = getModel();
 
-  // 2. Prepare message history with master system prompt
-  const fullMessages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...messages,
-  ];
-
-  let currentStep = 0;
-  let finalContent = '';
-
-  while (currentStep < MAX_STEPS) {
-    currentStep++;
-
-    try {
-      const response = await client.chat.completions.create({
-        model,
-        messages: fullMessages,
-        tools: AI_TOOLS,
-        tool_choice: 'auto',
+  try {
+    // 2. Initialize Gemini multi-turn chat session with tools and system instruction
+    const chat = ai.chats.create({
+      model,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        tools: GEMINI_TOOLS,
         temperature: 0.2, // Low temperature for deterministic operational decisions
-      });
+      },
+    });
 
-      const choice = response.choices[0];
-      const message = choice.message;
+    // Extract user prompt (last user message)
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    const userPrompt = lastUserMsg?.content || 'Run operational status check';
 
-      // Track token usage
-      if (response.usage) {
-        logUsage({
-          feature: context.eventType || 'ai_admin_orchestrator',
-          model,
-          promptLength: response.usage.prompt_tokens || 0,
-          responseLength: response.usage.completion_tokens || 0,
-          metadata: { step: currentStep, conversationId },
-        });
-      }
+    let currentStep = 0;
+    let finalContent = '';
 
-      // Append assistant's response to history
-      fullMessages.push(message);
+    // First turn: send user directive
+    let response = await chat.sendMessage({ message: userPrompt });
 
-      // Check if model returned tool calls
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        for (const toolCall of message.tool_calls) {
-          const fnName = toolCall.function.name;
-          let fnArgs = {};
-          try {
-            fnArgs = JSON.parse(toolCall.function.arguments || '{}');
-          } catch (e) {
-            console.error(`Failed to parse arguments for tool ${fnName}:`, toolCall.function.arguments);
-          }
+    while (currentStep < MAX_STEPS) {
+      currentStep++;
+
+      // Check if model returned function calls
+      if (response.functionCalls && response.functionCalls.length > 0) {
+        const functionResponses = [];
+
+        for (const call of response.functionCalls) {
+          const fnName = call.name;
+          const fnArgs = call.args || {};
 
           // Execute backend tool
           const toolResult = await executeTool(fnName, fnArgs, executionContext);
 
           toolCallsExecuted.push({
-            id: toolCall.id,
+            id: call.id || `call_${Date.now()}`,
             tool: fnName,
             args: fnArgs,
             result: toolResult,
           });
 
-          // Feed result back into conversation history for OpenAI to review
-          fullMessages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(toolResult),
+          // Feed result back into Gemini's format
+          functionResponses.push({
+            functionResponse: {
+              name: fnName,
+              response: toolResult,
+            },
           });
         }
-        // Continue loop so OpenAI can evaluate tool results and formulate next step or final answer
+
+        // Send function execution results back to Gemini
+        response = await chat.sendMessage({ message: functionResponses });
         continue;
       }
 
-      // If no further tool calls, we have the model's final response
-      finalContent = message.content || 'Task completed successfully.';
+      // No more function calls, we have the model's final response
+      finalContent = response.text || 'Task completed successfully.';
       break;
-    } catch (error) {
-      console.error('❌ [AI Orchestrator] OpenAI API Error:', error.message);
-      logUsage({
-        feature: context.eventType || 'ai_admin_orchestrator',
-        model,
-        status: 'failed',
-        metadata: { error: error.message, conversationId },
-      });
-
-      return {
-        success: false,
-        error: error.message,
-        message: `AI Operations Manager encountered an API error: ${error.message}. Backend safeguards remain active.`,
-        toolCallsExecuted,
-        actionsCount: toolCallsExecuted.length,
-        conversationId,
-      };
     }
-  }
 
-  return {
-    success: true,
-    message: finalContent || 'Operations review completed.',
-    toolCallsExecuted,
-    actionsCount: toolCallsExecuted.length,
-    conversationId,
-  };
+    logUsage({
+      feature: context.eventType || 'ai_admin_orchestrator',
+      model,
+      status: 'success',
+      promptLength: userPrompt.length,
+      responseLength: finalContent.length,
+      metadata: { steps: currentStep, conversationId, actionsCount: toolCallsExecuted.length },
+    });
+
+    return {
+      success: true,
+      message: finalContent || 'Operations review completed.',
+      toolCallsExecuted,
+      actionsCount: toolCallsExecuted.length,
+      conversationId,
+    };
+  } catch (error) {
+    console.error('❌ [AI Orchestrator] Google Gemini API Error:', error.message);
+    logUsage({
+      feature: context.eventType || 'ai_admin_orchestrator',
+      model,
+      status: 'failed',
+      metadata: { error: error.message, conversationId },
+    });
+
+    return {
+      success: false,
+      error: error.message,
+      message: `AI Operations Manager encountered an API error: ${error.message}. Backend safeguards remain active.`,
+      toolCallsExecuted,
+      actionsCount: toolCallsExecuted.length,
+      conversationId,
+    };
+  }
 }
 
 module.exports = {

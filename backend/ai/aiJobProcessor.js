@@ -14,6 +14,7 @@ const productService = require('../services/productService');
 const whatsappService = require('../services/whatsappService');
 const analyticsReportService = require('../services/analyticsReportService');
 const { getInMemoryRules } = require('./aiToolExecutor');
+const { v4: uuidv4 } = require('uuid');
 
 let inMemoryQueue = [];
 let isProcessing = false;
@@ -32,7 +33,7 @@ async function enqueueJob({
   const key = idempotencyKey || `${eventType}_${entityType}_${entityId}_${Date.now()}`;
 
   const job = {
-    id: `job-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    id: uuidv4(),
     event_type: eventType,
     entity_type: entityType,
     entity_id: String(entityId),

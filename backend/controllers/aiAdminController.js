@@ -6,7 +6,7 @@
  */
 
 const { runAutonomousLoop } = require('../ai/aiOrchestrator');
-const { isConfigured, getModel, testConnection } = require('../ai/openaiClient');
+const { isConfigured, getModel, testConnection } = require('../ai/geminiClient');
 const { getInMemoryAuditLogs, getInMemoryRules } = require('../ai/aiToolExecutor');
 const { processPendingJobs, getInMemoryQueue } = require('../ai/aiJobProcessor');
 const analyticsReportService = require('../services/analyticsReportService');

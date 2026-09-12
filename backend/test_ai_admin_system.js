@@ -16,8 +16,8 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const { testConnection, isConfigured, getModel } = require('./ai/openaiClient');
-const { AI_TOOLS } = require('./ai/aiTools');
+const { testConnection, isConfigured, getModel } = require('./ai/geminiClient');
+const { FUNCTION_DECLARATIONS, AI_TOOLS } = require('./ai/aiTools');
 const { executeTool, recordAuditAction, getInMemoryAuditLogs } = require('./ai/aiToolExecutor');
 const { enqueueJob, processPendingJobs, getInMemoryQueue } = require('./ai/aiJobProcessor');
 const artisanService = require('./services/artisanService');
@@ -28,7 +28,7 @@ const supabase = require('./config/supabase');
 
 async function runTests() {
   console.log('\n======================================================');
-  console.log('🧪 KALASTYLE AI — AUTONOMOUS AI ADMIN SYSTEM TEST SUITE');
+  console.log('🧪 KALASTYLE AI — GEMINI AUTONOMOUS AI ADMIN TEST SUITE');
   console.log('======================================================\n');
 
   let passed = 0;
@@ -45,21 +45,21 @@ async function runTests() {
   }
 
   // ── TEST 1: Client & Secret Protection ───────────────────────────
-  console.log('--- TEST 1: AI Client & Secret Isolation ---');
+  console.log('--- TEST 1: Gemini Client & Secret Isolation ---');
   const connStatus = await testConnection();
-  assert(connStatus.status === 'online' || connStatus.status === 'unconfigured', 'OpenAI client initial status valid', connStatus.status);
+  assert(connStatus.status === 'online', 'Google Gemini client online and operational', connStatus.status);
   assert(typeof getModel() === 'string' && getModel().length > 0, 'Model identifier configured correctly');
   assert(!JSON.stringify(connStatus).includes(process.env.SUPABASE_SERVICE_KEY || 'MISSING'), 'Supabase service key NOT leaked in status');
   assert(!JSON.stringify(connStatus).includes(process.env.TWILIO_AUTH_TOKEN || 'MISSING'), 'Twilio Auth Token NOT leaked in status');
 
   // ── TEST 2: Strict Structured Tool Schemas ───────────────────────
   console.log('\n--- TEST 2: Strict Structured Tool Definitions ---');
-  assert(Array.isArray(AI_TOOLS) && AI_TOOLS.length >= 15, 'Tool registry populated with comprehensive schemas', `${AI_TOOLS.length} tools`);
-  const hasSqlTool = AI_TOOLS.some(t => t.function.name.includes('sql') || t.function.name.includes('exec_command'));
+  assert(Array.isArray(FUNCTION_DECLARATIONS) && FUNCTION_DECLARATIONS.length >= 15, 'Gemini tool registry populated with comprehensive declarations', `${FUNCTION_DECLARATIONS.length} tools`);
+  const hasSqlTool = FUNCTION_DECLARATIONS.some(t => t.name.includes('sql') || t.name.includes('exec_command'));
   assert(!hasSqlTool, 'Arbitrary SQL and command execution tools STRICTLY prohibited');
 
-  const verifyTool = AI_TOOLS.find(t => t.function.name === 'verify_artisan');
-  assert(Boolean(verifyTool && verifyTool.function.parameters.required.includes('artisan_id')), 'verify_artisan requires strict artisan_id parameter');
+  const verifyTool = FUNCTION_DECLARATIONS.find(t => t.name === 'verify_artisan');
+  assert(Boolean(verifyTool && verifyTool.parameters.required.includes('artisan_id')), 'verify_artisan requires strict artisan_id parameter');
 
   // ── TEST 3: Business Analytics & Ground Truth ────────────────────
   console.log('\n--- TEST 3: Ground Truth Business Analytics ---');

@@ -15,6 +15,8 @@ const complaintService = require('../services/complaintService');
 const analyticsReportService = require('../services/analyticsReportService');
 const { broadcastSync } = require('../utils/realtime');
 
+const { v4: uuidv4 } = require('uuid');
+
 let inMemoryAuditLogs = [];
 let inMemoryRules = {
   artisan_auto_verification: true,
@@ -45,7 +47,7 @@ async function recordAuditAction({
   error = null,
 }) {
   const auditEntry = {
-    id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    id: uuidv4(),
     conversation_id: conversationId || null,
     event_type: eventType,
     entity_type: entityType || null,
