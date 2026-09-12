@@ -46,10 +46,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(String identifier, String password) async {
     state = AuthState.loading();
     try {
-      final user = await _authService.login(email, password);
+      final user = await _authService.login(identifier, password);
       state = AuthState.authenticated(user);
       return true;
     } catch (e) {
@@ -60,19 +60,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> register({
     required String fullName,
-    required String email,
+    required String phone,
+    String? email,
     required String password,
     required String role,
-    String? phone,
   }) async {
     state = AuthState.loading();
     try {
       final user = await _authService.register(
         fullName: fullName,
+        phone: phone,
         email: email,
         password: password,
         role: role,
-        phone: phone,
       );
       state = AuthState.authenticated(user);
       return true;

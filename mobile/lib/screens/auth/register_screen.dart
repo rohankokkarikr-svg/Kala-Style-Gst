@@ -36,12 +36,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    final emailText = _emailController.text.trim();
     final success = await ref.read(authProvider.notifier).register(
       fullName: _nameController.text.trim(),
-      email: _emailController.text.trim(),
+      phone: _phoneController.text.trim(),
+      email: emailText.isNotEmpty ? emailText : null,
       password: _passwordController.text,
       role: _selectedRole,
-      phone: _phoneController.text.trim(),
     );
     setState(() => _isLoading = false);
 
@@ -194,34 +195,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
                 const SizedBox(height: 18),
 
-                // Email
-                Text(
-                  'Email Address',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF334155),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    hintText: 'aarav@example.com',
-                    prefixIcon: Icon(Icons.email_outlined),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Enter your email';
-                    if (!v.contains('@')) return 'Enter a valid email';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 18),
-
                 // Phone
                 Text(
-                  'Mobile / WhatsApp Number',
+                  'Phone Number (Required)',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -233,8 +209,34 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    hintText: '+91 98765 43210',
+                    hintText: 'e.g. 9876543210',
                     prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Enter your phone number';
+                    final clean = v.replaceAll(RegExp(r'\D'), '');
+                    if (clean.length < 10) return 'Enter a valid 10-digit phone number';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 18),
+
+                // Email (Optional)
+                Text(
+                  'Email Address (Optional)',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    hintText: 'Optional for order updates',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
                 ),
                 const SizedBox(height: 18),

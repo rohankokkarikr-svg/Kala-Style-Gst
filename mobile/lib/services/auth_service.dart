@@ -8,12 +8,14 @@ import '../config/api_config.dart';
 class AuthService {
   final ApiClient _client = ApiClient();
 
-  Future<UserModel> login(String email, String password) async {
+  Future<UserModel> login(String identifier, String password) async {
     try {
+      final clean = identifier.trim();
+      final isEmail = clean.contains('@');
       final response = await _client.dio.post(
         ApiConfig.authLogin,
         data: {
-          'email': email.trim().toLowerCase(),
+          if (isEmail) 'email': clean.toLowerCase() else 'phone': clean,
           'password': password,
         },
       );
@@ -33,20 +35,22 @@ class AuthService {
 
   Future<UserModel> register({
     required String fullName,
-    required String email,
+    required String phone,
+    String? email,
     required String password,
     required String role,
-    String? phone,
   }) async {
     try {
+      final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
       final response = await _client.dio.post(
         ApiConfig.authRegister,
         data: {
+          'name': fullName.trim(),
           'full_name': fullName.trim(),
-          'email': email.trim().toLowerCase(),
+          'phone': cleanPhone.isNotEmpty ? cleanPhone : phone.trim(),
           'password': password,
           'role': role,
-          if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
+          if (email != null && email.isNotEmpty) 'email': email.trim().toLowerCase(),
         },
       );
 
