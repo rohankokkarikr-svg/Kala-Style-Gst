@@ -126,6 +126,7 @@ function App() {
                       <Route path="orders" element={<AdminOrders />} />
                       <Route path="payments" element={<Payments />} />
                       <Route path="ai" element={<AIManagement />} />
+                      <Route path="ai-manager" element={<AIManagement />} />
                       <Route path="reviews" element={<AdminReviews />} />
                       <Route path="reports" element={<Reports />} />
                       <Route path="analytics" element={<Analytics />} />

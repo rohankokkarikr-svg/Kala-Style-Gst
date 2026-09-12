@@ -57,7 +57,7 @@ export default function AdminLayout() {
     {
       group: 'Intelligence & Safety',
       items: [
-        { name: 'AI Management', path: '/admin/ai', icon: HiSparkles, highlight: true },
+        { name: 'AI Operations Manager', path: '/admin/ai-manager', icon: HiSparkles, highlight: true },
         { name: 'Reviews', path: '/admin/reviews', icon: HiStar },
         { name: 'Reports & Safety', path: '/admin/reports', icon: HiExclamationCircle },
       ]
@@ -76,6 +76,9 @@ export default function AdminLayout() {
   const isActive = (item) => {
     if (item.exact) {
       return location.pathname === '/admin' || location.pathname === '/admin/dashboard';
+    }
+    if (item.path === '/admin/ai-manager') {
+      return location.pathname.startsWith('/admin/ai-manager') || location.pathname === '/admin/ai';
     }
     return location.pathname.startsWith(item.path);
   };

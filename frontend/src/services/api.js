@@ -247,6 +247,20 @@ export const notificationAPI = {
   getRecipients: () => api.get('/notifications/recipients'),
 };
 
+// ─── Autonomous AI Admin Operations Manager ───────
+export const aiManagerAPI = {
+  getStatus:        ()         => api.get('/admin/ai-manager/status'),
+  chat:             (data)     => api.post('/admin/ai-manager/chat', data),
+  getActions:       (params)   => api.get('/admin/ai-manager/actions', { params }),
+  getQueue:         ()         => api.get('/admin/ai-manager/queue'),
+  retryJob:         (id)       => api.post(`/admin/ai-manager/queue/${id}/retry`),
+  getRules:         ()         => api.get('/admin/ai-manager/rules'),
+  updateRule:       (id, data) => api.put(`/admin/ai-manager/rules/${id}`, data),
+  getReports:       ()         => api.get('/admin/ai-manager/reports'),
+  runDailyReport:   ()         => api.post('/admin/ai-manager/reports/run'),
+  processEvents:    ()         => api.post('/admin/ai-manager/process-events'),
+};
+
 export default api;
 export { apiCache };
 

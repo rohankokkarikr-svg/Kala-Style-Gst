@@ -79,8 +79,7 @@ const sendWhatsappToRecipients = async (recipientPhones, messageBody) => {
 
   const client = getTwilioClient();
   const rawFrom = process.env.TWILIO_WHATSAPP_FROM || process.env.TWILIO_WHATSAPP_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+14155238886';
-  const cleanFrom = rawFrom.replace(/\s+/g, '').replace('whatsapp:', '');
-  const fromNumber = `whatsapp:${cleanFrom}`;
+  const fromNumber = rawFrom.startsWith('whatsapp:') ? rawFrom : `whatsapp:${rawFrom.replace(/\s+/g, '')}`;
 
   if (!client) {
     console.warn('⚠️ Twilio credentials missing in .env! (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)');
@@ -89,7 +88,7 @@ const sendWhatsappToRecipients = async (recipientPhones, messageBody) => {
   }
 
   const results = [];
-  const uniquePhones = Array.from(new Set((recipientPhones || []).map(formatPhone).filter(Boolean)));
+  const uniquePhones = Array.from(new Set(recipientPhones.map(formatPhone).filter(Boolean)));
 
   for (const phone of uniquePhones) {
     const toFormatted = `whatsapp:${phone.replace(/\s+/g, '')}`;
@@ -99,18 +98,11 @@ const sendWhatsappToRecipients = async (recipientPhones, messageBody) => {
         to: toFormatted,
         body: messageBody
       });
-      console.log(`✅ WhatsApp message sent via Twilio to ${toFormatted}! (SID: ${message.sid}, Status: ${message.status})`);
-      results.push({ phone, to: toFormatted, success: true, sid: message.sid, status: message.status });
+      console.log(`✅ WhatsApp message sent via Twilio to ${toFormatted}! (SID: ${message.sid})`);
+      results.push({ phone, to: toFormatted, success: true, sid: message.sid });
     } catch (err) {
-      console.error(`❌ Twilio WhatsApp send failed for ${toFormatted}:`, err.message, `(Code: ${err.code || 'N/A'})`);
-      
-      if (err.code === 572002) {
-        console.warn(`💡 Twilio Trial Notice: Recipient ${toFormatted} must be added to Verified Caller IDs in Twilio Console (or send "join <sandbox-keyword>" to ${cleanFrom} on WhatsApp).`);
-      } else if (err.code === 21654 || err.code === 63016) {
-        console.warn(`💡 Twilio Template Notice: WhatsApp requires an active 24hr conversation window or an approved Content Template.`);
-      }
-
-      results.push({ phone, to: toFormatted, success: false, error: err.message, code: err.code });
+      console.error(`❌ Twilio WhatsApp send failed for ${toFormatted}:`, err.message);
+      results.push({ phone, to: toFormatted, success: false, error: err.message });
     }
   }
 
@@ -133,82 +125,36 @@ const extractLiveLocationLink = (order) => {
 };
 
 const buildOrderWhatsappText = (order, customerName) => {
-  const orderNum = order.order_number || (order.id ? `#${String(order.id).substring(0, 8).toUpperCase()}` : 'NEW');
-  const effectiveCustomer = customerName || order.shipping_name || order.user?.name || 'Customer';
-  const customerPhone = order.phone || order.user?.phone || 'N/A';
-  const customerEmail = order.user?.email || order.email || '';
+  const itemsText = (order.items || [])
+    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size}, Qty: ${item.quantity}) - ₹${(item.price_at_time * item.quantity).toLocaleString()}`)
+    .join('\n');
 
-  // Parse items safely whether from joined order_items or raw items array
-  const itemsList = order.items || [];
-  const itemsText = itemsList.map((item, idx) => {
-    const name = item.product?.name || item.product_name_snapshot || item.name || `Item ${idx + 1}`;
-    const size = item.size ? `Size: ${item.size}` : null;
-    const qty = Number(item.quantity) || 1;
-    const unitPrice = Number(item.price_at_time || item.unit_price_snapshot || item.product?.price || item.price || 0);
-    const itemSubtotal = unitPrice * qty;
-    const details = [size, `Qty: ${qty}`, `₹${unitPrice.toLocaleString('en-IN')} each`].filter(Boolean).join(' | ');
-    return `• *${name}*\n  └ ${details} = *₹${itemSubtotal.toLocaleString('en-IN')}*`;
-  }).join('\n\n');
-
-  const itemsCount = itemsList.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
-  const itemsSubtotal = Number(order.subtotal !== undefined ? order.subtotal : itemsList.reduce((sum, i) => {
-    const p = Number(i.price_at_time || i.unit_price_snapshot || i.product?.price || i.price || 0);
-    return sum + (p * (Number(i.quantity) || 1));
-  }, 0));
-
-  const discountAmount = Number(order.discount_amount || order.discount || 0);
-  const deliveryFee = Number(order.delivery_fee !== undefined ? order.delivery_fee : Math.max(0, (order.total_amount || order.total_price || 0) - itemsSubtotal + discountAmount));
-  const grandTotal = Number(order.total_amount || order.total_price || (itemsSubtotal + deliveryFee - discountAmount));
-
-  const paymentMethod = getEffectivePaymentMethod(order);
-  const isPaid = order.payment_status === 'paid' || (order.payment_method || '').toLowerCase() === 'razorpay' && order.status === 'confirmed';
-  const isCod = paymentMethod.toLowerCase().includes('cod');
-  const paymentStatusDisplay = isPaid 
-    ? '✅ PAID (Online)' 
-    : (isCod ? '⏳ CASH ON DELIVERY (Collect at Doorstep)' : '⏳ PAYMENT PENDING');
-
-  // Address assembly
-  let addressText = order.shipping_address || 'Address provided at checkout';
-  const extraAddressParts = [order.shipping_city, order.shipping_state, order.shipping_pincode ? `PIN: ${order.shipping_pincode}` : ''].filter(Boolean).join(', ');
-  if (extraAddressParts && !addressText.includes(order.shipping_city || '___never___')) {
-    addressText += `\n   ${extraAddressParts}`;
-  }
-
+  const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
+  const subtotal = (order.items || []).reduce((s, i) => s + (i.price_at_time * i.quantity), 0);
+  const discount = order.discount_amount || 0;
+  const shipping = (order.total_price || 0) - subtotal + discount;
+  const isUpi = getEffectivePaymentMethod(order).includes('UPI');
   const liveLocationUrl = extractLiveLocationLink(order);
-  const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location:* ${liveLocationUrl}` : '';
+  const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location Link:* ${liveLocationUrl}` : '';
 
-  const orderDate = order.created_at
-    ? new Date(order.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
-    : new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  return `🔔 *New Order Placed on KalaStyle AI!*
+----------------------------------------
+📦 *Order ID:* #${order.id?.substring(0, 8)}
+👤 *Customer Name:* ${customerName}
+📞 *Phone Number:* +91 ${order.phone}
+📍 *Shipping Address:* ${order.shipping_address}${liveLocLine}
 
-  const adminDashboardUrl = `${process.env.FRONTEND_URL || 'https://kalastyle.netlify.app'}/admin/orders`;
+🛒 *Items Ordered (${itemsCount} items):*
+${itemsText || 'No items listed'}
 
-  return `👑 *NEW ORDER RECEIVED! — Style Heaven / KalaStyle AI*
+💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
+💵 *Subtotal:* ₹${subtotal.toLocaleString()}
+🚚 *Shipping Fee:* ₹${Math.max(0, shipping).toLocaleString()}
+🏷️ *Discount:* -₹${discount.toLocaleString()} ${order.coupon_code ? `(${order.coupon_code})` : ''}
 ========================================
-📦 *Order Number:* #${orderNum}
-🆔 *Order ID:* ${order.id || 'N/A'}
-📅 *Date & Time:* ${orderDate} IST
-
-👤 *CUSTOMER DETAILS:*
-• *Name:* ${effectiveCustomer}
-• *Phone:* +91 ${customerPhone}
-${customerEmail ? `• *Email:* ${customerEmail}\n` : ''}📍 *SHIPPING / DELIVERY ADDRESS:*
-${addressText}${liveLocLine}
-
-🛒 *ITEMS ORDERED (${itemsCount} items):*
-${itemsText || '• Handcrafted Item × 1'}
-
-💰 *BILLING & PAYMENT SUMMARY:*
-• *Payment Method:* ${paymentMethod}
-• *Payment Status:* ${paymentStatusDisplay}
-• *Items Subtotal:* ₹${itemsSubtotal.toLocaleString('en-IN')}
-• *Shipping Fee:* ₹${deliveryFee.toLocaleString('en-IN')}
-• *Discount Applied:* -₹${discountAmount.toLocaleString('en-IN')}${order.coupon_code ? ` (Code: ${order.coupon_code})` : ''}
-========================================
-💵 *TOTAL AMOUNT TO COLLECT / PAID:* *₹${grandTotal.toLocaleString('en-IN')}*
-========================================
-⚡ *Action:* Open Admin Portal to process and dispatch this order:
-${adminDashboardUrl}`;
+💵 *Total Amount to Pay:* ₹${(order.total_price || 0).toLocaleString()}
+----------------------------------------
+${isUpi ? '⏳ *Payment Status:* Awaiting UPI Ref. No. Submission' : '✅ *Order Status:* CONFIRMED (COD)'}`;
 };
 
 exports.getEffectivePaymentMethod = getEffectivePaymentMethod;
@@ -217,25 +163,17 @@ exports.getWhatsappDirectLink = getWhatsappDirectLink;
 exports.buildOrderWhatsappText = buildOrderWhatsappText;
 
 /**
- * Sends a WhatsApp notification to Admin & Customer when a new order is placed (COD or Online).
+ * Sends a WhatsApp notification to Admin & Customer when a new order is placed (COD or UPI).
  */
 exports.sendOrderWhatsappNotification = async (adminPhone, order, customerName) => {
-  const resolvedAdminPhone = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
   const messageBody = buildOrderWhatsappText(order, customerName);
-
-  const recipients = [resolvedAdminPhone];
-  if (order.phone && String(order.phone).replace(/\D/g, '') !== String(resolvedAdminPhone).replace(/\D/g, '')) {
-    recipients.push(order.phone);
-  }
-
-  const twilioRes = await sendWhatsappToRecipients(recipients, messageBody);
-  const directLink = getWhatsappDirectLink(resolvedAdminPhone, messageBody);
+  const twilioRes = await sendWhatsappToRecipients([adminPhone, order.phone], messageBody);
+  const directLink = getWhatsappDirectLink(adminPhone, messageBody);
 
   return {
     ...twilioRes,
     messageText: messageBody,
-    directLink,
-    adminPhone: resolvedAdminPhone,
+    directLink
   };
 };
 

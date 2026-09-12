@@ -121,34 +121,23 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    // Notifications (Dispatches full order details to Admin WhatsApp)
+    // Notifications
     let whatsappLink = null;
     try {
       const settings = getSiteSettings();
-      if (settings.orderNotifications !== false) {
-        const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917349083982';
-        
-        // Fetch full order with products and items to guarantee complete order slips
+      if (settings.orderNotifications && normalizedMethod === 'cod') {
         const { data: fullOrder } = await supabase
           .from('orders')
-          .select('*, items:order_items(quantity, price_at_time, size, product_name_snapshot, unit_price_snapshot, product:products(id, name, image_url, category, price))')
+          .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
           .eq('id', order.id)
           .single();
-
-        const orderForNotice = fullOrder || order;
-        if (!orderForNotice.items || orderForNotice.items.length === 0) {
-          orderForNotice.items = items;
-        }
-
         const wsRes = await sendOrderWhatsappNotification(
-          adminPhone,
-          orderForNotice,
-          shipping_name || req.user?.name || 'Customer'
+          settings.whatsappNumber, fullOrder || order, req.user?.name || 'Customer'
         );
         if (wsRes) whatsappLink = wsRes.directLink;
       }
     } catch (wsErr) {
-      console.error('[createOrder] Admin WhatsApp notification error:', wsErr.message);
+      console.error('[createOrder] WhatsApp notification error:', wsErr.message);
     }
 
     // Artisan notifications
@@ -218,11 +207,20 @@ exports.createOrder = async (req, res) => {
     broadcastSync('ORDERS_UPDATED', { action: 'create', orderId: order.id });
     broadcastSync('PAYMENTS_UPDATED', { action: 'create', orderId: order.id });
 
+    // Autonomous AI Event Processing
+    try {
+      const { emitEvent } = require('../ai/aiEventBus');
+      emitEvent('ORDER_CREATED', 'order', order.id, {
+        total_amount: order.total_amount,
+        payment_method: normalizedMethod,
+        user_id,
+      });
+    } catch (e) {}
+
     res.status(201).json({
       ...order,
       artisan_orders: artisanOrders,
       payment,
-      whatsapp_direct_link: whatsappLink,
       // Razorpay checkout data (only if applicable)
       razorpay: razorpayOrderId ? {
         order_id: razorpayOrderId,

@@ -107,7 +107,18 @@ exports.register = async (req, res) => {
         }])
         .select()
         .single();
-      if (!profileError) artisanProfile = parseArtisanUpi(profile);
+      if (!profileError && profile) {
+        artisanProfile = parseArtisanUpi(profile);
+        try {
+          const { emitEvent } = require('../ai/aiEventBus');
+          emitEvent('ARTISAN_REGISTERED', 'artisan', profile.id, {
+            store_name: profile.store_name,
+            user_id: user.id,
+            bio: profile.bio,
+            artisan_type: profile.artisan_type,
+          });
+        } catch (e) {}
+      }
     }
 
     const token = generateToken(user.id);

@@ -1,85 +1,43 @@
 require('dotenv').config();
-const { sendOrderWhatsappNotification, buildOrderWhatsappText, getWhatsappDirectLink } = require('./utils/whatsapp');
+const twilio = require('twilio');
 
-const adminPhone = process.argv[2] || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const apiKeySid = process.env.TWILIO_API_KEY_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const fromNumber = process.env.TWILIO_WHATSAPP_FROM || '+14155238886';
+const targetPhone = process.argv[2] || '917349083982';
 
-console.log('\n================================================================');
-console.log('📱 TESTING FULL ORDER WHATSAPP NOTIFICATION TO ADMIN');
-console.log('================================================================');
-console.log(`Admin WhatsApp Phone: +${adminPhone.replace(/\D/g, '')}`);
-console.log(`Twilio Account SID:   ${process.env.TWILIO_ACCOUNT_SID ? process.env.TWILIO_ACCOUNT_SID.substring(0, 8) + '...' : 'MISSING'}`);
-console.log(`Twilio WhatsApp From: ${process.env.TWILIO_WHATSAPP_FROM || '+14155238886'}`);
-console.log('----------------------------------------------------------------\n');
+const formattedTarget = `whatsapp:+${targetPhone.replace(/\D/g, '')}`;
+const formattedFrom = `whatsapp:${fromNumber.replace(/\s+/g, '').replace('whatsapp:', '')}`;
 
-// Sample realistic order payload with full details
-const sampleOrder = {
-  id: 'd3b9c1b3-0c15-4258-ac49-277246dc127b',
-  order_number: 'KALA-202648329',
-  phone: '7349083982',
-  shipping_name: 'Rohan Kokkari',
-  shipping_address: 'Flat 101, Kala Heritage Enclave, Indiranagar, Bengaluru, Karnataka',
-  shipping_city: 'Bengaluru',
-  shipping_state: 'Karnataka',
-  shipping_pincode: '560038',
-  live_location_url: 'https://www.google.com/maps?q=12.9786,77.364',
-  payment_method: 'cod',
-  payment_status: 'pending',
-  order_status: 'confirmed',
-  coupon_code: 'KALA30',
-  discount_amount: 150,
-  delivery_fee: 0,
-  subtotal: 1200,
-  total_amount: 1050,
-  created_at: new Date().toISOString(),
-  user: {
-    name: 'Rohan Kokkari',
-    phone: '7349083982',
-    email: 'rohankokkarikr@gmail.com'
-  },
-  items: [
-    {
-      id: 'item-001',
-      quantity: 1,
-      size: 'Free Size',
-      price_at_time: 1200,
-      product_name_snapshot: 'Handcrafted Wooden Pull-Along Horse Toy with Rider',
-      product: {
-        id: 'prod-001',
-        name: 'Handcrafted Wooden Pull-Along Horse Toy with Rider',
-        category: 'Wooden Handicrafts',
-        price: 1200
-      }
-    }
-  ]
-};
+console.log('\n========================================');
+console.log('📱 Testing Twilio WhatsApp Message Send');
+console.log('========================================');
+console.log(`From:   ${formattedFrom}`);
+console.log(`To:     ${formattedTarget}`);
+console.log('----------------------------------------');
+
+const client = twilio(apiKeySid || accountSid, authToken, { accountSid });
 
 (async () => {
   try {
-    console.log('📝 Generating Full Order Details Slip for WhatsApp:\n');
-    const orderSlip = buildOrderWhatsappText(sampleOrder, sampleOrder.shipping_name);
-    console.log(orderSlip);
-    console.log('\n================================================================');
-    console.log('🚀 Dispatching to Admin via Twilio API...');
-    console.log('================================================================');
+    const message = await client.messages.create({
+      from: formattedFrom,
+      to: formattedTarget,
+      body: '🎉 *KalaStyle AI Notification*\n\nYour WhatsApp order notification channel is successfully connected! You will receive live alerts for all customer orders.'
+    });
 
-    const result = await sendOrderWhatsappNotification(adminPhone, sampleOrder, sampleOrder.shipping_name);
-
-    console.log('\n--- DISPATCH RESULTS ---');
-    console.log(`Success:    ${result.success ? '✅ YES' : '❌ NO (Check Twilio trial/template status)'}`);
-    console.log(`Direct Link: ${result.directLink}`);
-
-    if (result.results && result.results.length > 0) {
-      result.results.forEach((r, idx) => {
-        console.log(`Recipient #${idx + 1} (${r.to}): ${r.success ? `Delivered (SID: ${r.sid})` : `Failed (${r.error})`}`);
-      });
-    }
-
-    console.log('\n================================================================');
-    console.log('🔗 DIRECT WHATSAPP LINK FOR ADMIN (1-Click Open in WhatsApp):');
-    console.log(result.directLink);
-    console.log('================================================================\n');
-
+    console.log('✅ WhatsApp message delivered successfully!');
+    console.log(`📦 Message SID: ${message.sid}`);
+    console.log(`⚡ Status:      ${message.status}`);
+    console.log('========================================\n');
   } catch (err) {
-    console.error('Fatal error in test script:', err);
+    console.error('❌ Twilio WhatsApp send error:');
+    console.error(`   ${err.message}`);
+    console.log('\n💡 Why this happens:');
+    console.log('   In Twilio Trial accounts, WhatsApp requires your phone to join the Sandbox first:');
+    console.log('   1. Open WhatsApp on ' + targetPhone);
+    console.log('   2. Send your sandbox keyword (e.g. "join <your-keyword>") to +1 415 523 8886');
+    console.log('   3. Run this script again: node test_send_whatsapp.js\n');
   }
 })();

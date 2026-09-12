@@ -338,6 +338,17 @@ exports.createProduct = async (req, res) => {
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
     broadcastSync('PRODUCTS_UPDATED', { action: 'create', product: data });
+
+    try {
+      const { emitEvent } = require('../ai/aiEventBus');
+      emitEvent('PRODUCT_SUBMITTED', 'product', data.id, {
+        name: data.name,
+        price: data.price,
+        artisan_id: data.artisan_id,
+        category: data.category,
+      });
+    } catch (e) {}
+
     res.status(201).json(data);
   } catch (error) {
     console.error('createProduct error:', error);

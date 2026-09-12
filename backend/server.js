@@ -120,6 +120,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/artisans', require('./routes/artisans'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin/ai-manager', require('./routes/aiAdminRoutes'));
 app.use('/api/notifications', require('./routes/notifications'));
 
 // Health check — also checks if Supabase is reachable
@@ -211,6 +212,14 @@ server.listen(PORT, '0.0.0.0', async () => {
     });
   } catch (e) {
     console.error('  ❌ Could not parse SUPABASE_URL:', e.message);
+  }
+
+  // Initialize Autonomous AI Job Processor
+  try {
+    const { startProcessor } = require('./ai/aiJobProcessor');
+    startProcessor(30000);
+  } catch (e) {
+    console.warn('  ⚠️ Could not start AI Job Processor:', e.message);
   }
 });
 

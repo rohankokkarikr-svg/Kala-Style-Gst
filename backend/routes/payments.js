@@ -237,33 +237,10 @@ router.post('/verify', protect, async (req, res) => {
     });
 
     console.log(`[verify] ✅ Payment successfully verified for order ${order.id}`);
-
-    // 7. Dispatch full order WhatsApp notification to Admin
-    let whatsappLink = null;
-    try {
-      const { sendOrderWhatsappNotification } = require('../utils/whatsapp');
-      const { data: fullPaidOrder } = await supabase
-        .from('orders')
-        .select('*, items:order_items(quantity, price_at_time, size, product_name_snapshot, unit_price_snapshot, product:products(id, name, image_url, category, price))')
-        .eq('id', order.id)
-        .single();
-
-      const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
-      const wsRes = await sendOrderWhatsappNotification(
-        adminPhone,
-        fullPaidOrder || order,
-        fullPaidOrder?.shipping_name || req.user?.name || 'Customer'
-      );
-      if (wsRes) whatsappLink = wsRes.directLink;
-    } catch (wsErr) {
-      console.error('[verify] WhatsApp notification error:', wsErr.message);
-    }
-
     res.json({
       success: true,
       message: 'Payment verified successfully',
       orderId: order.id,
-      whatsapp_direct_link: whatsappLink,
     });
   } catch (err) {
     console.error('[verify] Verification exception:', err.message);
@@ -350,25 +327,6 @@ router.post('/webhook', async (req, res) => {
           broadcastSync('PAYMENTS_UPDATED', { orderId: order.id, status: 'paid' });
           broadcastSync('ORDERS_UPDATED', { orderId: order.id, order_status: 'confirmed' });
           console.log(`[webhook] ✅ Processed payment.captured for order ${order.id}`);
-
-          // Dispatch full order WhatsApp notification to Admin
-          try {
-            const { sendOrderWhatsappNotification } = require('../utils/whatsapp');
-            const { data: fullPaidOrder } = await supabase
-              .from('orders')
-              .select('*, items:order_items(quantity, price_at_time, size, product_name_snapshot, unit_price_snapshot, product:products(id, name, image_url, category, price))')
-              .eq('id', order.id)
-              .single();
-
-            const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
-            await sendOrderWhatsappNotification(
-              adminPhone,
-              fullPaidOrder || order,
-              fullPaidOrder?.shipping_name || 'Customer'
-            );
-          } catch (wsErr) {
-            console.error('[webhook] Admin WhatsApp notification error:', wsErr.message);
-          }
         }
       } catch (err) {
         console.error('[webhook] Error updating payment.captured:', err.message);
