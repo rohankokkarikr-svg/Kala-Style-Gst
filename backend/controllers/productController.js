@@ -109,7 +109,13 @@ exports.getProducts = async (req, res) => {
       }
 
       if (search) {
-        query = query.ilike('name', `%${search}%`);
+        const cleanTerm = search.trim();
+        query = query.or(`name.ilike.%${cleanTerm}%,description.ilike.%${cleanTerm}%,category.ilike.%${cleanTerm}%,material.ilike.%${cleanTerm}%,style.ilike.%${cleanTerm}%`);
+      }
+      if (sort === 'price_asc') {
+        query = query.order('price', { ascending: true });
+      } else if (sort === 'price_desc') {
+        query = query.order('price', { ascending: false });
       }
       if (material && material !== 'all') {
         query = query.ilike('material', `%${material}%`);

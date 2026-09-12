@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { artisanAPI } from '../../services/api';
-import { supabase } from '../../lib/supabase';
 import { 
   HiLocationMarker, 
   HiPhone, 
@@ -79,40 +78,7 @@ export default function ArtisanOrders() {
     };
   }, []);
 
-  // 2. Direct Supabase Realtime Edge listener for Artisan Orders
-  useEffect(() => {
-    if (!supabase || typeof supabase.channel !== 'function') return;
 
-    const channel = supabase
-      .channel('artisan_orders_live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'artisan_orders' },
-        () => {
-          fetchOrders(true);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          fetchOrders(true);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // 3. Heartbeat polling (every 8 seconds)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchOrders(true);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Exclusive Artisan UTR Confirmation & Order Acceptance Handler
   const handleVerifyUtr = async (orderId, action) => {

@@ -76,13 +76,53 @@ async function recordAuditAction({
   return auditEntry;
 }
 
+const SAFETY_LEVELS = {
+  // LEVEL 1: Safe / Read-only / Analysis
+  get_artisans: 1,
+  get_pending_artisans: 1,
+  get_artisan_details: 1,
+  get_products: 1,
+  get_pending_products: 1,
+  get_low_stock_products: 1,
+  get_orders: 1,
+  get_order_details: 1,
+  get_failed_payments: 1,
+  get_reviews: 1,
+  get_complaints: 1,
+  get_business_analytics: 1,
+  get_ai_queue_status: 1,
+  get_automation_rules: 1,
+  get_recent_ai_actions: 1,
+  get_suspicious_orders: 1,
+  analyze_order_risk: 1,
+  generate_daily_business_report: 1,
+
+  // LEVEL 2: Controlled Operational Actions (Autonomous with audit log)
+  verify_artisan: 2,
+  hold_artisan: 2,
+  approve_product: 2,
+  hold_product: 2,
+  confirm_order: 2,
+  hold_order: 2,
+  send_artisan_whatsapp: 2,
+  moderate_review: 2,
+  resolve_complaint: 2,
+  update_automation_rule: 2,
+
+  // LEVEL 3: High Risk (Strict human admin confirmation required)
+  reject_artisan: 3,
+  reject_product: 3,
+  cancel_order: 3,
+  update_product_inventory: 3,
+};
+
 /**
- * Execute a structured tool call requested by OpenAI.
+ * Execute a structured tool call requested by OpenAI/Gemini.
  *
  * @param {string} toolName - Name of the function to invoke
- * @param {object} args - Parsed arguments from OpenAI
+ * @param {object} args - Parsed arguments from AI
  * @param {object} context - Execution context { conversationId, adminId, eventType }
- * @returns {Promise<object>} Structured result returned back to OpenAI
+ * @returns {Promise<object>} Structured result returned back to AI
  */
 async function executeTool(toolName, args = {}, context = {}) {
   const { conversationId, adminId, eventType = 'AI_OPERATIONS' } = context;
@@ -96,6 +136,39 @@ async function executeTool(toolName, args = {}, context = {}) {
     let decision = 'executed';
     let reason = args.reason || null;
     let confidence = args.confidence || 1.0;
+
+    const safetyLevel = SAFETY_LEVELS[toolName] || 1;
+
+    // Safety Level 3 Guard: Require explicit confirmation for high-risk operations
+    if (safetyLevel === 3 && !args.admin_confirmed) {
+      const confirmationToken = uuidv4();
+      const warningSummary = `High-risk action [${toolName}] requires explicit administrative authorization.`;
+      console.warn(`🛡️ [AI Safety Guard] Intercepted Level 3 High-Risk action: ${toolName}.`);
+
+      const audit = await recordAuditAction({
+        conversationId,
+        eventType,
+        actionName: toolName,
+        toolName,
+        inputSummary: args,
+        decision: 'requires_admin_confirmation',
+        reason: args.reason || 'Level 3 High-Risk action requiring admin review',
+        status: 'pending_confirmation',
+        confidence,
+        result: { requires_admin_confirmation: true, confirmation_token: confirmationToken },
+      });
+
+      return {
+        requires_admin_confirmation: true,
+        safety_level: 3,
+        tool_name: toolName,
+        action_summary: warningSummary,
+        confirmation_token: confirmationToken,
+        parameters: args,
+        audit_id: audit.id,
+        message: `Action '${toolName}' is classified as Level 3 (High-Risk). Operation paused pending human admin confirmation.`,
+      };
+    }
 
     switch (toolName) {
       // ─── READ TOOLS ────────────────────────────────────────────────
@@ -237,6 +310,51 @@ async function executeTool(toolName, args = {}, context = {}) {
             .limit(Math.min(args.limit || 20, 50))
         );
         result = !error && data && data.length > 0 ? data : inMemoryAuditLogs.slice(0, args.limit || 20);
+        break;
+      }
+
+      case 'get_suspicious_orders': {
+        const suspiciousService = require('../services/suspiciousOrderService');
+        const flaggedOrders = await suspiciousService.getSuspiciousOrders({
+          status: args.status || 'all',
+          limit: args.limit || 20,
+        });
+        result = {
+          total: flaggedOrders.length,
+          orders: flaggedOrders,
+        };
+        break;
+      }
+
+      case 'analyze_order_risk': {
+        const suspiciousService = require('../services/suspiciousOrderService');
+        let orderQuery = supabase.from('orders').select('*');
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+          orderQuery = orderQuery.eq('id', args.order_id);
+        } else {
+          orderQuery = orderQuery.eq('order_number', args.order_id);
+        }
+        const { data: targetOrder } = await orderQuery.maybeSingle();
+        if (!targetOrder) {
+          result = { error: `Order ${args.order_id} not found for risk analysis` };
+        } else {
+          const evalResult = await suspiciousService.evaluateOrderRisk(targetOrder);
+          await supabase.from('orders').update({
+            risk_status: evalResult.riskStatus,
+            risk_score: evalResult.riskScore,
+            risk_reasons: evalResult.reasons,
+            updated_at: new Date().toISOString(),
+          }).eq('id', targetOrder.id);
+
+          result = {
+            order_id: targetOrder.id,
+            order_number: targetOrder.order_number,
+            risk_status: evalResult.riskStatus,
+            risk_score: evalResult.riskScore,
+            risk_reasons: evalResult.reasons,
+            recommended_action: evalResult.recommendedAction,
+          };
+        }
         break;
       }
 

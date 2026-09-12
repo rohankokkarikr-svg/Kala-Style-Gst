@@ -131,6 +131,32 @@ const FUNCTION_DECLARATIONS = [
     },
   },
   {
+    name: 'get_suspicious_orders',
+    description: 'Retrieve orders flagged by AI risk engine as review_required or high_risk.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        status: {
+          type: 'STRING',
+          enum: ['all', 'review_required', 'high_risk'],
+          description: 'Filter by risk classification',
+        },
+        limit: { type: 'INTEGER', description: 'Maximum orders to fetch (default 20)' },
+      },
+    },
+  },
+  {
+    name: 'analyze_order_risk',
+    description: 'Perform on-demand behavioral risk scoring and fraud signal inspection on an order.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        order_id: { type: 'STRING', description: 'UUID or order number to inspect' },
+      },
+      required: ['order_id'],
+    },
+  },
+  {
     name: 'get_reviews',
     description: 'Fetch customer reviews to inspect sentiment, authenticity, and approval states.',
     parameters: {

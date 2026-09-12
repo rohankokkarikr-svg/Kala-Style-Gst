@@ -220,7 +220,7 @@ exports.createRefund = async (paymentId, amount, notes = {}) => {
 exports.generateTransactionId = (orderId) => {
   const timestamp = Date.now().toString(36).toUpperCase();
   const random = crypto.randomBytes(3).toString('hex').toUpperCase();
-  return `SH${orderId?.substring(0, 8).toUpperCase() || ''}${timestamp}${random}`;
+  return `KALA${orderId?.substring(0, 8).toUpperCase() || ''}${timestamp}${random}`;
 };
 
 // Export getter

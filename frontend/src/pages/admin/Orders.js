@@ -1,19 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { 
   HiSearch, 
-  HiFilter, 
-  HiShoppingBag, 
   HiEye, 
   HiRefresh, 
   HiX,
-  HiCheckCircle,
-  HiClock,
   HiLocationMarker,
   HiExternalLink
 } from 'react-icons/hi';
 import { adminAPI } from '../../services/api';
-import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { extractOrderLocation } from '../../utils/locationHelper';
 
@@ -56,40 +50,7 @@ export default function Orders() {
     };
   }, [statusFilter]);
 
-  // 2. Direct Supabase Realtime Edge listener for Admin orders
-  useEffect(() => {
-    if (!supabase || typeof supabase.channel !== 'function') return;
 
-    const channel = supabase
-      .channel('admin_orders_live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          fetchOrders(true);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'artisan_orders' },
-        () => {
-          fetchOrders(true);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [statusFilter]);
-
-  // 3. Background heartbeat polling (every 8 seconds)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchOrders(true);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

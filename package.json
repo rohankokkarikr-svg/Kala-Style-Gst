@@ -5,9 +5,7 @@
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "npm --prefix backend run dev",
     "frontend": "npm --prefix frontend start",
-    "mobile": "npm --prefix mobile start",
-    "mobile:android": "npm --prefix mobile run android",
-    "mobile:web": "npm --prefix mobile run web"
+    "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

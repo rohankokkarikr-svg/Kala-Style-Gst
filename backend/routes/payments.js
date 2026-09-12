@@ -14,7 +14,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { protect, artisanOrAdmin, admin } = require('../middleware/auth');
-const { createMasterOrder } = require('../services/orderService');
+const { createMasterOrder, restoreInventory } = require('../services/orderService');
 const {
   createRazorpayOrder,
   verifyRazorpaySignature,
@@ -361,8 +361,11 @@ router.post('/webhook', async (req, res) => {
             .update({ status: 'failed', updated_at: new Date().toISOString() })
             .eq('order_id', order.id);
 
+          // Release reserved inventory safely back to catalog
+          await restoreInventory(order.id);
+
           broadcastSync('PAYMENTS_UPDATED', { orderId: order.id, status: 'failed' });
-          console.log(`[webhook] Processed payment.failed for order ${order.id}`);
+          console.log(`[webhook] Processed payment.failed and released stock for order ${order.id}`);
         }
       } catch (err) {
         console.error('[webhook] Error handling payment.failed:', err.message);

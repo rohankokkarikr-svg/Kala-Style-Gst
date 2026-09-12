@@ -11,7 +11,6 @@ import {
   HiShieldCheck
 } from 'react-icons/hi';
 import { adminAPI } from '../../services/api';
-import { supabase } from '../../lib/supabase';
 import { useRealtimeSync } from '../../context/RealtimeSyncContext';
 import toast from 'react-hot-toast';
 
@@ -58,30 +57,7 @@ export default function Payments() {
   useEffect(() => {
     fetchPayments(false);
 
-    // 1. Listen for Supabase Postgres Realtime changes on 'orders' table
-    let realtimeChannel = null;
-    try {
-      if (supabase && typeof supabase.channel === 'function') {
-        realtimeChannel = supabase
-          .channel('realtime_admin_payments_stream')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'orders' },
-            () => {
-              fetchPayments(false);
-            }
-          )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              setIsLiveConnected(true);
-            }
-          });
-      }
-    } catch (supaErr) {
-      console.warn('Supabase realtime channel warning:', supaErr.message);
-    }
-
-    // 2. DOM Realtime Events from RealtimeSyncContext (BroadcastChannel & Socket.IO)
+    // 1. DOM Realtime Events from RealtimeSyncContext (BroadcastChannel & Socket.IO)
     const handleSyncEvent = () => {
       fetchPayments(false);
     };
@@ -89,20 +65,12 @@ export default function Payments() {
     window.addEventListener('kala:sync:payments_updated', handleSyncEvent);
     window.addEventListener('kala:sync:orders_updated', handleSyncEvent);
     window.addEventListener('kala:sync:all', handleSyncEvent);
-
-    // 3. Fallback Periodic Heartbeat Polling (every 10s for seamless sync)
-    const heartbeatTimer = setInterval(() => {
-      fetchPayments(false);
-    }, 10000);
+    setIsLiveConnected(true);
 
     return () => {
-      if (realtimeChannel && supabase.removeChannel) {
-        supabase.removeChannel(realtimeChannel);
-      }
       window.removeEventListener('kala:sync:payments_updated', handleSyncEvent);
       window.removeEventListener('kala:sync:orders_updated', handleSyncEvent);
       window.removeEventListener('kala:sync:all', handleSyncEvent);
-      clearInterval(heartbeatTimer);
     };
   }, [fetchPayments]);
 
