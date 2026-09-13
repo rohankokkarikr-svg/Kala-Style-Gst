@@ -30,17 +30,46 @@ export default function NotificationCenter({ className = '', buttonClassName = '
 
   const dropdownRef = useRef(null);
 
+  const getReadStorageKey = () => `kala_read_notifs_${user?.id || 'guest'}`;
+
   const fetchNotifications = async (silent = false) => {
     if (!isAuthenticated) return;
     if (!silent) setLoading(true);
     try {
       const { data } = await notificationAPI.getMyNotifications();
       if (data && data.success) {
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unread_count || 0);
+        // Read persisted IDs from localStorage to guarantee read state never flips back on re-fetch
+        let localReadIds = new Set();
+        try {
+          const stored = JSON.parse(localStorage.getItem(getReadStorageKey()) || '[]');
+          localReadIds = new Set(stored);
+        } catch (e) {}
+
+        const rawNotifs = data.notifications || [];
+        const syncedNotifs = rawNotifs.map(n => ({
+          ...n,
+          is_read: Boolean(n.is_read || localReadIds.has(n.id))
+        }));
+
+        // Strict role filtering for customer/user side:
+        // Show ONLY admin messages (broadcast or direct) AND artisan messages sent to this particular user
+        const currentRole = (user?.role || 'user').toLowerCase();
+        let roleFiltered = syncedNotifs;
+        if (currentRole === 'user' || currentRole === 'customer') {
+          roleFiltered = syncedNotifs.filter(n => {
+            const senderRole = (n.sender?.role || '').toLowerCase();
+            const isFromAdmin = senderRole === 'admin' || !n.sender_id;
+            const isDirectFromArtisan = senderRole === 'artisan' && n.target_user_id === user?.id;
+            const isDirectFromAdmin = senderRole === 'admin' && n.target_user_id === user?.id;
+            const isBroadcastFromAdmin = isFromAdmin && (n.target_audience === 'all' || n.target_audience === 'customers');
+            return isBroadcastFromAdmin || isDirectFromAdmin || isDirectFromArtisan;
+          });
+        }
+
+        setNotifications(roleFiltered);
+        setUnreadCount(roleFiltered.filter(n => !n.is_read).length);
       }
     } catch (err) {
-      // Quiet fail on background polling
       if (!silent) console.warn('Failed to load notifications:', err);
     } finally {
       if (!silent) setLoading(false);
@@ -65,7 +94,7 @@ export default function NotificationCenter({ className = '', buttonClassName = '
       window.removeEventListener('kala:notification:refresh', handleRefresh);
       window.removeEventListener('kala:sync:orders_updated', handleRefresh);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id]);
 
   // Close on outside click
   useEffect(() => {
@@ -83,9 +112,22 @@ export default function NotificationCenter({ className = '', buttonClassName = '
   const handleMarkAsRead = async (id, e) => {
     e?.stopPropagation();
     try {
-      await notificationAPI.markAsRead(id);
+      // 1. Immediately persist to localStorage so polling NEVER reverts it
+      try {
+        const key = getReadStorageKey();
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        if (!stored.includes(id)) {
+          stored.push(id);
+          localStorage.setItem(key, JSON.stringify(stored));
+        }
+      } catch (e) {}
+
+      // 2. Update UI state immediately
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
+
+      // 3. Persist to backend database
+      await notificationAPI.markAsRead(id);
     } catch (err) {
       console.warn('Failed to mark read:', err);
     }
@@ -93,10 +135,22 @@ export default function NotificationCenter({ className = '', buttonClassName = '
 
   const handleMarkAllRead = async () => {
     try {
-      await notificationAPI.markAllAsRead();
+      // 1. Immediately persist all IDs in localStorage
+      try {
+        const key = getReadStorageKey();
+        const currentIds = notifications.map(n => n.id);
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        const merged = Array.from(new Set([...stored, ...currentIds]));
+        localStorage.setItem(key, JSON.stringify(merged));
+      } catch (e) {}
+
+      // 2. Update UI state immediately
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
       toast.success('All notifications marked as read');
+
+      // 3. Persist to backend database
+      await notificationAPI.markAllAsRead();
     } catch (err) {
       toast.error('Failed to mark all as read');
     }

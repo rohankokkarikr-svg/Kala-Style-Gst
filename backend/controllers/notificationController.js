@@ -67,7 +67,7 @@ exports.getMyNotifications = async (req, res) => {
 
     // Combine & deduplicate by id
     const seen = new Set();
-    const combined = [...notifications, ...memMatching].filter(item => {
+    let combined = [...notifications, ...memMatching].filter(item => {
       if (!item.id || seen.has(item.id)) return false;
       seen.add(item.id);
       return true;
@@ -75,6 +75,21 @@ exports.getMyNotifications = async (req, res) => {
 
     // Sort descending by created_at
     combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // STRICT USER SIDE FILTERING:
+    // In user side show ONLY:
+    // 1. Admin messages (broadcast or direct to this particular user)
+    // 2. Artisan messages if sent specifically to the particular user
+    if (userRole === 'user' || userRole === 'customer') {
+      combined = combined.filter(n => {
+        const senderRole = (n.sender?.role || '').toLowerCase();
+        const isFromAdmin = senderRole === 'admin' || !n.sender_id;
+        const isDirectFromArtisan = senderRole === 'artisan' && n.target_user_id === userId;
+        const isDirectFromAdmin = senderRole === 'admin' && n.target_user_id === userId;
+        const isBroadcastFromAdmin = isFromAdmin && (n.target_audience === 'all' || n.target_audience === 'customers');
+        return isBroadcastFromAdmin || isDirectFromAdmin || isDirectFromArtisan;
+      });
+    }
 
     const unread_count = combined.filter(n => !n.is_read).length;
 
@@ -253,21 +268,37 @@ exports.markAsRead = async (req, res) => {
 exports.markAllAsRead = async (req, res) => {
   try {
     const userId = req.user?.id;
+    const userRole = (req.user?.role || 'user').toLowerCase();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    // 1. Mark all direct notifications for this user
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('target_user_id', userId);
+    } catch (dbErr) {
+      console.warn('[markAllAsRead] DB update error:', dbErr.message);
+    }
+
+    // 2. Also mark broadcast notifications targeted to this user's role or all
+    const audiences = ['all'];
+    if (userRole === 'admin') audiences.push('admins');
+    else if (userRole === 'artisan') audiences.push('artisans');
+    else audiences.push('customers');
 
     try {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('target_user_id', userId)
-        .eq('is_read', false);
+        .in('target_audience', audiences);
     } catch (dbErr) {
-      console.warn('[markAllAsRead] DB update error:', dbErr.message);
+      console.warn('[markAllAsRead] Broadcast DB update error:', dbErr.message);
     }
 
     // Update in-memory notifications
     inMemoryNotifications.forEach(n => {
-      if (n.target_user_id === userId) {
+      if (n.target_user_id === userId || audiences.includes(n.target_audience)) {
         n.is_read = true;
       }
     });

@@ -7,7 +7,8 @@ import {
   HiX,
   HiChatAlt2,
   HiReply,
-  HiInbox
+  HiInbox,
+  HiCheck
 } from 'react-icons/hi';
 import { adminAPI, notificationAPI } from '../../services/api';
 import SendMessageModal from '../../components/SendMessageModal';
@@ -27,11 +28,24 @@ export default function Notifications() {
   const [replyModalOpen, setReplyModalOpen] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
 
+  const getAdminStorageKey = () => 'kala_read_notifs_admin';
+
   const fetchNotifications = async () => {
     setLoading(true);
     try {
       const { data } = await adminAPI.getNotifications();
-      setNotifications(data || []);
+      let localReadIds = new Set();
+      try {
+        const stored = JSON.parse(localStorage.getItem(getAdminStorageKey()) || '[]');
+        localReadIds = new Set(stored);
+      } catch (e) {}
+
+      const synced = (data || []).map(n => ({
+        ...n,
+        is_read: Boolean(n.is_read || localReadIds.has(n.id))
+      }));
+
+      setNotifications(synced);
     } catch {
       toast.error('Failed to load notifications history');
     } finally {
@@ -97,6 +111,25 @@ export default function Notifications() {
         defaultTitle: `Re: ${notif.title || 'Inquiry'}`
       });
       setReplyModalOpen(true);
+    }
+  };
+
+  const handleMarkAsRead = async (id, e) => {
+    e?.stopPropagation();
+    try {
+      try {
+        const key = getAdminStorageKey();
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        if (!stored.includes(id)) {
+          stored.push(id);
+          localStorage.setItem(key, JSON.stringify(stored));
+        }
+      } catch (err) {}
+
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+      await notificationAPI.markAsRead(id);
+    } catch (err) {
+      console.warn('Failed to mark read:', err);
     }
   };
 
@@ -189,10 +222,15 @@ export default function Notifications() {
             <div className="space-y-3">
               {incomingMessages.map((msg) => {
                 const senderRole = msg.sender?.role || 'user';
+                const isUnread = !msg.is_read;
                 return (
                   <div
                     key={msg.id}
-                    className="p-4 rounded-xl bg-dark-750 border border-dark-600 hover:border-gold-500/40 transition-all space-y-3"
+                    className={`p-4 rounded-xl border transition-all space-y-3 ${
+                      isUnread 
+                        ? 'bg-dark-750 border-gold-500/50 shadow-sm shadow-gold/5 border-l-4 border-l-gold-500' 
+                        : 'bg-dark-800/90 border-dark-600 hover:border-dark-500'
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dark-650 pb-2">
                       <div className="flex items-center gap-2.5">
@@ -200,9 +238,16 @@ export default function Notifications() {
                           {senderRole === 'artisan' ? '👨‍🎨' : '👤'}
                         </span>
                         <div>
-                          <p className="font-bold text-white text-sm">
-                            {msg.sender?.name || 'Registered User'}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-white text-sm">
+                              {msg.sender?.name || 'Registered User'}
+                            </p>
+                            {isUnread && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gold-500/20 text-gold-400 border border-gold-500/30">
+                                New
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-gray-400">
                             Role: <span className="text-gold-400 capitalize font-medium">{senderRole}</span>
                             {msg.sender?.email && ` • ${msg.sender.email}`}
@@ -214,6 +259,16 @@ export default function Notifications() {
                         <span className="text-[10px] text-gray-500">
                           {msg.created_at ? new Date(msg.created_at).toLocaleString('en-IN') : 'Recently'}
                         </span>
+                        {isUnread && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleMarkAsRead(msg.id, e)}
+                            className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 cursor-pointer hover:text-white"
+                            title="Mark this inquiry as read"
+                          >
+                            <HiCheck className="w-3.5 h-3.5 text-gold-400" /> Mark read
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleOpenReply(msg)}
