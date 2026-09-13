@@ -26,18 +26,19 @@ export default function Login() {
         toast.error('Please enter a valid 10-digit phone number or email');
         return;
       }
-      valueToSubmit = cleanPhone;
+      valueToSubmit = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
     }
 
     setLoading(true);
     try {
       const user = await login(valueToSubmit, password);
-      if (user?.role === 'admin') {
-        navigate('/admin');
-      } else if (user?.role === 'artisan') {
-        navigate('/artisan');
+      const role = (user?.role || '').trim().toLowerCase();
+      if (role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (role === 'artisan') {
+        navigate('/artisan', { replace: true });
       } else {
-        navigate('/');
+        navigate('/', { replace: true });
       }
     } catch (err) {
       toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to log in');

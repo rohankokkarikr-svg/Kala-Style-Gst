@@ -102,13 +102,27 @@ export const AuthProvider = ({ children }) => {
     toast.success('Logged out successfully');
   };
 
-  const currentRole = (user?.role || '').trim().toLowerCase();
+  const getStoredUser = () => {
+    try {
+      const stored = localStorage.getItem('sh_user');
+      const token = localStorage.getItem('sh_token');
+      if (stored && token) {
+        const parsed = JSON.parse(stored);
+        if (parsed.role) parsed.role = parsed.role.trim().toLowerCase();
+        return parsed;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const currentUser = user || getStoredUser();
+  const currentRole = (currentUser?.role || '').trim().toLowerCase();
   const isAdmin = currentRole === 'admin';
   const isArtisan = currentRole === 'artisan';
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!currentUser;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, isAdmin, isArtisan, isAuthenticated, refreshUser, setUser }}>
+    <AuthContext.Provider value={{ user: currentUser, loading, login, signup, logout, isAdmin, isArtisan, isAuthenticated, refreshUser, setUser }}>
       {children}
     </AuthContext.Provider>
   );

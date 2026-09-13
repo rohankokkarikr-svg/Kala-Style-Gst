@@ -162,6 +162,7 @@ exports.login = async (req, res) => {
         last10 ? `phone.eq.+91${last10}` : null,
         last10 ? `phone.eq.91${last10}` : null,
         cleanPhone ? `email.eq.${cleanPhone}` : null,
+        last10 ? `email.eq.${last10}` : null,
       ].filter(Boolean);
       userQuery = userQuery.or(orConditions.join(','));
     }
@@ -178,8 +179,9 @@ exports.login = async (req, res) => {
       return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
     }
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Check password (support raw and trimmed passwords to tolerate accidental trailing spaces)
+    const isMatch = (await bcrypt.compare(password, user.password)) || 
+                    (typeof password === 'string' && await bcrypt.compare(password.trim(), user.password));
 
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
