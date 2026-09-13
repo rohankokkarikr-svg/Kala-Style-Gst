@@ -40,7 +40,7 @@ export default function Login() {
         navigate('/');
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to log in');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to log in');
     } finally {
       setLoading(false);
     }

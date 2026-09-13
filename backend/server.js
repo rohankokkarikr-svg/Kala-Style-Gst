@@ -29,6 +29,8 @@ const compression = require('compression');
 const { initRealtime } = require('./utils/realtime');
 
 const app = express();
+// Enable trust proxy for Render / Netlify / reverse proxies so rate limiters inspect true client IPs
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // Setup Socket.IO with CORS for any client device

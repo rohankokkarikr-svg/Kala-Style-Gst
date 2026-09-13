@@ -25,7 +25,7 @@ export default function Signup() {
       await signup(name, cleanPhone, password, role, storeName || name, artisanType);
       navigate(role === 'artisan' ? '/artisan' : '/');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to create account');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to create account');
     } finally {
       setLoading(false);
     }
