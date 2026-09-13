@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { orderAPI, paymentAPI } from '../services/api';
 import toast from 'react-hot-toast';
@@ -22,6 +22,7 @@ export default function PaymentGateway() {
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [razorpayLaunching, setRazorpayLaunching] = useState(false);
+  const hasAutoLaunchedRef = useRef(false);
 
   // Get razorpay data passed from Checkout via navigate state
   const razorpayData = location.state?.razorpay || null;
@@ -40,6 +41,12 @@ export default function PaymentGateway() {
   // Launch Razorpay Standard Web Checkout (Full UPI, Cards, NetBanking)
   const launchRazorpay = useCallback(
     async (rzpData, orderData) => {
+      if (!rzpData?.order_id) {
+        toast.error('Payment session not ready. Please click "Pay with Razorpay" below to begin.');
+        setRazorpayLaunching(false);
+        return;
+      }
+
       setRazorpayLaunching(true);
       const loaded = await loadRazorpayScript();
       if (!loaded) {
@@ -53,25 +60,46 @@ export default function PaymentGateway() {
         process.env.REACT_APP_RAZORPAY_KEY_ID ||
         'rzp_live_TamouXgJy9WoAl';
 
+      const amountInPaise =
+        Number(rzpData.amount) ||
+        Math.max(100, Math.round(Number(orderData?.total_amount || orderData?.total_price || 0) * 100));
+
+      // Sanitize phone number (standard 10-digit Indian phone)
+      const rawPhone = String(orderData?.phone || '').replace(/\D/g, '');
+      const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : (rawPhone || undefined);
+
+      // Sanitize customer email (only pass if valid format to avoid Razorpay options validation error)
+      const rawEmail = (orderData?.users?.email || '').trim();
+      const cleanEmail = rawEmail.includes('@') ? rawEmail : undefined;
+
+      // Customer name
+      const customerName = (orderData?.shipping_name || orderData?.users?.name || '').trim() || undefined;
+
       const options = {
         key: keyId,
-        amount: rzpData.amount,
+        amount: amountInPaise,
         currency: rzpData.currency || 'INR',
         name: 'KalaStyle AI',
         description: `Order #${orderData?.order_number || orderId?.substring(0, 8)}`,
         order_id: rzpData.order_id,
         prefill: {
-          name: orderData?.shipping_name || orderData?.users?.name || '',
-          contact: orderData?.phone || '',
-          email: orderData?.users?.email || '',
+          name: customerName,
+          contact: cleanPhone,
+          email: cleanEmail,
         },
         theme: {
           color: '#D4AF37', // KalaStyle luxury gold
         },
+        retry: {
+          enabled: true,
+          max_count: 3,
+        },
         modal: {
           ondismiss: () => {
             setRazorpayLaunching(false);
-            toast.error('Payment was cancelled or closed. You can click the button below to retry.');
+            toast('Payment window closed. You can click the button below anytime to complete your payment.', {
+              icon: 'ℹ️',
+            });
           },
         },
         handler: async (response) => {
@@ -92,7 +120,7 @@ export default function PaymentGateway() {
                 navigate(`/orders/${orderId}/tracking`);
               }, 1200);
             } else {
-              toast.error('Payment verification failed on server.');
+              toast.error(verifyRes.data?.error || 'Payment verification failed on server.');
             }
           } catch (err) {
             toast.dismiss();
@@ -111,29 +139,41 @@ export default function PaymentGateway() {
         const rzp = new window.Razorpay(options);
         rzp.on('payment.failed', function (resp) {
           console.warn('[Razorpay] Payment failed event:', resp.error);
-          toast.error(resp.error?.description || 'Payment failed. Please retry.');
+          const failDesc = resp.error?.description || resp.error?.reason || 'Payment could not be processed.';
+          toast.error(`UPI / Online payment failed: ${failDesc}`);
           setRazorpayLaunching(false);
         });
         rzp.open();
       } catch (err) {
         console.error('Failed to open Razorpay modal:', err);
-        toast.error('Could not open payment window. Please try again.');
+        toast.error('Could not open payment window. Please click the button below to try again.');
         setRazorpayLaunching(false);
       }
     },
     [orderId, navigate]
   );
 
-  // Auto-launch Razorpay on mount when order is ready
+  // Auto-launch Razorpay on mount when order is ready (guarded by ref against duplicate launches)
   useEffect(() => {
-    if (!order || submitted) return;
+    if (!order || submitted || hasAutoLaunchedRef.current) return;
+
+    if (
+      order.payment_status === 'paid' ||
+      order.status === 'confirmed' ||
+      order.status === 'processing'
+    ) {
+      setSubmitted(true);
+      return;
+    }
+
+    hasAutoLaunchedRef.current = true;
 
     if (order.razorpay_order_id) {
       launchRazorpay(
         {
           order_id: order.razorpay_order_id,
           key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
-          amount: Math.round(Number(order.total_amount || order.total_price || 0) * 100),
+          amount: Math.max(100, Math.round(Number(order.total_amount || order.total_price || 0) * 100)),
           currency: 'INR',
         },
         order
@@ -188,14 +228,11 @@ export default function PaymentGateway() {
 
   // Trigger manual Razorpay checkout on button click
   const handleTriggerRazorpay = async () => {
-    if (razorpayData?.order_id) {
-      return launchRazorpay(razorpayData, order);
-    }
-
-    const orderTotal = Number(order?.total_amount || order?.total_price || 0);
-    const amountInPaise = Math.round(orderTotal * 100);
+    if (razorpayLaunching) return;
 
     if (order?.razorpay_order_id) {
+      const orderTotal = Number(order?.total_amount || order?.total_price || 0);
+      const amountInPaise = Math.max(100, Math.round(orderTotal * 100));
       return launchRazorpay(
         {
           order_id: order.razorpay_order_id,
@@ -205,6 +242,10 @@ export default function PaymentGateway() {
         },
         order
       );
+    }
+
+    if (razorpayData?.order_id) {
+      return launchRazorpay(razorpayData, order);
     }
 
     // Automatically initialize or retrieve Razorpay order session on demand

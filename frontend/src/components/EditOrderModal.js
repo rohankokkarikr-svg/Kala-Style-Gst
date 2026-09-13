@@ -179,20 +179,30 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
         process.env.REACT_APP_RAZORPAY_KEY_ID ||
         'rzp_live_TamouXgJy9WoAl';
 
+      const rawPhone = String(phone || currentOrder?.phone || '').replace(/\D/g, '');
+      const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : (rawPhone || undefined);
+      const rawEmail = (currentOrder?.users?.email || '').trim();
+      const cleanEmail = rawEmail.includes('@') ? rawEmail : undefined;
+      const customerName = (currentOrder?.shipping_name || currentOrder?.users?.name || '').trim() || undefined;
+
       const options = {
         key: keyId,
-        amount: rzpData.amount,
+        amount: Math.max(100, Number(rzpData.amount) || 100),
         currency: rzpData.currency || 'INR',
         name: 'KalaStyle AI',
         description: `Order #${currentOrder.order_number || currentOrder.id?.substring(0, 8)}`,
         order_id: rzpData.order_id,
         prefill: {
-          name: currentOrder.shipping_name || currentOrder.users?.name || '',
-          contact: phone || currentOrder.phone || '',
-          email: currentOrder.users?.email || '',
+          name: customerName,
+          contact: cleanPhone,
+          email: cleanEmail,
         },
         theme: {
           color: '#D4AF37', // KalaStyle gold
+        },
+        retry: {
+          enabled: true,
+          max_count: 3,
         },
         modal: {
           ondismiss: () => {

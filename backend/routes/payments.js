@@ -115,7 +115,7 @@ router.post('/create-order', protect, async (req, res) => {
       order_id: razorpayOrderId,
       amount: totalAmount * 100, // paise for frontend Razorpay options
       currency: 'INR',
-      key_id: process.env.RAZORPAY_KEY_ID || '',
+      key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
       order: {
         id: order.id,
         order_number: order.order_number,
@@ -591,7 +591,7 @@ router.post('/initialize-order', protect, async (req, res) => {
 
     const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl';
     const totalAmount = Number(order.total_amount || order.total_price || 0);
-    const amountInPaise = Math.round(totalAmount * 100);
+    const amountInPaise = Math.max(100, Math.round(totalAmount * 100));
 
     // If order already has a valid razorpay_order_id, return it directly
     if (order.razorpay_order_id) {

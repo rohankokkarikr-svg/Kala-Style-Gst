@@ -105,7 +105,8 @@ exports.createOrder = async (req, res) => {
     let razorpayOrderId = null;
     let razorpayKeyId = null;
     if (normalizedMethod === 'razorpay') {
-      const rzpResult = await createRzpOrder(order.total_amount, order.order_number, {
+      const chargeAmount = Math.max(1, Math.round(Number(order.total_amount) || 1));
+      const rzpResult = await createRzpOrder(chargeAmount, order.order_number, {
         order_id: order.id,
         user_id,
       });
