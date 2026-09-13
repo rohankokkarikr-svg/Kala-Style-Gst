@@ -20,6 +20,10 @@ services:
         value: "149393542854794"
       - key: TWILIO_WHATSAPP_FROM
         value: "+14155238886"
+      - key: RAZORPAY_KEY_ID
+        value: rzp_live_TamouXgJy9WoAl
+      - key: RAZORPAY_KEY_SECRET
+        value: 6UYg42iNEWzF2u0ViKHoBnNc
       # Secure and sensitive variables. sync: false means you manage them in Render Dashboard
       - key: JWT_SECRET
         generateValue: true

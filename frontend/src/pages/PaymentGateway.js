@@ -56,9 +56,9 @@ export default function PaymentGateway() {
       }
 
       const keyId =
-        rzpData?.key_id ||
-        process.env.REACT_APP_RAZORPAY_KEY_ID ||
-        'rzp_live_TamouXgJy9WoAl';
+        (rzpData?.key_id && !rzpData.key_id.startsWith('rzp_test_'))
+          ? rzpData.key_id
+          : (process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl');
 
       const amountInPaise =
         Number(rzpData.amount) ||

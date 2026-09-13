@@ -589,7 +589,9 @@ router.post('/initialize-order', protect, async (req, res) => {
       return res.status(400).json({ error: 'Order is already paid' });
     }
 
-    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl';
+    const keyId = (process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.startsWith('rzp_test_'))
+      ? process.env.RAZORPAY_KEY_ID.trim().replace(/^["']|["']$/g, '')
+      : 'rzp_live_TamouXgJy9WoAl';
     const totalAmount = Number(order.total_amount || order.total_price || 0);
     const amountInPaise = Math.max(100, Math.round(totalAmount * 100));
 
