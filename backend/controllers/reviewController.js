@@ -133,65 +133,23 @@ const sanitizeText = (str) => String(str || '').replace(/<[^>]*>?/gm, '').trim()
 
 exports.submitReview = async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Please sign in to submit a review.' });
-    }
-
     const { customer_name, product_name, rating, review_text, image_url } = req.body;
 
-    const finalCustomerName = sanitizeText(customer_name || req.user.name || 'Verified Buyer');
-    const finalProductName = sanitizeText(product_name || 'Authentic Handcraft');
-    const finalReviewText = sanitizeText(review_text);
+    const finalCustomerName = (customer_name || req.user?.name || 'Verified Buyer').trim();
+    const finalProductName = (product_name || 'Authentic Handcraft').trim();
 
-    if (!finalCustomerName || !finalProductName || !rating || !finalReviewText) {
+    if (!finalCustomerName || !finalProductName || !rating || !review_text) {
       return res.status(400).json({ error: 'Please provide rating, review text, and your name.' });
     }
 
-    if (finalReviewText.length < 5) {
-      return res.status(400).json({ error: 'Review text must be at least 5 characters long.' });
-    }
-
-    // Check for duplicate reviews from this user for this product
-    const { data: existingReview } = await safeQuery(() =>
-      supabase
-        .from('reviews')
-        .select('id')
-        .eq('user_id', req.user.id)
-        .ilike('product_name', finalProductName)
-        .limit(1)
-    );
-
-    if (existingReview && existingReview.length > 0) {
-      return res.status(400).json({ error: 'You have already submitted a review for this product.' });
-    }
-
-    // Check if user has a verified purchase for this product
-    let isVerifiedPurchase = false;
-    try {
-      const { data: userOrders } = await supabase
-        .from('orders')
-        .select('id, items:order_items(product_name_snapshot)')
-        .eq('user_id', req.user.id)
-        .in('payment_status', ['paid', 'cod_pending']);
-
-      if (userOrders && userOrders.length > 0) {
-        isVerifiedPurchase = userOrders.some(o => 
-          (o.items || []).some(item => 
-            (item.product_name_snapshot || '').toLowerCase().includes(finalProductName.toLowerCase()) ||
-            finalProductName.toLowerCase().includes((item.product_name_snapshot || '').toLowerCase())
-          )
-        );
-      }
-    } catch (e) {}
-
     const newReview = {
-      user_id: req.user.id,
+      user_id: req.user ? req.user.id : null,
       customer_name: finalCustomerName,
       product_name: finalProductName,
       rating: Math.max(1, Math.min(5, Number(rating) || 5)),
-      review_text: finalReviewText,
+      review_text: String(review_text).trim(),
       image_url: image_url ? String(image_url).trim() : null,
-      is_approved: isVerifiedPurchase // Auto-approve verified buyers, queue unverified for moderation
+      is_approved: true // Live immediately on product page and in admin moderation
     };
 
     const { data, error } = await supabase

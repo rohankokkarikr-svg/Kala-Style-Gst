@@ -8,13 +8,11 @@
 const express = require('express');
 const router = express.Router();
 const { protect, admin } = require('../middleware/auth');
-const { adminAiLimiter } = require('../middleware/rateLimiter');
 const aiAdminController = require('../controllers/aiAdminController');
 
 // Enforce JWT Authentication & Administrator Role Verification
 router.use(protect);
 router.use(admin);
-router.use(adminAiLimiter);
 
 router.get('/status',          aiAdminController.getStatus);
 router.post('/chat',           aiAdminController.chat);

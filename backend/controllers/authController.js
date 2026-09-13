@@ -53,10 +53,6 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Please provide name, phone number, and password' });
     }
 
-    if (typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long for security' });
-    }
-
     const validRoles = ['user', 'artisan'];
     const userRole = validRoles.includes(role) ? role : 'user';
     const cleanPhone = phone.replace(/\D/g, '');

@@ -6,8 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { protect, admin, artisan, artisanOnly } = require('../middleware/auth');
-const { orderLimiter } = require('../middleware/rateLimiter');
+const { protect, admin, artisan, artisanOnly, artisanOrAdmin } = require('../middleware/auth');
 const {
   createOrder,
   getMyOrders,
@@ -24,8 +23,8 @@ const {
 } = require('../controllers/orderController');
 
 // ── Customer Routes ──────────────────────────────────────────────────────────
-router.post('/', orderLimiter, protect, createOrder);
-router.post('/create', orderLimiter, protect, createOrder);              // explicit alias
+router.post('/', protect, createOrder);
+router.post('/create', protect, createOrder);              // explicit alias
 router.post('/calculate-total', protect, calculateTotal); // price preview
 router.get('/my', protect, getMyOrders);
 router.get('/:id', protect, getOrderById);
@@ -36,7 +35,7 @@ router.put('/:id/pay', protect, payOrder);                 // legacy UTR flow
 
 // ── Admin Routes ─────────────────────────────────────────────────────────────
 router.get('/', protect, admin, getAllOrders);
-router.put('/:id/status', protect, admin, updateOrderStatus);
+router.put('/:id/status', protect, artisanOrAdmin, updateOrderStatus);
 router.put('/:id/verify-payment', protect, artisanOnly, verifyPayment);
 router.post('/:id/refund', protect, admin, initiateRefund);
 

@@ -31,13 +31,13 @@ const uploadMiddleware = (req, res, next) => {
   });
 };
 
-// Product upload routes (Rate-limited, strictly validates safe MIME types)
-router.post('/upload', uploadLimiter, uploadMiddleware, uploadDirect);
+// Product upload routes (Public so onboarding artisans can upload QR code & profile photo before login)
+router.post('/upload', uploadMiddleware, uploadDirect);
 
 // Admin + Artisan routes
 router.post('/', protect, artisan, createProduct);
 router.put('/:id', protect, artisan, updateProduct);
 router.delete('/:id', protect, artisan, deleteProduct);
-router.post('/:id/image', protect, artisan, uploadLimiter, uploadMiddleware, uploadProductImage);
+router.post('/:id/image', protect, artisan, uploadMiddleware, uploadProductImage);
 
 module.exports = router;

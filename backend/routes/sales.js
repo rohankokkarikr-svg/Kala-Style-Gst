@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { protect, admin, artisanOrAdmin } = require('../middleware/auth');
+const { protect, admin } = require('../middleware/auth');
 const { recordScanSale, getDailySales, getSalesSummary } = require('../controllers/salesController');
 
-// Sales routes — restricted strictly to registered artisans and admins
-router.post('/scan', protect, artisanOrAdmin, recordScanSale);
-router.get('/daily', protect, admin, getDailySales);
-router.get('/summary', protect, admin, getSalesSummary);
+// Sales routes
+router.post('/scan', protect, recordScanSale);
+router.get('/daily', protect, getDailySales);
+router.get('/summary', protect, getSalesSummary);
 
 module.exports = router;

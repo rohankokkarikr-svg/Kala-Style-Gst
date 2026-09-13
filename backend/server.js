@@ -47,72 +47,23 @@ const io = new Server(server, {
 initRealtime(io);
 
 // Rate limiting middleware
-const { generalLimiter } = require('./middleware/rateLimiter');
-
-// CORS configuration — strict explicit origins in production
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'https://kalastyle.netlify.app',
-  'https://kalastyle-ai.netlify.app',
-  'http://localhost:3000',
-  'http://localhost:5173',
-].filter(Boolean);
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow non-browser requests (e.g. mobile apps, curl, server-to-server)
-    if (!origin) return callback(null, true);
-    if (
-      process.env.NODE_ENV !== 'production' ||
-      allowedOrigins.includes(origin) ||
-      allowedOrigins.some(o => origin.endsWith('.netlify.app'))
-    ) {
-      return callback(null, true);
-    }
-    return callback(new Error('CORS blocked: Origin not authorized'));
-  },
+// Enable open CORS for all clients (mobile, local dev, preview servers)
+app.use(cors({
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature'],
-  maxAge: 86400,
-};
+}));
 
-// Middleware
-app.use(cors(corsOptions));
+// Permissive Helmet configuration (no CSP restrictions)
 app.use(helmet({
-  crossOriginResourcePolicy: false, // Allows cross-origin images for Cloudinary / CDNs
-  frameguard: { action: 'deny' },   // Anti-clickjacking
-  xContentTypeOptions: true,        // Anti-MIME sniffing
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true,
-  },
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://checkout.razorpay.com", "https://api.razorpay.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-      imgSrc: ["'self'", "data:", "blob:", "https://res.cloudinary.com", "https://images.unsplash.com", "https://*.supabase.co"],
-      connectSrc: [
-        "'self'",
-        "https://*.supabase.co",
-        "https://api.razorpay.com",
-        "https://generativelanguage.googleapis.com",
-        "wss:",
-        "ws:",
-      ],
-      frameSrc: ["'self'", "https://api.razorpay.com"],
-      objectSrc: ["'none'"],
-      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
-    },
-  },
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false,
+  frameguard: false,
 }));
 app.use(compression());
 app.use(morgan('dev'));
-app.use('/api/', generalLimiter);
 app.use(express.json({
   limit: '10mb',
   verify: (req, res, buf) => {
