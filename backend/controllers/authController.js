@@ -61,60 +61,108 @@ exports.register = async (req, res) => {
     // Check if user exists (by email OR phone)
     const { data: existingUsers } = await supabase
       .from('users')
-      .select('id')
+      .select('*')
       .or(`email.eq.${userEmail},phone.eq.${cleanPhone},email.eq.${cleanPhone}`)
-      .limit(1);
+      .limit(5);
 
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(400).json({ error: 'User already exists with this phone number or email' });
+    let user = null;
+    const existingWithPhone = existingUsers?.find(u => u.phone && u.phone === cleanPhone);
+    const existingWithEmail = existingUsers?.find(u => u.email && u.email.toLowerCase() === userEmail);
+
+    if (existingWithPhone) {
+      return res.status(400).json({ error: 'An account with this phone number already exists.' });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
-    const { data: user, error } = await supabase
-      .from('users')
-      .insert([{
-        name,
-        email: userEmail,
-        phone: cleanPhone || phone,
-        password: hashedPassword,
-        role: userRole,
-        status: 'active'
-      }])
-      .select()
-      .single();
+    if (existingWithEmail) {
+      // If user exists by email but has no phone (e.g. created via OTP session), update it into full account
+      if (!existingWithEmail.phone) {
+        const { data: updatedUser, error: updateErr } = await supabase
+          .from('users')
+          .update({
+            name,
+            phone: cleanPhone,
+            password: hashedPassword,
+            role: userRole,
+            status: 'active'
+          })
+          .eq('id', existingWithEmail.id)
+          .select()
+          .single();
 
-    if (error) throw error;
+        if (updateErr) throw updateErr;
+        user = updatedUser;
+      } else {
+        return res.status(400).json({ error: 'An account with this email address already exists. Please login instead.' });
+      }
+    } else {
+      // Create user
+      const { data: newUser, error } = await supabase
+        .from('users')
+        .insert([{
+          name,
+          email: userEmail,
+          phone: cleanPhone || phone,
+          password: hashedPassword,
+          role: userRole,
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      user = newUser;
+    }
 
     // If artisan, also create artisan_profiles row with UPI information
     let artisanProfile = null;
     if (userRole === 'artisan') {
       const bioWithUpi = formatBioWithUpi('', upi_id, upi_qr_code);
-      const { data: profile, error: profileError } = await supabase
+      const { data: existingProfile } = await supabase
         .from('artisan_profiles')
-        .insert([{
-          user_id: user.id,
-          store_name: store_name || name,
-          artisan_type: artisan_type || 'General',
-          bio: bioWithUpi,
-          verification_status: 'pending'
-        }])
-        .select()
-        .single();
-      if (!profileError && profile) {
-        artisanProfile = parseArtisanUpi(profile);
-        try {
-          const { emitEvent } = require('../ai/aiEventBus');
-          emitEvent('ARTISAN_REGISTERED', 'artisan', profile.id, {
-            store_name: profile.store_name,
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingProfile) {
+        const { data: profile } = await supabase
+          .from('artisan_profiles')
+          .update({
+            store_name: store_name || name,
+            artisan_type: artisan_type || 'General',
+            bio: bioWithUpi,
+          })
+          .eq('user_id', user.id)
+          .select()
+          .single();
+        artisanProfile = profile ? parseArtisanUpi(profile) : null;
+      } else {
+        const { data: profile, error: profileError } = await supabase
+          .from('artisan_profiles')
+          .insert([{
             user_id: user.id,
-            bio: profile.bio,
-            artisan_type: profile.artisan_type,
-          });
-        } catch (e) {}
+            store_name: store_name || name,
+            artisan_type: artisan_type || 'General',
+            bio: bioWithUpi,
+            verification_status: 'pending'
+          }])
+          .select()
+          .single();
+        if (!profileError && profile) {
+          artisanProfile = parseArtisanUpi(profile);
+          try {
+            const { emitEvent } = require('../ai/aiEventBus');
+            emitEvent('ARTISAN_REGISTERED', 'artisan', profile.id, {
+              store_name: profile.store_name,
+              user_id: user.id,
+              bio: profile.bio,
+              artisan_type: profile.artisan_type,
+            });
+          } catch (e) {}
+        }
       }
     }
 

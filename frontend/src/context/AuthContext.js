@@ -163,7 +163,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Supabase Email OTP: Verify OTP ───────────────────────────
-  const verifyOtp = async (email, otpToken) => {
+  const verifyOtp = async (email, otpToken, syncSession = true) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
@@ -193,6 +193,11 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
+      // If called during Signup flow, do not sync session yet; signup() will register full profile
+      if (!syncSession) {
+        return { success: true, data };
+      }
+
       const session = data?.session;
       const sbUser = data?.user;
 
@@ -215,36 +220,47 @@ export const AuthProvider = ({ children }) => {
       toast.success(`Welcome to KalaStyle AI, ${normalizedUser.name || 'Friend'}! ✨`);
       return normalizedUser;
     } catch (err) {
-      throw new Error(err.message || 'Something went wrong. Please try again.');
+      const errMsg = err.response?.data?.error || err.message || 'Something went wrong. Please try again.';
+      throw new Error(errMsg);
     }
   };
 
   // ─── Existing Password Login ─────────────────────────────────
   const login = async (phone, password) => {
-    const { data } = await authAPI.login({ phone, password });
-    const normalizedUser = {
-      ...data.user,
-      role: (data.user?.role || 'user').trim().toLowerCase(),
-    };
-    localStorage.setItem('sh_token', data.token);
-    localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
-    setUser(normalizedUser);
-    toast.success(`Welcome back, ${normalizedUser.name}! 👑`);
-    return normalizedUser;
+    try {
+      const { data } = await authAPI.login({ phone, password });
+      const normalizedUser = {
+        ...data.user,
+        role: (data.user?.role || 'user').trim().toLowerCase(),
+      };
+      localStorage.setItem('sh_token', data.token);
+      localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
+      setUser(normalizedUser);
+      toast.success(`Welcome back, ${normalizedUser.name}! 👑`);
+      return normalizedUser;
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'Failed to log in';
+      throw new Error(errMsg);
+    }
   };
 
   // ─── Signup ──────────────────────────────────────────────────
   const signup = async (name, phone, password, role = 'user', store_name, artisan_type, email) => {
-    const { data } = await authAPI.signup({ name, phone, password, role, store_name, artisan_type, email });
-    const normalizedUser = {
-      ...data.user,
-      role: (data.user?.role || 'user').trim().toLowerCase(),
-    };
-    localStorage.setItem('sh_token', data.token);
-    localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
-    setUser(normalizedUser);
-    toast.success('Account created! Welcome to KalaStyle AI ✨');
-    return normalizedUser;
+    try {
+      const { data } = await authAPI.signup({ name, phone, password, role, store_name, artisan_type, email });
+      const normalizedUser = {
+        ...data.user,
+        role: (data.user?.role || 'user').trim().toLowerCase(),
+      };
+      localStorage.setItem('sh_token', data.token);
+      localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
+      setUser(normalizedUser);
+      toast.success('Account created! Welcome to KalaStyle AI ✨');
+      return normalizedUser;
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
+      throw new Error(errMsg);
+    }
   };
 
   // ─── Logout ──────────────────────────────────────────────────

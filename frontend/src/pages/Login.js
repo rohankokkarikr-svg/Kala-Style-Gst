@@ -241,7 +241,7 @@ export default function Login() {
       const user = await login(valueToSubmit, password);
       handleRedirectAfterAuth(user);
     } catch (err) {
-      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to log in');
+      toast.error(err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to log in');
     } finally {
       setPassLoading(false);
     }

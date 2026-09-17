@@ -132,8 +132,8 @@ export default function Signup() {
     const cleanPhone = phone.replace(/\D/g, '');
 
     try {
-      // 1. Verify OTP with Supabase Auth
-      await verifyOtp(cleanEmail, code);
+      // 1. Verify OTP with Supabase Auth (syncSession = false so signup creates the full profile)
+      await verifyOtp(cleanEmail, code, false);
 
       // 2. Complete registration in database with role & password
       await signup(
@@ -154,8 +154,9 @@ export default function Signup() {
 
       navigate(role === 'artisan' ? '/artisan' : '/');
     } catch (err) {
-      setOtpError(err.message);
-      toast.error(err.message || 'Verification failed. Please check the code.');
+      const errMsg = err.response?.data?.error || err.message || 'Verification failed. Please check the code.';
+      setOtpError(errMsg);
+      toast.error(errMsg);
       // Clear OTP fields on error
       setOtp(['', '', '', '', '', '', '', '']);
       otpInputsRef.current[0]?.focus();
