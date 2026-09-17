@@ -16,13 +16,37 @@ const protect = async (req, res, next) => {
       console.error('CRITICAL: JWT_SECRET environment variable is not set');
       return res.status(500).json({ error: 'Server configuration error' });
     }
-    const decoded = jwt.verify(token, jwtSecret);
+    
+    let decodedId = null;
+    try {
+      const decoded = jwt.verify(token, jwtSecret);
+      decodedId = decoded.id;
+    } catch (jwtErr) {
+      // Fallback: check if valid Supabase Auth session token
+      try {
+        const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
+        if (!sbError && sbUser?.email) {
+          const { data: dbUser } = await supabase
+            .from('users')
+            .select('id')
+            .ilike('email', sbUser.email.trim().toLowerCase())
+            .maybeSingle();
+          if (dbUser) {
+            decodedId = dbUser.id;
+          }
+        }
+      } catch (sbErr) {}
+    }
+
+    if (!decodedId) {
+      return res.status(401).json({ error: 'Not authorized, token failed' });
+    }
 
     // Check if user still exists in DB
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('id', decoded.id)
+      .eq('id', decodedId)
       .single();
 
     if (error || !user) {
@@ -90,8 +114,26 @@ const optionalProtect = async (req, res, next) => {
   try {
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) return next();
-    const decoded = jwt.verify(token, jwtSecret);
-    const { data: user } = await supabase.from('users').select('*').eq('id', decoded.id).single();
+    let decodedId = null;
+    try {
+      const decoded = jwt.verify(token, jwtSecret);
+      decodedId = decoded.id;
+    } catch (jwtErr) {
+      try {
+        const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
+        if (!sbError && sbUser?.email) {
+          const { data: dbUser } = await supabase
+            .from('users')
+            .select('id')
+            .ilike('email', sbUser.email.trim().toLowerCase())
+            .maybeSingle();
+          if (dbUser) decodedId = dbUser.id;
+        }
+      } catch (sbErr) {}
+    }
+    if (!decodedId) return next();
+
+    const { data: user } = await supabase.from('users').select('*').eq('id', decodedId).single();
     if (user && user.status !== 'blocked' && user.status !== 'suspended') {
       delete user.password;
       delete user.password_hash;

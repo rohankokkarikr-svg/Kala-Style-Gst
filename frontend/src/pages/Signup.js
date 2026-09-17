@@ -66,6 +66,18 @@ export default function Signup() {
           </div>
         )}
 
+        {role === 'user' && (
+          <Link
+            to="/login"
+            className="flex items-center justify-between p-3 rounded-lg bg-gold-500/10 border border-gold-500/30 text-gold-400 text-xs sm:text-sm hover:bg-gold-500/20 transition-all"
+          >
+            <span className="flex items-center gap-1.5 font-medium">
+              ✉️ Prefer 1-Click Free Email OTP login?
+            </span>
+            <span className="font-bold underline">Continue →</span>
+          </Link>
+        )}
+
         <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-4">
             <input id="signup-name" name="name" type="text" required className="input-field" placeholder="Full Name"

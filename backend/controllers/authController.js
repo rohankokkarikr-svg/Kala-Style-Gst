@@ -451,4 +451,98 @@ exports.getLeaderboard = async (req, res) => {
   }
 };
 
+exports.syncOtpSession = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    let email = req.body.email;
+    let supabaseUid = req.body.supabase_uid;
+
+    // Check if token provided either in Authorization header or in body
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
+    if (token) {
+      try {
+        const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
+        if (sbUser && !sbError) {
+          email = sbUser.email || email;
+          supabaseUid = sbUser.id || supabaseUid;
+        }
+      } catch (e) {
+        console.warn('Could not verify Supabase token directly via getUser:', e.message);
+      }
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: 'Valid email is required to sync OTP session' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if user already exists in public.users table (case-insensitive)
+    const { data: existingUsers, error: userFindErr } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('email', cleanEmail)
+      .limit(1);
+
+    let user = existingUsers && existingUsers[0];
+
+    if (user) {
+      if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
+        return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
+      }
+      user.role = (user.role || 'user').trim().toLowerCase();
+    } else {
+      // Create user profile with existing schema and default role 'user' (never admin)
+      const defaultName = cleanEmail.split('@')[0];
+      const crypto = require('crypto');
+      const salt = await bcrypt.genSalt(10);
+      const randomSecret = crypto.randomBytes(16).toString('hex');
+      const placeholderHash = await bcrypt.hash(randomSecret, salt);
+
+      const { data: newUser, error: createErr } = await supabase
+        .from('users')
+        .insert([{
+          name: defaultName,
+          email: cleanEmail,
+          password: placeholderHash,
+          role: 'user',
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (createErr) {
+        console.error('Error creating user profile after OTP:', createErr);
+        throw createErr;
+      }
+      user = newUser;
+      user.role = 'user';
+    }
+
+    // Load artisan profile if artisan or admin
+    let artisanProfile = null;
+    if (user.role === 'artisan' || user.role === 'admin') {
+      const { data: profile } = await supabase
+        .from('artisan_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      artisanProfile = profile ? parseArtisanUpi(profile) : null;
+    }
+
+    delete user.password;
+    delete user.password_hash;
+    const backendToken = generateToken(user.id);
+
+    res.json({
+      user: { ...user, artisan_profile: artisanProfile },
+      token: backendToken
+    });
+  } catch (error) {
+    console.error('OTP session sync error:', error);
+    res.status(500).json({ error: 'Server error during OTP session synchronization' });
+  }
+};
+
+
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate as NavRedirect, Link } from 'react-router-dom';
+import { Navigate as NavRedirect, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 function getStoredAuth() {
@@ -17,9 +17,10 @@ function getStoredAuth() {
 /** Protects any route behind authentication */
 export function PrivateRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <PageLoader />;
   const authed = isAuthenticated || Boolean(getStoredAuth()?.token);
-  return authed ? children : <NavRedirect to="/login" replace />;
+  return authed ? children : <NavRedirect to="/login" state={{ from: location }} replace />;
 }
 
 /** Only allows admin-role users */

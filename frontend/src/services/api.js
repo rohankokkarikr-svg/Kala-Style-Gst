@@ -53,6 +53,7 @@ api.interceptors.response.use(
 export const authAPI = {
   login:          (data) => api.post('/auth/login', data),
   signup:         (data) => api.post('/auth/signup', data),
+  otpSession:     (data) => api.post('/auth/otp-session', data),
   me:             ()     => api.get('/auth/me'),
   getRewards:     ()     => api.get('/auth/rewards'),
   getLeaderboard: ()     => api.get('/auth/leaderboard'),
