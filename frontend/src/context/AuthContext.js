@@ -142,13 +142,16 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (error) {
+        console.error('Supabase signInWithOtp error:', error);
         const msg = (error.message || '').toLowerCase();
         if (error.status === 429 || msg.includes('rate') || msg.includes('limit') || msg.includes('over_email_send_rate_limit')) {
           throw new Error('Too many OTP requests. Please wait before requesting another code.');
         } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
           throw new Error('Unable to connect. Please check your internet connection and try again.');
+        } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
+          throw new Error('Email delivery failed: Supabase SMTP server error. Please save Brevo SMTP settings in Supabase Dashboard.');
         } else {
-          throw new Error('Something went wrong. Please try again.');
+          throw new Error(error.message || 'Something went wrong. Please try again.');
         }
       }
 
