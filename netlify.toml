@@ -6,7 +6,8 @@
 [build.environment]
   CI = "false"
   REACT_APP_SUPABASE_URL = "https://fwuhlhaadhhveuljsqbh.supabase.co"
-  REACT_APP_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdmxuanN3bGVicHZhcG9sZmZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5ODAzMjQsImV4cCI6MjA5MzU1NjMyNH0.TyziKPzjkZzhZK68rNl9Zzj-21uVrIhFSIuKuQdHkHY"
+  REACT_APP_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3ODkzODYsImV4cCI6MjEwNDM2NTM4Nn0.1sz1xgfYWGv0Ad6kCZ6KgAcYGJZG2eX0sn3o91nNlJ8"
+
   REACT_APP_LOCATIONIQ_API_KEY = "pk.f2bad577bd835e11c81ffd571d5c353b"
   REACT_APP_API_URL = "https://style-heaven-backend.onrender.com/api"
   REACT_APP_RAZORPAY_KEY_ID = "rzp_live_TamouXgJy9WoAl"
