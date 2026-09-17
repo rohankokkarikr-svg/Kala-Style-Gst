@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function Login() {
-  // Auth mode: 'otp' (default free email OTP) vs 'password' (legacy email/phone + password)
-  const [authMode, setAuthMode] = useState('otp');
+  // Auth mode: 'password' (default: email/phone + password for returning users) vs 'otp' (passwordless email OTP)
+  const [authMode, setAuthMode] = useState('password');
 
   // OTP flow state: 'email' (input screen) vs 'otp' (verify 6-digit screen)
   const [otpStep, setOtpStep] = useState('email');
@@ -286,20 +286,6 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              setAuthMode('otp');
-              setOtpError('');
-            }}
-            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-md transition-all ${
-              authMode === 'otp'
-                ? 'bg-gradient-luxury text-dark-900 font-bold shadow-md'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            ✉️ Email OTP (Passwordless)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
               setAuthMode('password');
               setOtpError('');
             }}
@@ -309,7 +295,21 @@ export default function Login() {
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            🔑 Password
+            🔑 Password Login
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('otp');
+              setOtpError('');
+            }}
+            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-md transition-all ${
+              authMode === 'otp'
+                ? 'bg-gradient-luxury text-dark-900 font-bold shadow-md'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            ✉️ Email OTP
           </button>
         </div>
 

@@ -230,9 +230,9 @@ export const AuthProvider = ({ children }) => {
     return normalizedUser;
   };
 
-  // ─── Existing Signup ─────────────────────────────────────────
-  const signup = async (name, phone, password, role = 'user', store_name, artisan_type) => {
-    const { data } = await authAPI.signup({ name, phone, password, role, store_name, artisan_type });
+  // ─── Signup ──────────────────────────────────────────────────
+  const signup = async (name, phone, password, role = 'user', store_name, artisan_type, email) => {
+    const { data } = await authAPI.signup({ name, phone, password, role, store_name, artisan_type, email });
     const normalizedUser = {
       ...data.user,
       role: (data.user?.role || 'user').trim().toLowerCase(),
