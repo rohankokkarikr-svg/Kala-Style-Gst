@@ -111,6 +111,7 @@ const SAFETY_LEVELS = {
   detect_delayed_shipments: 1,
   get_pending_approvals: 1,
   get_agent_memory: 1,
+  get_hero_banners: 1,
   // AI content generation (read-like, no side effects)
   generate_product_description: 1,
   generate_ad_copy: 1,
@@ -128,6 +129,7 @@ const SAFETY_LEVELS = {
   resolve_complaint: 2,
   update_automation_rule: 2,
   create_approval_request: 2,
+  create_hero_banner_approval: 2,
   // Marketing campaigns require approval before any publishing
   generate_marketing_campaign: 2,
 
@@ -136,6 +138,7 @@ const SAFETY_LEVELS = {
   reject_product: 3,
   cancel_order: 3,
   update_product_inventory: 3,
+  update_hero_banners: 3,
 };
 
 /**
@@ -216,14 +219,48 @@ async function executeTool(toolName, args = {}, context = {}) {
             .ilike('category', args.category ? `%${args.category}%` : '%')
             .limit(12)
         );
-        result = await marketingService.generateCampaign({
+        const campaignResult = await marketingService.generateCampaign({
           theme: args.theme,
           products: marketingProducts || [],
           audience: args.audience || 'handmade craft enthusiasts',
           platform: args.platform || 'Social Media',
         });
+
+        // ✅ AUTO-CREATE approval record so admin sees it immediately in the Approvals tab
+        // This runs regardless of whether the AI calls create_approval_request separately
+        let approvalRecord = null;
+        try {
+          approvalRecord = await agentApprovalService.createApproval({
+            toolName: 'generate_marketing_campaign',
+            toolArgs: {
+              theme: args.theme,
+              platform: args.platform || 'Social Media',
+              audience: args.audience || 'handmade craft enthusiasts',
+              category: args.category || null,
+              campaignContentPreview: (campaignResult.campaign || '').substring(0, 300) + '...',
+            },
+            description: `Review and approve the AI-generated "${args.theme}" marketing campaign for ${args.platform || 'Social Media'} before publishing. Content has been generated and is ready for your review.`,
+            riskLevel: 'HIGH',
+            adminId: adminId || null,
+            conversationId,
+          });
+        } catch (approvalErr) {
+          console.warn('⚠️ [AI Tool Executor] Could not auto-create approval record:', approvalErr.message);
+        }
+
+        result = {
+          ...campaignResult,
+          requiresApproval: true,
+          approvalId: approvalRecord?.id || null,
+          approvalStatus: 'PENDING',
+          approvalMessage: approvalRecord
+            ? `✅ Approval request created (ID: ${approvalRecord.id}). Go to the **Approvals tab** in AI Operations Manager to review and approve this campaign before publishing.`
+            : '⚠️ Campaign generated. Please review before publishing. Note: approval record could not be auto-created — run the database migration SQL first.',
+        };
+        decision = 'approval_auto_created';
         break;
       }
+
 
       case 'generate_ad_copy': {
         entityType = 'product';
@@ -324,6 +361,80 @@ async function executeTool(toolName, args = {}, context = {}) {
         break;
       }
 
+      // ─── HERO & STOREFRONT BANNER TOOLS ─────────────────────────────
+      case 'get_hero_banners': {
+        const { readSettings } = require('../controllers/settingsController');
+        const currentSettings = readSettings();
+        result = {
+          heroSlides: currentSettings.heroSlides || [],
+          discountBanner: currentSettings.discountBanner || null,
+          totalSlides: (currentSettings.heroSlides || []).length,
+        };
+        break;
+      }
+
+      case 'create_hero_banner_approval': {
+        entityType = 'hero_banner';
+        const festiveImages = {
+          ganesh: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047566/kalastyle-artisan-marketplace/xtzypfezplersfalej58.jpg',
+          diwali: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048918/kalastyle-artisan-marketplace/jkjs1hgqonmbq9h3eizd.jpg',
+          textile: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+          wood: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047399/kalastyle-artisan-marketplace/m4z3g3pnrgfwpaixwlbg.jpg',
+        };
+
+        const themeStr = (args.theme || args.headline || '').toLowerCase();
+        let selectedImage = args.image;
+        if (!selectedImage) {
+          if (themeStr.includes('ganesh')) selectedImage = festiveImages.ganesh;
+          else if (themeStr.includes('diwali')) selectedImage = festiveImages.diwali;
+          else if (themeStr.includes('handloom') || themeStr.includes('textile')) selectedImage = festiveImages.textile;
+          else selectedImage = festiveImages.ganesh;
+        }
+
+        const bannerSlide = {
+          headline: args.headline,
+          subtitle: args.subtitle,
+          badgeText: args.badgeText || (args.theme ? `✦ ${args.theme} Special` : '✦ Festive Special'),
+          badgeType: 'sale',
+          buttonText: args.buttonText || 'Explore Festive Crafts',
+          buttonLink: args.buttonLink || '/products',
+          image: selectedImage,
+          align: args.align || 'center',
+          theme: args.theme || 'Festival',
+        };
+
+        const approval = await agentApprovalService.createApproval({
+          toolName: 'add_hero_slide',
+          toolArgs: bannerSlide,
+          description: `Add Homepage Hero Banner for ${args.theme || 'Festival'}: "${args.headline}"`,
+          riskLevel: 'HIGH',
+          adminId: adminId || null,
+          conversationId,
+        });
+
+        result = {
+          success: true,
+          approvalId: approval.id,
+          status: 'PENDING',
+          bannerProposed: bannerSlide,
+          message: `✅ Approval request created successfully (ID: ${approval.id}). Go to the **Approvals tab** in the AI Operations Manager to view and click **✓ Approve** to publish this banner live to the homepage!`,
+        };
+        decision = 'approval_requested';
+        break;
+      }
+
+      case 'update_hero_banners': {
+        entityType = 'hero_banner';
+        const { applySettingsUpdate } = require('../controllers/settingsController');
+        const updated = await applySettingsUpdate({ heroSlides: args.slides });
+        result = {
+          success: true,
+          slides: updated.heroSlides,
+          message: `Updated homepage hero banners successfully.`,
+        };
+        break;
+      }
+
       // ─── APPROVAL MANAGEMENT TOOLS ───────────────────────────────────
       case 'get_pending_approvals':
         result = await agentApprovalService.getPendingApprovals();
@@ -336,7 +447,7 @@ async function executeTool(toolName, args = {}, context = {}) {
           toolArgs: args.tool_args || {},
           description: args.description,
           riskLevel: args.risk_level || 'HIGH',
-          adminId: conversationId,
+          adminId: adminId || null,
           conversationId,
         });
         result = {

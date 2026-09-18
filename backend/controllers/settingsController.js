@@ -182,93 +182,104 @@ exports.getSettings = async (req, res) => {
 };
 
 /**
+ * Apply settings updates programmatically (used by admin controller & AI Operations Agent upon approval).
+ */
+async function applySettingsUpdate(updates = {}) {
+  const current = readSettings();
+
+  const normalizedUpdates = {
+    ...updates,
+    ...(updates.platform_name ? { platform_name: updates.platform_name, storeName: updates.platform_name } : {}),
+    ...(updates.storeName ? { storeName: updates.storeName, platform_name: updates.storeName } : {}),
+    ...(updates.contact_email ? { contact_email: updates.contact_email, supportEmail: updates.contact_email } : {}),
+    ...(updates.supportEmail ? { supportEmail: updates.supportEmail, contact_email: updates.supportEmail } : {}),
+    ...(updates.contact_phone ? { contact_phone: updates.contact_phone, supportPhone: updates.contact_phone } : {}),
+    ...(updates.supportPhone ? { supportPhone: updates.supportPhone, contact_phone: updates.supportPhone } : {}),
+    ...(updates.tax_rate !== undefined ? { tax_rate: updates.tax_rate, taxRate: String(updates.tax_rate) } : {}),
+    ...(updates.taxRate !== undefined ? { taxRate: updates.taxRate, tax_rate: Number(updates.taxRate) || 0 } : {}),
+    ...(updates.maintenance_mode !== undefined ? { maintenance_mode: updates.maintenance_mode, maintenanceMode: updates.maintenance_mode } : {}),
+    ...(updates.maintenanceMode !== undefined ? { maintenanceMode: updates.maintenanceMode, maintenance_mode: updates.maintenanceMode } : {}),
+    ...(updates.heroSlides ? { heroSlides: updates.heroSlides, hero_slides: updates.heroSlides } : {}),
+    ...(updates.hero_slides ? { hero_slides: updates.hero_slides, heroSlides: updates.hero_slides } : {}),
+    ...(updates.discountBanner ? { discountBanner: updates.discountBanner, discount_banner: updates.discountBanner } : {}),
+    ...(updates.discount_banner ? { discount_banner: updates.discount_banner, discountBanner: updates.discount_banner } : {}),
+    ...(updates.delivery_fee !== undefined ? { delivery_fee: Number(updates.delivery_fee) || 0 } : {}),
+    ...(updates.free_delivery_above !== undefined ? { free_delivery_above: Number(updates.free_delivery_above) || 0 } : {}),
+    ...(updates.shipping_estimated_days !== undefined ? { shipping_estimated_days: updates.shipping_estimated_days } : {}),
+    ...(updates.cod_enabled !== undefined ? { cod_enabled: Boolean(updates.cod_enabled) } : {}),
+    ...(updates.cod_min_order_value !== undefined ? { cod_min_order_value: Number(updates.cod_min_order_value) || 0 } : {}),
+    ...(updates.cod_max_order_value !== undefined ? { cod_max_order_value: Number(updates.cod_max_order_value) || 0 } : {}),
+  };
+
+  // Invalidate ecommerce cache
+  try {
+    const { invalidateEcomCache } = require('../config/ecommerce');
+    if (typeof invalidateEcomCache === 'function') invalidateEcomCache();
+  } catch {}
+
+  const updated = { ...current, ...normalizedUpdates };
+  writeSettings(updated);
+
+  // Persist hero slides to Supabase Storage 'site-config' bucket for permanent cloud persistence
+  const activeHeroSlides = normalizedUpdates.heroSlides || updates.heroSlides || updates.hero_slides;
+  if (Array.isArray(activeHeroSlides) && activeHeroSlides.length > 0) {
+    try {
+      await supabase.storage
+        .from('site-config')
+        .upload('hero_slides.json', Buffer.from(JSON.stringify(activeHeroSlides, null, 2)), {
+          contentType: 'application/json',
+          upsert: true,
+        });
+    } catch (storageErr) {
+      console.warn('Failed to upload hero_slides.json to Supabase storage:', storageErr.message);
+    }
+  }
+
+  // Persist only valid columns to Supabase platform_settings to avoid schema errors
+  const validPlatformCols = [
+    'platform_name', 'contact_email', 'contact_phone', 'currency', 'currency_symbol',
+    'tax_rate', 'platform_commission', 'ai_features_enabled', 'daily_ai_limit_per_artisan',
+    'auto_approve_products', 'maintenance_mode', 'delivery_fee', 'free_delivery_above',
+    'cod_enabled', 'cod_max_order_value', 'cod_min_order_value', 'cancellation_window_hours',
+    'reward_eligible_count'
+  ];
+  const platformPayload = { id: 'main', updated_at: new Date().toISOString() };
+  for (const key of validPlatformCols) {
+    if (normalizedUpdates[key] !== undefined) {
+      platformPayload[key] = normalizedUpdates[key];
+    }
+  }
+
+  try {
+    await supabase
+      .from('platform_settings')
+      .upsert([platformPayload]);
+  } catch (e) {
+    console.warn('Failed to upsert to Supabase platform_settings:', e.message);
+  }
+
+  // Broadcast live to all devices (desktop, phone, tablet)
+  try {
+    const { broadcastSync } = require('../utils/realtime');
+    broadcastSync('SETTINGS_UPDATED', updated);
+  } catch (bErr) {}
+
+  return updated;
+}
+
+/**
  * PUT /api/settings — admin only
  */
 exports.updateSettings = async (req, res) => {
   try {
-    const current = readSettings();
-    const updates = req.body;
-
-    const normalizedUpdates = {
-      ...updates,
-      ...(updates.platform_name ? { platform_name: updates.platform_name, storeName: updates.platform_name } : {}),
-      ...(updates.storeName ? { storeName: updates.storeName, platform_name: updates.storeName } : {}),
-      ...(updates.contact_email ? { contact_email: updates.contact_email, supportEmail: updates.contact_email } : {}),
-      ...(updates.supportEmail ? { supportEmail: updates.supportEmail, contact_email: updates.supportEmail } : {}),
-      ...(updates.contact_phone ? { contact_phone: updates.contact_phone, supportPhone: updates.contact_phone } : {}),
-      ...(updates.supportPhone ? { supportPhone: updates.supportPhone, contact_phone: updates.supportPhone } : {}),
-      ...(updates.tax_rate !== undefined ? { tax_rate: updates.tax_rate, taxRate: String(updates.tax_rate) } : {}),
-      ...(updates.taxRate !== undefined ? { taxRate: updates.taxRate, tax_rate: Number(updates.taxRate) || 0 } : {}),
-      ...(updates.maintenance_mode !== undefined ? { maintenance_mode: updates.maintenance_mode, maintenanceMode: updates.maintenance_mode } : {}),
-      ...(updates.maintenanceMode !== undefined ? { maintenanceMode: updates.maintenanceMode, maintenance_mode: updates.maintenanceMode } : {}),
-      ...(updates.heroSlides ? { heroSlides: updates.heroSlides, hero_slides: updates.heroSlides } : {}),
-      ...(updates.hero_slides ? { hero_slides: updates.hero_slides, heroSlides: updates.hero_slides } : {}),
-      ...(updates.discountBanner ? { discountBanner: updates.discountBanner, discount_banner: updates.discountBanner } : {}),
-      ...(updates.discount_banner ? { discount_banner: updates.discount_banner, discountBanner: updates.discount_banner } : {}),
-      ...(updates.delivery_fee !== undefined ? { delivery_fee: Number(updates.delivery_fee) || 0 } : {}),
-      ...(updates.free_delivery_above !== undefined ? { free_delivery_above: Number(updates.free_delivery_above) || 0 } : {}),
-      ...(updates.shipping_estimated_days !== undefined ? { shipping_estimated_days: updates.shipping_estimated_days } : {}),
-      ...(updates.cod_enabled !== undefined ? { cod_enabled: Boolean(updates.cod_enabled) } : {}),
-      ...(updates.cod_min_order_value !== undefined ? { cod_min_order_value: Number(updates.cod_min_order_value) || 0 } : {}),
-      ...(updates.cod_max_order_value !== undefined ? { cod_max_order_value: Number(updates.cod_max_order_value) || 0 } : {}),
-    };
-
-    // Invalidate ecommerce cache
-    try {
-      const { invalidateEcomCache } = require('../config/ecommerce');
-      if (typeof invalidateEcomCache === 'function') invalidateEcomCache();
-    } catch {
-      // Ignore if not loaded
-    }
-
-    const updated = { ...current, ...normalizedUpdates };
-    writeSettings(updated);
-
-    // Persist hero slides to Supabase Storage 'site-config' bucket for permanent cloud persistence
-    const activeHeroSlides = normalizedUpdates.heroSlides || updates.heroSlides || updates.hero_slides;
-    if (Array.isArray(activeHeroSlides) && activeHeroSlides.length > 0) {
-      try {
-        await supabase.storage
-          .from('site-config')
-          .upload('hero_slides.json', Buffer.from(JSON.stringify(activeHeroSlides, null, 2)), {
-            contentType: 'application/json',
-            upsert: true,
-          });
-      } catch (storageErr) {
-        console.warn('Failed to upload hero_slides.json to Supabase storage:', storageErr.message);
-      }
-    }
-
-    // Persist only valid columns to Supabase platform_settings to avoid schema errors
-    const validPlatformCols = [
-      'platform_name', 'contact_email', 'contact_phone', 'currency', 'currency_symbol',
-      'tax_rate', 'platform_commission', 'ai_features_enabled', 'daily_ai_limit_per_artisan',
-      'auto_approve_products', 'maintenance_mode', 'delivery_fee', 'free_delivery_above',
-      'cod_enabled', 'cod_max_order_value', 'cod_min_order_value', 'cancellation_window_hours',
-      'reward_eligible_count'
-    ];
-    const platformPayload = { id: 'main', updated_at: new Date().toISOString() };
-    for (const key of validPlatformCols) {
-      if (normalizedUpdates[key] !== undefined) {
-        platformPayload[key] = normalizedUpdates[key];
-      }
-    }
-
-    try {
-      await supabase
-        .from('platform_settings')
-        .upsert([platformPayload]);
-    } catch (e) {
-      console.warn('Failed to upsert to Supabase platform_settings:', e.message);
-    }
-
-    // Broadcast live to all devices (desktop, phone, tablet)
-    const { broadcastSync } = require('../utils/realtime');
-    broadcastSync('SETTINGS_UPDATED', updated);
-
+    const updated = await applySettingsUpdate(req.body);
     res.json({ success: true, settings: updated });
   } catch (err) {
     console.error('updateSettings error:', err);
     res.status(500).json({ error: 'Failed to save settings' });
   }
 };
+
+exports.readSettings = readSettings;
+exports.applySettingsUpdate = applySettingsUpdate;
+

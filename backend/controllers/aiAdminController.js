@@ -288,12 +288,13 @@ exports.approveAction = async (req, res) => {
     const adminId = req.user?.id;
 
     const updated = await agentApprovalService.approveAction(id, adminId);
+    console.log(`✅ [AI Approval] Approval ${id} approved & executed by admin ${adminId}`);
 
-    // After approval, optionally execute the tool
-    // For now, just mark it approved — the admin can then re-issue the command
-    console.log(`✅ [AI Approval] Approval ${id} approved by admin ${adminId}`);
-
-    res.json({ success: true, approval: updated, message: 'Action approved. Re-issue the command in chat to execute it.' });
+    res.json({
+      success: true,
+      approval: updated,
+      message: updated.executionMessage || 'Action approved and executed live successfully!',
+    });
   } catch (error) {
     console.error('❌ [AI Approval] Approve error:', error.message);
     res.status(500).json({ error: error.message });

@@ -94,6 +94,91 @@ const FUNCTION_DECLARATIONS = [
     },
   },
 
+  // ─── HERO & STOREFRONT BANNER TOOLS ─────────────────────────────
+  {
+    name: 'get_hero_banners',
+    description: 'Retrieve current homepage hero slides/banners and discount banner to inspect active promotions.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'create_hero_banner_approval',
+    description: 'Propose and register an approval request to add a new hero section banner to the homepage for a festival or occasion (e.g., Ganesh Festival, Diwali, Handloom Utsav). Once the admin clicks Approve in the Approvals tab, this banner immediately publishes live to the homepage.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        headline: {
+          type: 'STRING',
+          description: 'Main captivating headline for the hero banner (e.g. "Ganesh Chaturthi Utsav — Sacred Clay Idols & Heritage Crafts")',
+        },
+        subtitle: {
+          type: 'STRING',
+          description: 'Descriptive subtitle highlighting the handcrafted quality, cultural significance, or discount',
+        },
+        badgeText: {
+          type: 'STRING',
+          description: 'Top badge text (e.g. "✦ Ganesh Utsav Special", "★ 25% Off Festive Craft")',
+        },
+        buttonText: {
+          type: 'STRING',
+          description: 'Call to action button label (e.g. "Explore Festive Crafts", "Shop Eco Idols")',
+        },
+        buttonLink: {
+          type: 'STRING',
+          description: 'Target link on click (e.g. "/products", "/products?category=Traditional+Paintings+%26+Wall+Art")',
+        },
+        image: {
+          type: 'STRING',
+          description: 'Banner background image URL (optional — an appropriate high-definition festive craft image will be selected automatically if omitted)',
+        },
+        theme: {
+          type: 'STRING',
+          description: 'Festival or theme name (e.g. "Ganesh Festival", "Diwali", "Navratri")',
+        },
+        align: {
+          type: 'STRING',
+          enum: ['center', 'left', 'right'],
+          description: 'Text alignment on the slide (default: center)',
+        },
+      },
+      required: ['headline', 'subtitle'],
+    },
+  },
+  {
+    name: 'update_hero_banners',
+    description: 'Directly update homepage hero slides. When called without prior authorization, it pauses for administrative approval.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        slides: {
+          type: 'ARRAY',
+          description: 'List of hero slide objects to set',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              headline: { type: 'STRING' },
+              subtitle: { type: 'STRING' },
+              image: { type: 'STRING' },
+              buttonText: { type: 'STRING' },
+              buttonLink: { type: 'STRING' },
+              badgeText: { type: 'STRING' },
+              align: { type: 'STRING' },
+            },
+            required: ['headline', 'subtitle'],
+          },
+        },
+        mode: {
+          type: 'STRING',
+          enum: ['append', 'replace'],
+          description: 'Whether to prepend to existing slides or replace all slides (default: append)',
+        },
+      },
+      required: ['slides'],
+    },
+  },
+
   // ─── RECOMMENDATION TOOLS ─────────────────────────────────────────
   {
     name: 'get_seasonal_context',

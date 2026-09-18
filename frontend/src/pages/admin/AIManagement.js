@@ -17,6 +17,7 @@ import { aiManagerAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const QUICK_PROMPTS = [
+  "Add hero section banners on account of the Ganesh Festival.",
   "Which artisans are waiting for verification?",
   "Show today's orders and payment statuses.",
   "Find low-stock and out-of-stock products.",
@@ -44,6 +45,7 @@ export default function AIManagement() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [approvals, setApprovals] = useState([]);
   const [approvalsLoading, setApprovalsLoading] = useState(false);
+  const [approvalFilter, setApprovalFilter] = useState('pending'); // 'pending' | 'all'
   const [loading, setLoading] = useState(true);
 
   // Chat State
@@ -125,9 +127,10 @@ export default function AIManagement() {
       };
 
       setMessages(prev => [...prev, aiReply]);
-      // Refresh actions and queue in background
+      // Refresh actions, queue, and approvals in background
       aiManagerAPI.getActions({ limit: 30 }).then(r => setActions(r.data || []));
       aiManagerAPI.getQueue().then(r => setQueueData(r.data || { counts: {}, jobs: [] }));
+      fetchApprovals();
     } catch (error) {
       const errText = error.response?.data?.error || error.message || 'Failed to communicate with AI Manager';
       toast.error(errText);
@@ -202,10 +205,11 @@ export default function AIManagement() {
     }
   };
 
-  const fetchApprovals = async () => {
+  const fetchApprovals = async (filterType) => {
+    const f = filterType !== undefined ? filterType : approvalFilter;
     setApprovalsLoading(true);
     try {
-      const res = await aiManagerAPI.getApprovals();
+      const res = await aiManagerAPI.getApprovals({ all: f === 'all' });
       setApprovals(res.data || []);
     } catch (err) {
       console.error('Failed to fetch approvals:', err);
@@ -215,12 +219,15 @@ export default function AIManagement() {
   };
 
   const handleApproveAction = async (id) => {
+    const toastId = toast.loading('Executing approved action & publishing live...');
     try {
-      await aiManagerAPI.approveAction(id);
-      toast.success('Action approved successfully!');
-      setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'APPROVED' } : a));
+      const res = await aiManagerAPI.approveAction(id);
+      const msg = res.data?.message || 'Action approved & executed live successfully!';
+      toast.success(msg, { id: toastId, duration: 5000 });
+      await fetchApprovals();
+      fetchStatusAndData();
     } catch (err) {
-      toast.error('Failed to approve action');
+      toast.error(err.response?.data?.error || 'Failed to approve action', { id: toastId });
     }
   };
 
@@ -228,7 +235,7 @@ export default function AIManagement() {
     try {
       await aiManagerAPI.rejectAction(id, { reason: 'Rejected by admin' });
       toast.success('Action rejected.');
-      setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'REJECTED' } : a));
+      await fetchApprovals();
     } catch (err) {
       toast.error('Failed to reject action');
     }
@@ -302,7 +309,11 @@ export default function AIManagement() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'approvals') fetchApprovals();
+                  if (tab.id === 'health') fetchHealth();
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
                   active
                     ? 'bg-gold-500 text-dark-900 font-semibold shadow-lg shadow-gold-500/20'
@@ -944,79 +955,161 @@ export default function AIManagement() {
       {/* ── TAB 7: Approvals ── */}
       {activeTab === 'approvals' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <HiCheckCircle className="w-6 h-6 text-gold-400" /> Pending AI Action Approvals
+                <HiCheckCircle className="w-6 h-6 text-gold-400" /> AI Action Approvals & Governance
               </h2>
               <p className="text-xs text-gray-400 mt-1">
-                HIGH and CRITICAL risk actions requested by the AI agent that require your explicit approval before execution.
+                HIGH and CRITICAL risk actions requested by the AI agent. Review details, preview banners, and approve to execute live.
               </p>
             </div>
-            <button
-              onClick={fetchApprovals}
-              disabled={approvalsLoading}
-              className="px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs rounded-xl transition-all border border-dark-600 flex items-center gap-2"
-            >
-              <HiRefresh className={`w-4 h-4 ${approvalsLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-dark-900 border border-dark-600 rounded-xl p-1">
+                <button
+                  onClick={() => { setApprovalFilter('pending'); fetchApprovals('pending'); }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                    approvalFilter === 'pending' ? 'bg-gold-500 text-dark-900 shadow' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Pending ({approvals.filter(a => a.status === 'PENDING').length})
+                </button>
+                <button
+                  onClick={() => { setApprovalFilter('all'); fetchApprovals('all'); }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                    approvalFilter === 'all' ? 'bg-gold-500 text-dark-900 shadow' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  All History
+                </button>
+              </div>
+              <button
+                onClick={() => fetchApprovals()}
+                disabled={approvalsLoading}
+                className="px-3.5 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs rounded-xl transition-all border border-dark-600 flex items-center gap-1.5"
+                title="Refresh Approvals"
+              >
+                <HiRefresh className={`w-4 h-4 ${approvalsLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
 
           {approvals.length === 0 ? (
             <div className="bg-dark-800 border border-dark-600 rounded-2xl p-12 text-center text-gray-400 space-y-3">
               <HiCheckCircle className="w-12 h-12 mx-auto text-gray-500" />
-              <p className="text-sm">No pending approval requests.</p>
-              <p className="text-xs">When the AI agent recommends a HIGH or CRITICAL action, it will appear here for your review.</p>
+              <p className="text-sm font-semibold text-gray-300">
+                {approvalFilter === 'pending' ? 'No pending approval requests.' : 'No approval history found.'}
+              </p>
+              <p className="text-xs max-w-md mx-auto">
+                When you ask the AI to add hero banners, launch campaigns, or perform high-risk actions, it registers an approval request here for your sign-off before publishing.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
               {approvals.map((apv) => {
                 const isPending = apv.status === 'PENDING';
+                const isExecuted = apv.status === 'EXECUTED' || apv.status === 'APPROVED';
                 const riskColor = apv.risk_level === 'CRITICAL' ? 'red' : apv.risk_level === 'HIGH' ? 'amber' : 'blue';
                 return (
                   <div key={apv.id} className={`bg-dark-800 border rounded-2xl p-5 space-y-4 ${
-                    isPending ? `border-${riskColor}-500/30` : 'border-dark-600'
+                    isPending ? `border-${riskColor}-500/40 shadow-lg shadow-${riskColor}-500/5` : isExecuted ? 'border-emerald-500/30' : 'border-dark-600'
                   }`}>
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full bg-${riskColor}-500/10 text-${riskColor}-400 border border-${riskColor}-500/20`}>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-${riskColor}-500/10 text-${riskColor}-400 border border-${riskColor}-500/20`}>
                             {apv.risk_level} RISK
                           </span>
-                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                            apv.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400'
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isExecuted ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                             : apv.status === 'REJECTED' ? 'bg-red-500/10 text-red-400'
                             : apv.status === 'EXPIRED' ? 'bg-gray-500/10 text-gray-400'
-                            : 'bg-amber-500/10 text-amber-400'
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                           }`}>
-                            {apv.status}
+                            {apv.status === 'EXECUTED' ? '✓ PUBLISHED LIVE' : apv.status}
                           </span>
                           <span className="text-[10px] font-mono text-gray-500">{apv.tool_name}</span>
                         </div>
-                        <h3 className="text-sm font-semibold text-white">{apv.description}</h3>
+                        <h3 className="text-base font-semibold text-white mt-1">{apv.description}</h3>
                         <p className="text-xs text-gray-400">
                           Requested: {new Date(apv.created_at).toLocaleString('en-IN')}
                           {apv.expires_at && ` • Expires: ${new Date(apv.expires_at).toLocaleString('en-IN')}`}
                         </p>
-                        {apv.tool_args && Object.keys(apv.tool_args).length > 0 && (
-                          <div className="bg-dark-900/60 rounded-lg p-2 text-[10px] font-mono text-gray-400 overflow-x-auto">
+
+                        {/* Visual Hero Banner Preview Card */}
+                        {apv.tool_args?.headline && (
+                          <div className="relative overflow-hidden rounded-xl border border-gold-500/30 bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-4 mt-3 shadow-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gold-400 flex items-center gap-1">
+                                ✦ Hero Banner Live Preview
+                              </span>
+                              {apv.tool_args.theme && (
+                                <span className="text-[10px] text-gray-400 font-mono">
+                                  Theme: {apv.tool_args.theme}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-4 items-center">
+                              {apv.tool_args.image && (
+                                <img
+                                  src={apv.tool_args.image}
+                                  alt={apv.tool_args.headline}
+                                  className="w-full sm:w-44 h-24 object-cover rounded-lg border border-dark-600 shrink-0 shadow-md"
+                                />
+                              )}
+                              <div className="space-y-1.5 flex-1 w-full">
+                                {apv.tool_args.badgeText && (
+                                  <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-300 border border-gold-500/30">
+                                    {apv.tool_args.badgeText}
+                                  </span>
+                                )}
+                                <h4 className="text-base font-serif font-bold text-white leading-tight">
+                                  {apv.tool_args.headline}
+                                </h4>
+                                <p className="text-xs text-gray-300 leading-relaxed line-clamp-2">
+                                  {apv.tool_args.subtitle}
+                                </p>
+                                {apv.tool_args.buttonText && (
+                                  <div className="pt-1">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-dark-900 bg-gold-400 px-3 py-1 rounded-lg">
+                                      {apv.tool_args.buttonText} →
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Execution Result Feedback */}
+                        {apv.execution_result?.message && (
+                          <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 mt-2 flex items-center gap-2">
+                            <span>✅</span>
+                            <span>{apv.execution_result.message}</span>
+                          </div>
+                        )}
+
+                        {/* Raw Arguments collapsible/preview */}
+                        {(!apv.tool_args?.headline) && apv.tool_args && Object.keys(apv.tool_args).length > 0 && (
+                          <div className="bg-dark-900/60 rounded-lg p-2 text-[10px] font-mono text-gray-400 overflow-x-auto mt-2">
                             {JSON.stringify(apv.tool_args, null, 2)}
                           </div>
                         )}
                       </div>
 
                       {isPending && (
-                        <div className="flex gap-2 shrink-0">
+                        <div className="flex flex-col sm:flex-row gap-2 shrink-0 self-start sm:self-center">
                           <button
                             onClick={() => handleApproveAction(apv.id)}
-                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs rounded-xl transition-all"
+                            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-dark-900 font-bold text-xs rounded-xl transition-all shadow-md shadow-emerald-500/20 flex items-center gap-1.5"
                           >
-                            ✓ Approve
+                            <span>✓</span>
+                            <span>Approve & Publish Live</span>
                           </button>
                           <button
                             onClick={() => handleRejectAction(apv.id)}
-                            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold text-xs rounded-xl border border-red-500/30 transition-all"
+                            className="px-3.5 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold text-xs rounded-xl border border-red-500/30 transition-all"
                           >
                             ✕ Reject
                           </button>
