@@ -47,25 +47,37 @@ function getStepIndex(status) {
   return idx === -1 ? 0 : idx;
 }
 
-function StatusBadge({ status, type = 'status', paymentMethod, isDelivered }) {
+function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, shipmentStatus }) {
   const norm = normalizeStatus(status);
-  
+  const shippingDelivered = isDelivered ||
+    String(shipmentStatus || '').toUpperCase() === 'DELIVERED' ||
+    String(shipmentStatus || '').toLowerCase() === 'delivered';
+
   if (type === 'payment') {
+    // COD before collection: cod_pending
     if (norm === 'cod_pending' || status === 'cod_pending') {
       return (
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-          isDelivered 
-            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+          shippingDelivered
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
             : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
         }`}>
-          {isDelivered ? 'COD — Collection Pending' : 'COD — Payment Pending'}
+          {shippingDelivered ? 'COD — Collection Pending' : 'COD — Payment Pending'}
         </span>
       );
     }
-    if (norm === 'paid' || status === 'paid') {
+    // COD after collection (current state: paid) or legacy cod_collected
+    if (norm === 'paid' || status === 'paid' || status === 'cod_collected') {
       return (
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
           {paymentMethod === 'cod' ? 'Paid — COD Collected ✓' : 'Payment Paid ✓'}
+        </span>
+      );
+    }
+    if (norm === 'pending' || status === 'pending') {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+          Payment Pending
         </span>
       );
     }
@@ -76,7 +88,21 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered }) {
         </span>
       );
     }
+    if (status === 'refunded' || status === 'partially_refunded') {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">
+          {status === 'partially_refunded' ? 'Partially Refunded' : 'Refunded'}
+        </span>
+      );
+    }
+    // Fallback
+    return (
+      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-500/20 text-gray-300 border border-gray-500/30">
+        {status || 'Unknown'}
+      </span>
+    );
   }
+
 
   if (type === 'shipping') {
     const sMap = {

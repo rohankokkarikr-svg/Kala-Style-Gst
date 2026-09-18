@@ -115,7 +115,7 @@ router.post('/create-order', protect, async (req, res) => {
       order_id: razorpayOrderId,
       amount: totalAmount * 100, // paise for frontend Razorpay options
       currency: 'INR',
-      key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
+      key_id: process.env.RAZORPAY_KEY_ID || '',
       order: {
         id: order.id,
         order_number: order.order_number,
@@ -608,9 +608,8 @@ router.post('/initialize-order', protect, async (req, res) => {
       return res.status(400).json({ error: 'Order is already paid' });
     }
 
-    const keyId = (process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.startsWith('rzp_test_'))
-      ? process.env.RAZORPAY_KEY_ID.trim().replace(/^["']|["']$/g, '')
-      : 'rzp_live_TamouXgJy9WoAl';
+    const keyId = (process.env.RAZORPAY_KEY_ID || '').trim();
+
     const totalAmount = Number(order.total_amount || order.total_price || 0);
     const amountInPaise = Math.max(100, Math.round(totalAmount * 100));
 
@@ -690,7 +689,7 @@ const createOrderDirect = async (req, res) => {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      key_id: rzpResult.key_id || process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
+      key_id: rzpResult.key_id || process.env.RAZORPAY_KEY_ID || '',
     });
   } catch (err) {
     console.error('[create-order-direct] Exception:', err.message);

@@ -177,7 +177,8 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
       const keyId =
         rzpData.key_id ||
         process.env.REACT_APP_RAZORPAY_KEY_ID ||
-        'rzp_live_TamouXgJy9WoAl';
+        '';
+
 
       const rawPhone = String(phone || currentOrder?.phone || '').replace(/\D/g, '');
       const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : (rawPhone || undefined);

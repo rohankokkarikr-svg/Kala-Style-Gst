@@ -449,13 +449,30 @@ exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', op
       return { success: false, error: `Order ${order.order_number || order.id} is not a Cash on Delivery (COD) order (method: ${order.payment_method}).` };
     }
 
-    // 3. Prevent duplicate confirmation (Idempotent)
+    // 3. Idempotency: prevent duplicate confirmation
     const currentPaymentStatus = String(order.payment_status || '').toLowerCase().trim();
+
+    // Already fully confirmed (paid)
     if (currentPaymentStatus === 'paid') {
       return {
         success: true,
         already_confirmed: true,
         message: `COD payment for order ${order.order_number || order.id} has already been confirmed as collected.`,
+        order,
+      };
+    }
+
+    // Legacy alias: 'cod_collected' was used by an older version — treat as confirmed
+    // and migrate it to 'paid' for consistency with the current state machine.
+    if (currentPaymentStatus === 'cod_collected') {
+      console.log(`[confirmCODCollection] Migrating legacy 'cod_collected' → 'paid' for order ${order.id}`);
+      await supabase.from('orders').update({ payment_status: 'paid', updated_at: new Date().toISOString() }).eq('id', order.id);
+      await supabase.from('payments').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('order_id', order.id);
+      return {
+        success: true,
+        already_confirmed: true,
+        migrated: true,
+        message: `COD payment for order ${order.order_number || order.id} was previously confirmed (legacy state). Migrated to 'paid'.`,
         order,
       };
     }
@@ -467,6 +484,7 @@ exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', op
         error: `Cannot confirm COD collection for order ${order.order_number || order.id}: Current payment_status is '${order.payment_status}', expected 'cod_pending'.`,
       };
     }
+
 
     // 5. Verify shipment status is DELIVERED (or admin override provided)
     const shippingStatus = String(order.shipping_status || '').toUpperCase().trim();

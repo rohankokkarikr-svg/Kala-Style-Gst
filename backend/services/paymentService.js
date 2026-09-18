@@ -2,31 +2,28 @@ const Razorpay = require('razorpay');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 
-// Verified live Razorpay credentials for KalaStyle AI
-const RAZORPAY_FALLBACK_KEY_ID = 'rzp_live_TamouXgJy9WoAl';
-const RAZORPAY_FALLBACK_KEY_SECRET = '6UYg42iNEWzF2u0ViKHoBnNc';
+// ⚠️  IMPORTANT: All Razorpay credentials MUST come from environment variables.
+// DO NOT hardcode key_id or key_secret anywhere in source code.
+// Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your .env / server environment.
 
 const cleanStr = (val) => (val ? String(val).trim().replace(/^["']|["']$/g, '') : '');
 
-// Lazy initializer so missing env vars during test/build do not crash the server on startup
+// Lazy initializer — avoids crashing the server at startup if env is not yet set
 let razorpayInstance = null;
 let activeKeyId = null;
-let activeKeySecret = null;
 
 const getRazorpay = () => {
-  let key_id = cleanStr(process.env.RAZORPAY_KEY_ID);
-  let key_secret = cleanStr(process.env.RAZORPAY_KEY_SECRET);
+  const key_id = cleanStr(process.env.RAZORPAY_KEY_ID);
+  const key_secret = cleanStr(process.env.RAZORPAY_KEY_SECRET);
 
-  // If environment has a test key without test secret or with broken credentials, prioritize confirmed live pair
-  if (!key_id || !key_secret || key_id.startsWith('rzp_test_')) {
-    key_id = RAZORPAY_FALLBACK_KEY_ID;
-    key_secret = RAZORPAY_FALLBACK_KEY_SECRET;
+  if (!key_id || !key_secret) {
+    console.error('[paymentService] ❌ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set in environment variables.');
+    return null;
   }
 
-  if (!razorpayInstance || activeKeyId !== key_id || activeKeySecret !== key_secret) {
+  if (!razorpayInstance || activeKeyId !== key_id) {
     razorpayInstance = new Razorpay({ key_id, key_secret });
     activeKeyId = key_id;
-    activeKeySecret = key_secret;
   }
   return razorpayInstance;
 };
@@ -34,6 +31,8 @@ const getRazorpay = () => {
 // Merchant UPI ID for direct UPI transfers (fallback)
 const MERCHANT_UPI_ID = process.env.MERCHANT_UPI_ID || 'styleheaven@upi';
 const MERCHANT_NAME = process.env.MERCHANT_NAME || 'KalaStyle AI Artisan Marketplace';
+
+
 
 /**
  * Create a Razorpay order
@@ -46,8 +45,7 @@ exports.createRazorpayOrder = async (amount, receipt, notes = {}, isPaise = fals
   try {
     const razorpay = getRazorpay();
     if (!razorpay) {
-      console.warn('[paymentService] Razorpay credentials missing');
-      return { success: false, error: 'Razorpay keys not configured' };
+      return { success: false, error: 'Razorpay payment gateway is not configured. Please contact support.' };
     }
 
     const amountInPaise = isPaise ? Math.round(Number(amount)) : Math.round(Number(amount) * 100);
@@ -63,35 +61,15 @@ exports.createRazorpayOrder = async (amount, receipt, notes = {}, isPaise = fals
       payment_capture: 1,
     };
 
-    try {
-      const order = await razorpay.orders.create(options);
-      return { success: true, order, key_id: activeKeyId || RAZORPAY_FALLBACK_KEY_ID };
-    } catch (primaryErr) {
-      const primaryMsg = primaryErr?.error?.description || primaryErr?.description || primaryErr?.message || '';
-      console.warn('[paymentService] Primary Razorpay auth/order error:', primaryMsg);
-
-      // If primary attempt failed with auth error or key mismatch, retry with verified live pair
-      if (
-        primaryMsg.toLowerCase().includes('auth') ||
-        primaryErr.statusCode === 401 ||
-        activeKeyId !== RAZORPAY_FALLBACK_KEY_ID
-      ) {
-        console.warn('[paymentService] Retrying Razorpay order with verified live keys...');
-        const fallbackRzp = new Razorpay({
-          key_id: RAZORPAY_FALLBACK_KEY_ID,
-          key_secret: RAZORPAY_FALLBACK_KEY_SECRET,
-        });
-        const fallbackOrder = await fallbackRzp.orders.create(options);
-        return { success: true, order: fallbackOrder, key_id: RAZORPAY_FALLBACK_KEY_ID };
-      }
-      throw primaryErr;
-    }
+    const order = await razorpay.orders.create(options);
+    return { success: true, order, key_id: activeKeyId };
   } catch (error) {
-    const errMsg = error?.error?.description || error?.description || error?.message || (typeof error === 'string' ? error : 'Failed to create Razorpay order');
-    console.error('Razorpay order creation failed:', errMsg, error);
+    const errMsg = error?.error?.description || error?.description || error?.message || 'Failed to create Razorpay order';
+    console.error('[paymentService] Razorpay order creation failed:', errMsg);
     return { success: false, error: errMsg };
   }
 };
+
 
 /**
  * Generate UPI QR Code data (UPI Pay URL format)
@@ -146,35 +124,21 @@ exports.getUPIDeepLinks = exports.generateUPIAppLinks;
  */
 exports.verifyRazorpaySignature = (orderId, paymentId, signature) => {
   try {
-    const secrets = [
-      process.env.RAZORPAY_KEY_SECRET,
-      RAZORPAY_FALLBACK_KEY_SECRET,
-    ].filter(Boolean);
-
-    if (!secrets.length || !orderId || !paymentId || !signature) return false;
+    const secret = cleanStr(process.env.RAZORPAY_KEY_SECRET);
+    if (!secret || !orderId || !paymentId || !signature) return false;
     const body = `${orderId}|${paymentId}`;
-
-    for (const secret of secrets) {
-      try {
-        const expectedSignature = crypto
-          .createHmac('sha256', secret)
-          .update(body)
-          .digest('hex');
-
-        if (
-          expectedSignature.length === signature.length &&
-          crypto.timingSafeEqual(Buffer.from(expectedSignature, 'utf8'), Buffer.from(signature, 'utf8'))
-        ) {
-          return true;
-        }
-      } catch (e) {}
-    }
-    return false;
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(body)
+      .digest('hex');
+    if (expectedSignature.length !== signature.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expectedSignature, 'utf8'), Buffer.from(signature, 'utf8'));
   } catch (error) {
-    console.error('Signature verification error:', error?.message || error);
+    console.error('[paymentService] Signature verification error:', error?.message || error);
     return false;
   }
 };
+
 
 /**
  * Verify Razorpay webhook signature

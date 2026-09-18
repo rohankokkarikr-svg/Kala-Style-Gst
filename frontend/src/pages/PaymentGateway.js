@@ -56,9 +56,10 @@ export default function PaymentGateway() {
       }
 
       const keyId =
-        (rzpData?.key_id && !rzpData.key_id.startsWith('rzp_test_'))
-          ? rzpData.key_id
-          : (process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl');
+        rzpData?.key_id ||
+        process.env.REACT_APP_RAZORPAY_KEY_ID ||
+        '';
+
 
       const amountInPaise =
         Number(rzpData.amount) ||
@@ -172,12 +173,13 @@ export default function PaymentGateway() {
       launchRazorpay(
         {
           order_id: order.razorpay_order_id,
-          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
+          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
           amount: Math.max(100, Math.round(Number(order.total_amount || order.total_price || 0) * 100)),
           currency: 'INR',
         },
         order
       );
+
     } else if (razorpayData?.order_id) {
       launchRazorpay(razorpayData, order);
     } else if (orderId) {
@@ -236,12 +238,13 @@ export default function PaymentGateway() {
       return launchRazorpay(
         {
           order_id: order.razorpay_order_id,
-          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl',
+          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
           amount: amountInPaise,
           currency: 'INR',
         },
         order
       );
+
     }
 
     if (razorpayData?.order_id) {

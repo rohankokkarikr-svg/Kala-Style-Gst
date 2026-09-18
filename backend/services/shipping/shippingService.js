@@ -459,66 +459,6 @@ async function generateShippingInvoice(shipmentId) {
   };
 }
 
-/**
- * Synchronize shipment delivery to parent order and artisan sub-orders safely.
- * CRITICAL RULE: For COD orders, delivery sets shipping_status = DELIVERED,
- * but payment_status strictly remains 'cod_pending' until explicit confirmCODCollection!
- */
-async function syncDeliveryMilestoneToOrder(shipment) {
-  if (!shipment || !shipment.order_id) return;
-  const now = new Date().toISOString();
-
-  const { data: order } = await safeQuery(() =>
-    supabase.from('orders').select('*').eq('id', shipment.order_id).maybeSingle()
-  );
-  if (!order) return;
-
-  const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
-  const isPaid = ['paid', 'completed'].includes(String(order.payment_status || '').toLowerCase().trim());
-
-  await safeQuery(() =>
-    supabase.from('orders').update({
-      shipping_status: SHIPPING_STATUS.DELIVERED,
-      updated_at: now,
-    }).eq('id', shipment.order_id)
-  );
-
-  if (isCod) {
-    console.log(`[shippingService] COD order ${order.order_number || order.id} delivered by courier. Payment remains 'cod_pending' until collection confirmation.`);
-    broadcastSync('ORDERS_UPDATED', {
-      orderId: order.id,
-      shipping_status: SHIPPING_STATUS.DELIVERED,
-      payment_status: order.payment_status,
-    });
-  } else if (isPaid) {
-    try {
-      const orderService = require('../orderService');
-      await safeQuery(() =>
-        supabase.from('artisan_orders').update({
-          status: 'delivered',
-          delivered_at: now,
-          updated_at: now,
-        }).eq('order_id', order.id)
-      );
-      await orderService.syncMasterOrderStatus(order.id);
-
-      const { data: artOrders } = await safeQuery(() =>
-        supabase.from('artisan_orders').select('*').eq('order_id', order.id)
-      );
-      if (artOrders && artOrders.length > 0) {
-        for (const ao of artOrders) {
-          if (ao.artisan_id) {
-            try {
-              await orderService.createArtisanEarning(ao.id, ao, ao.artisan_id);
-            } catch (e) {}
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[shippingService] Prepaid delivery sync notice:', err.message);
-    }
-  }
-}
 
 /**
  * Track shipment status and milestones.
@@ -815,8 +755,14 @@ async function handleWebhook(payload) {
         );
 
         if (normalized === SHIPPING_STATUS.DELIVERED) {
-          await syncDeliveryMilestoneToOrder(target);
+          // Call the canonical delivery milestone sync (preserves cod_pending for COD orders)
+          await syncDeliveryMilestoneToOrder(target.order_id, {
+            awb_code: target.awb_code,
+            courier: target.courier_name,
+            delivered_at: target.delivered_at,
+          });
         }
+
       } catch (e) {}
 
       broadcastSync('SHIPMENT_UPDATED', {

@@ -112,7 +112,8 @@ exports.createOrder = async (req, res) => {
       });
       if (rzpResult.success) {
         razorpayOrderId = rzpResult.order.id;
-        razorpayKeyId = rzpResult.key_id || process.env.RAZORPAY_KEY_ID || 'rzp_live_TamouXgJy9WoAl';
+        razorpayKeyId = rzpResult.key_id || process.env.RAZORPAY_KEY_ID || '';
+
         // Save razorpay_order_id to our DB
         await supabase.from('orders').update({ razorpay_order_id: razorpayOrderId }).eq('id', order.id);
         await supabase.from('payments').update({ provider_order_id: razorpayOrderId }).eq('order_id', order.id);
@@ -218,16 +219,11 @@ exports.createOrder = async (req, res) => {
       });
     } catch (e) {}
 
-    // Auto-create Shiprocket logistics shipment for COD orders (non-blocking)
-    if (normalizedMethod === 'cod') {
-      try {
-        const shippingService = require('../services/shipping/shippingService');
-        shippingService
-          .createShipmentFromOrder(order.id)
-          .then((sRes) => console.log(`[createOrder COD] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
-          .catch((sErr) => console.warn(`[createOrder COD] Auto Shiprocket shipment notice:`, sErr.message));
-      } catch (shpErr) {}
-    }
+    // NOTE: COD shipments are NOT auto-created at order placement.
+    // Admin/artisan must explicitly create the shipment when the order is ready to ship.
+    // This prevents premature AWB assignment before artisan acceptance.
+
+
 
     res.status(201).json({
       ...order,
