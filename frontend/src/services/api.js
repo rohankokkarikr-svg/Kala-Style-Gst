@@ -256,7 +256,7 @@ export const notificationAPI = {
 // ─── Autonomous AI Admin Operations Manager ───────
 export const aiManagerAPI = {
   getStatus:        ()         => api.get('/admin/ai-manager/status'),
-  chat:             (data)     => api.post('/admin/ai-manager/chat', data),
+  chat:             (data)     => api.post('/admin/ai-manager/chat', data, { timeout: 120000 }),
   getActions:       (params)   => api.get('/admin/ai-manager/actions', { params }),
   getQueue:         ()         => api.get('/admin/ai-manager/queue'),
   retryJob:         (id)       => api.post(`/admin/ai-manager/queue/${id}/retry`),
@@ -265,7 +265,17 @@ export const aiManagerAPI = {
   getReports:       ()         => api.get('/admin/ai-manager/reports'),
   runDailyReport:   ()         => api.post('/admin/ai-manager/reports/run'),
   processEvents:    ()         => api.post('/admin/ai-manager/process-events'),
+  generateReport:   ()         => api.post('/admin/ai-manager/reports/run'),
+  // New: System Health
+  getSystemHealth:  ()         => api.get('/admin/ai-manager/health'),
+  // New: Approval Workflow
+  getApprovals:     (params)   => api.get('/admin/ai-manager/approvals', { params }),
+  approveAction:    (id)       => api.post(`/admin/ai-manager/approvals/${id}/approve`),
+  rejectAction:     (id, data) => api.post(`/admin/ai-manager/approvals/${id}/reject`, data),
+  // New: Agent Memory
+  getAgentMemory:   (params)   => api.get('/admin/ai-manager/memory', { params }),
 };
+
 
 export default api;
 export { apiCache };

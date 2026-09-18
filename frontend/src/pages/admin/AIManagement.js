@@ -18,29 +18,39 @@ import toast from 'react-hot-toast';
 
 const QUICK_PROMPTS = [
   "Which artisans are waiting for verification?",
-  "Verify all genuine pending artisans.",
-  "Find low-stock and out-of-stock products.",
   "Show today's orders and payment statuses.",
+  "Find low-stock and out-of-stock products.",
+  "Check the entire website health.",
+  "What should we promote this season?",
+  "Detect suspicious or high-risk orders.",
+  "Generate a Diwali campaign for handmade products.",
+  "Show delayed shipments.",
   "Generate today's complete business report.",
+  "Analyze artisan performance this month.",
+  "Find products missing descriptions.",
   "Check failed or pending payments.",
   "Moderate pending customer reviews.",
   "Show active autonomous operational rules."
 ];
 
 export default function AIManagement() {
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'rules' | 'actions' | 'queue' | 'reports'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'approvals' | 'rules' | 'actions' | 'queue' | 'reports'
   const [statusInfo, setStatusInfo] = useState(null);
   const [rules, setRules] = useState([]);
   const [actions, setActions] = useState([]);
   const [queueData, setQueueData] = useState({ counts: {}, jobs: [] });
   const [reports, setReports] = useState([]);
+  const [healthData, setHealthData] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [approvals, setApprovals] = useState([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Chat State
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hello Administrator! I am KalaStyle AI’s Autonomous Business Operations Manager powered by Google Gemini. I analyze platform business events, verify artisans, monitor inventory, route multi-artisan orders, and enforce operational governance through secure backend tools. How can I assist you today?',
+      content: '👋 Hello Administrator! I am **KalaStyle AI Operations Manager** — powered by Google Gemini.\n\nI can help you:\n✅ Monitor orders, payments & suspicious activity\n📦 Manage products, artisans & inventory\n📊 Generate sales analytics & daily reports\n🌟 Create seasonal campaigns & marketing content\n🔍 Check website health across all services\n\nTry asking: *"Check website health"* or *"What should we promote this season?"*',
       toolCalls: []
     }
   ]);
@@ -53,12 +63,13 @@ export default function AIManagement() {
 
   const fetchStatusAndData = async () => {
     try {
-      const [stRes, rulesRes, actsRes, qRes, repRes] = await Promise.allSettled([
+      const [stRes, rulesRes, actsRes, qRes, repRes, appRes] = await Promise.allSettled([
         aiManagerAPI.getStatus(),
         aiManagerAPI.getRules(),
         aiManagerAPI.getActions({ limit: 30 }),
         aiManagerAPI.getQueue(),
         aiManagerAPI.getReports(),
+        aiManagerAPI.getApprovals(),
       ]);
 
       if (stRes.status === 'fulfilled') setStatusInfo(stRes.value.data);
@@ -66,6 +77,7 @@ export default function AIManagement() {
       if (actsRes.status === 'fulfilled') setActions(actsRes.value.data || []);
       if (qRes.status === 'fulfilled') setQueueData(qRes.value.data || { counts: {}, jobs: [] });
       if (repRes.status === 'fulfilled') setReports(repRes.value.data || []);
+      if (appRes.status === 'fulfilled') setApprovals(appRes.value.data || []);
     } catch (err) {
       console.error('Error fetching AI management data:', err);
     } finally {
@@ -178,6 +190,50 @@ export default function AIManagement() {
     }
   };
 
+  const fetchHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const res = await aiManagerAPI.getSystemHealth();
+      setHealthData(res.data);
+    } catch (err) {
+      toast.error('Health check failed');
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const fetchApprovals = async () => {
+    setApprovalsLoading(true);
+    try {
+      const res = await aiManagerAPI.getApprovals();
+      setApprovals(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch approvals:', err);
+    } finally {
+      setApprovalsLoading(false);
+    }
+  };
+
+  const handleApproveAction = async (id) => {
+    try {
+      await aiManagerAPI.approveAction(id);
+      toast.success('Action approved successfully!');
+      setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'APPROVED' } : a));
+    } catch (err) {
+      toast.error('Failed to approve action');
+    }
+  };
+
+  const handleRejectAction = async (id) => {
+    try {
+      await aiManagerAPI.rejectAction(id, { reason: 'Rejected by admin' });
+      toast.success('Action rejected.');
+      setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'REJECTED' } : a));
+    } catch (err) {
+      toast.error('Failed to reject action');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* ── Header & Status Bar ── */}
@@ -234,8 +290,10 @@ export default function AIManagement() {
         <div className="flex items-center gap-2 mt-6 pt-4 border-t border-dark-700 overflow-x-auto">
           {[
             { id: 'chat', label: 'AI Operations Console', icon: HiChat },
+            { id: 'health', label: 'System Health', icon: HiShieldCheck },
+            { id: 'approvals', label: `Approvals (${approvals.filter(a=>a.status==='PENDING').length})`, icon: HiCheckCircle },
             { id: 'rules', label: 'Automation Rules', icon: HiShieldCheck },
-            { id: 'actions', label: 'Audit Trail & Decisions', icon: HiClipboardList },
+            { id: 'actions', label: 'Audit Trail', icon: HiClipboardList },
             { id: 'queue', label: `Job Queue (${queueData.counts?.pending || 0})`, icon: HiLightningBolt },
             { id: 'reports', label: 'Intelligence Reports', icon: HiDocumentReport },
           ].map(tab => {
@@ -751,60 +809,41 @@ export default function AIManagement() {
 
                   <p className="text-sm text-gray-300 leading-relaxed">{rep.summary}</p>
 
-                  {/* Metrics Row */}
                   {rep.metrics && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
                       <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700">
                         <div className="text-[11px] text-gray-400">Processed Volume</div>
-                        <div className="text-lg font-bold text-white mt-0.5">
-                          {rep.metrics.allOrdersCount || 0} Orders
-                        </div>
+                        <div className="text-lg font-bold text-white mt-0.5">{rep.metrics.allOrdersCount || 0} Orders</div>
                       </div>
                       <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700">
                         <div className="text-[11px] text-gray-400">Total Revenue</div>
-                        <div className="text-lg font-bold text-emerald-400 mt-0.5">
-                          ₹{(rep.metrics.totalRevenue || 0).toLocaleString('en-IN')}
-                        </div>
+                        <div className="text-lg font-bold text-emerald-400 mt-0.5">₹{(rep.metrics.totalRevenue || 0).toLocaleString('en-IN')}</div>
                       </div>
                       <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700">
                         <div className="text-[11px] text-gray-400">Verified Artisans</div>
-                        <div className="text-lg font-bold text-gold-400 mt-0.5">
-                          {rep.metrics.verifiedArtisans || 0}
-                        </div>
+                        <div className="text-lg font-bold text-gold-400 mt-0.5">{rep.metrics.verifiedArtisans || 0}</div>
                       </div>
                       <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700">
                         <div className="text-[11px] text-gray-400">Low Stock Items</div>
-                        <div className="text-lg font-bold text-amber-400 mt-0.5">
-                          {rep.metrics.lowStockCount || 0}
-                        </div>
+                        <div className="text-lg font-bold text-amber-400 mt-0.5">{rep.metrics.lowStockCount || 0}</div>
                       </div>
                     </div>
                   )}
 
-                  {/* Insights & Recommendations */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     {rep.insights && rep.insights.length > 0 && (
                       <div className="bg-dark-900/40 border border-dark-700 rounded-xl p-4 space-y-2">
-                        <div className="text-xs font-bold uppercase tracking-wider text-gold-400">
-                          Operational Insights
-                        </div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-gold-400">Operational Insights</div>
                         <ul className="space-y-1.5 text-xs text-gray-300 list-disc list-inside">
-                          {rep.insights.map((ins, idx) => (
-                            <li key={idx} className="leading-relaxed">{ins}</li>
-                          ))}
+                          {rep.insights.map((ins, idx) => <li key={idx} className="leading-relaxed">{ins}</li>)}
                         </ul>
                       </div>
                     )}
-
                     {rep.recommendations && rep.recommendations.length > 0 && (
                       <div className="bg-dark-900/40 border border-dark-700 rounded-xl p-4 space-y-2">
-                        <div className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                          Strategic Recommendations
-                        </div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-emerald-400">Strategic Recommendations</div>
                         <ul className="space-y-1.5 text-xs text-gray-300 list-disc list-inside">
-                          {rep.recommendations.map((rec, idx) => (
-                            <li key={idx} className="leading-relaxed">{rec}</li>
-                          ))}
+                          {rep.recommendations.map((rec, idx) => <li key={idx} className="leading-relaxed">{rec}</li>)}
                         </ul>
                       </div>
                     )}
@@ -813,6 +852,188 @@ export default function AIManagement() {
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── TAB 6: System Health ── */}
+      {activeTab === 'health' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <HiShieldCheck className="w-6 h-6 text-gold-400" /> Platform System Health
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">
+                Real-time connectivity checks across all platform services. Status is never fabricated.
+              </p>
+            </div>
+            <button
+              onClick={fetchHealth}
+              disabled={healthLoading}
+              className="px-4 py-2.5 bg-gold-500 hover:bg-gold-400 text-dark-900 font-semibold text-xs rounded-xl transition-all shadow flex items-center gap-2"
+            >
+              <HiRefresh className={`w-4 h-4 ${healthLoading ? 'animate-spin' : ''}`} />
+              <span>{healthLoading ? 'Checking...' : 'Run Health Check'}</span>
+            </button>
+          </div>
+
+          {!healthData ? (
+            <div className="bg-dark-800 border border-dark-600 rounded-2xl p-12 text-center text-gray-400 space-y-3">
+              <HiShieldCheck className="w-12 h-12 mx-auto text-gray-500" />
+              <p>Click "Run Health Check" to check all platform services.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Overall Status Banner */}
+              <div className={`p-4 rounded-2xl border flex items-center gap-4 ${
+                healthData.overall === 'HEALTHY'
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : healthData.overall === 'DEGRADED'
+                  ? 'bg-amber-500/10 border-amber-500/30'
+                  : 'bg-red-500/10 border-red-500/30'
+              }`}>
+                <div className={`w-4 h-4 rounded-full animate-pulse ${
+                  healthData.overall === 'HEALTHY' ? 'bg-emerald-400' : healthData.overall === 'DEGRADED' ? 'bg-amber-400' : 'bg-red-400'
+                }`} />
+                <div>
+                  <div className="text-sm font-bold text-white">
+                    Overall: <span className={healthData.overall === 'HEALTHY' ? 'text-emerald-400' : 'text-amber-400'}>{healthData.overall}</span>
+                  </div>
+                  <div className="text-xs text-gray-400">Checked at: {new Date(healthData.checkedAt).toLocaleString('en-IN')} • Latency: {healthData.totalLatencyMs}ms</div>
+                </div>
+              </div>
+
+              {/* Service Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(healthData.services || []).map((svc) => {
+                  const statusColor = svc.status === 'healthy' ? 'emerald' : svc.status === 'not_configured' ? 'gray' : svc.status === 'degraded' ? 'amber' : 'red';
+                  const statusLabel = svc.status === 'healthy' ? '✅ HEALTHY' : svc.status === 'not_configured' ? '⚙️ NOT CONFIGURED' : svc.status === 'degraded' ? '⚠️ DEGRADED' : '❌ UNREACHABLE';
+                  return (
+                    <div key={svc.service} className={`bg-dark-800 border rounded-2xl p-4 space-y-2 border-${statusColor}-500/20`}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-bold text-white capitalize">{svc.service.replace(/_/g, ' ')}</div>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full bg-${statusColor}-500/10 text-${statusColor}-400`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 leading-relaxed">{svc.message}</p>
+                      {svc.latencyMs > 0 && (
+                        <div className="text-[10px] text-gray-500">Latency: {svc.latencyMs}ms</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Warnings */}
+              {healthData.warnings && healthData.warnings.length > 0 && (
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
+                  <div className="text-xs font-bold text-amber-400 mb-2">⚠️ Configuration Required</div>
+                  <ul className="space-y-1">
+                    {healthData.warnings.map((w, i) => (
+                      <li key={i} className="text-xs text-gray-400 list-disc list-inside">{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 7: Approvals ── */}
+      {activeTab === 'approvals' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <HiCheckCircle className="w-6 h-6 text-gold-400" /> Pending AI Action Approvals
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">
+                HIGH and CRITICAL risk actions requested by the AI agent that require your explicit approval before execution.
+              </p>
+            </div>
+            <button
+              onClick={fetchApprovals}
+              disabled={approvalsLoading}
+              className="px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs rounded-xl transition-all border border-dark-600 flex items-center gap-2"
+            >
+              <HiRefresh className={`w-4 h-4 ${approvalsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          {approvals.length === 0 ? (
+            <div className="bg-dark-800 border border-dark-600 rounded-2xl p-12 text-center text-gray-400 space-y-3">
+              <HiCheckCircle className="w-12 h-12 mx-auto text-gray-500" />
+              <p className="text-sm">No pending approval requests.</p>
+              <p className="text-xs">When the AI agent recommends a HIGH or CRITICAL action, it will appear here for your review.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {approvals.map((apv) => {
+                const isPending = apv.status === 'PENDING';
+                const riskColor = apv.risk_level === 'CRITICAL' ? 'red' : apv.risk_level === 'HIGH' ? 'amber' : 'blue';
+                return (
+                  <div key={apv.id} className={`bg-dark-800 border rounded-2xl p-5 space-y-4 ${
+                    isPending ? `border-${riskColor}-500/30` : 'border-dark-600'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full bg-${riskColor}-500/10 text-${riskColor}-400 border border-${riskColor}-500/20`}>
+                            {apv.risk_level} RISK
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                            apv.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400'
+                            : apv.status === 'REJECTED' ? 'bg-red-500/10 text-red-400'
+                            : apv.status === 'EXPIRED' ? 'bg-gray-500/10 text-gray-400'
+                            : 'bg-amber-500/10 text-amber-400'
+                          }`}>
+                            {apv.status}
+                          </span>
+                          <span className="text-[10px] font-mono text-gray-500">{apv.tool_name}</span>
+                        </div>
+                        <h3 className="text-sm font-semibold text-white">{apv.description}</h3>
+                        <p className="text-xs text-gray-400">
+                          Requested: {new Date(apv.created_at).toLocaleString('en-IN')}
+                          {apv.expires_at && ` • Expires: ${new Date(apv.expires_at).toLocaleString('en-IN')}`}
+                        </p>
+                        {apv.tool_args && Object.keys(apv.tool_args).length > 0 && (
+                          <div className="bg-dark-900/60 rounded-lg p-2 text-[10px] font-mono text-gray-400 overflow-x-auto">
+                            {JSON.stringify(apv.tool_args, null, 2)}
+                          </div>
+                        )}
+                      </div>
+
+                      {isPending && (
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => handleApproveAction(apv.id)}
+                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs rounded-xl transition-all"
+                          >
+                            ✓ Approve
+                          </button>
+                          <button
+                            onClick={() => handleRejectAction(apv.id)}
+                            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold text-xs rounded-xl border border-red-500/30 transition-all"
+                          >
+                            ✕ Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {apv.rejection_reason && (
+                      <div className="text-xs text-red-400 bg-red-500/5 border border-red-500/10 rounded-lg p-2">
+                        Rejection reason: {apv.rejection_reason}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

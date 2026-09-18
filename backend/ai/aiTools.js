@@ -7,6 +7,204 @@
  */
 
 const FUNCTION_DECLARATIONS = [
+  // ─── SYSTEM HEALTH TOOLS ─────────────────────────────────────────
+  {
+    name: 'get_system_health',
+    description: 'Perform a real-time connectivity check across all platform services: Database, Gemini AI, Razorpay, Cloudinary, Twilio/WhatsApp, and Shiprocket. Returns actual service status — never fabricated.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_recent_errors',
+    description: 'Retrieve recently failed AI tool executions from the audit log for diagnostics.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Number of recent errors to retrieve (default 10)' },
+      },
+    },
+  },
+
+  // ─── MARKETING TOOLS ─────────────────────────────────────────────
+  {
+    name: 'generate_marketing_campaign',
+    description: 'Generate a complete marketing campaign for a theme or festival (e.g., Diwali, Raksha Bandhan). Analyzes current inventory, selects relevant products, generates campaign copy. Requires admin approval before publishing.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        theme: {
+          type: 'STRING',
+          description: 'Campaign theme (e.g., "Diwali", "Raksha Bandhan", "Handmade Gifts", "Summer Sale")',
+        },
+        platform: {
+          type: 'STRING',
+          enum: ['Instagram', 'Facebook', 'WhatsApp', 'Email', 'Social Media'],
+          description: 'Target platform for the campaign',
+        },
+        audience: {
+          type: 'STRING',
+          description: 'Target audience description (e.g., "young urban professionals", "gift buyers")',
+        },
+        category: {
+          type: 'STRING',
+          description: 'Focus on a specific product category (optional)',
+        },
+      },
+      required: ['theme'],
+    },
+  },
+  {
+    name: 'generate_ad_copy',
+    description: 'Generate professional ad copy variations for a specific product.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        product_id: { type: 'STRING', description: 'UUID of the product to generate copy for' },
+        format: {
+          type: 'STRING',
+          enum: ['short', 'medium', 'long'],
+          description: 'Length of ad copy (default: medium)',
+        },
+      },
+      required: ['product_id'],
+    },
+  },
+  {
+    name: 'generate_product_description',
+    description: 'Generate an AI-crafted product description for a product that is missing one or has a poor description.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        product_id: { type: 'STRING', description: 'UUID of the product' },
+      },
+      required: ['product_id'],
+    },
+  },
+  {
+    name: 'generate_social_content',
+    description: 'Generate 5 ready-to-post social media captions for an occasion or a set of products.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        occasion: { type: 'STRING', description: 'Occasion or theme (e.g., "Diwali", "Weekend Sale", "New Arrivals")' },
+        category: { type: 'STRING', description: 'Product category to feature (optional)' },
+      },
+    },
+  },
+
+  // ─── RECOMMENDATION TOOLS ─────────────────────────────────────────
+  {
+    name: 'get_seasonal_context',
+    description: 'Get the current Indian seasonal and festival context to understand what to promote right now.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'suggest_seasonal_products',
+    description: 'Analyze inventory and suggest which products to promote based on the current Indian festival season. Returns real in-stock products matched to seasonal demand.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Maximum products to suggest (default 12)' },
+      },
+    },
+  },
+  {
+    name: 'generate_product_recommendations',
+    description: 'Generate product recommendations filtered by category.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        category: { type: 'STRING', description: 'Product category to filter by' },
+        limit: { type: 'INTEGER', description: 'Maximum recommendations to return (default 10)' },
+      },
+    },
+  },
+  {
+    name: 'analyze_seasonal_inventory',
+    description: 'Analyze current inventory against seasonal demand — identifies products to restock urgently and products ready to promote for the current season.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+
+  // ─── SHIPPING TOOLS ───────────────────────────────────────────────
+  {
+    name: 'get_shipping_status',
+    description: 'Check Shiprocket shipping integration status and get recent shipment information.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        order_id: { type: 'STRING', description: 'UUID or order number to check shipping for (optional — omit for overall status)' },
+      },
+    },
+  },
+  {
+    name: 'detect_delayed_shipments',
+    description: 'Identify orders that have been confirmed or shipped but show no delivery progress beyond expected timeframes.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        days_threshold: { type: 'INTEGER', description: 'Orders shipped more than N days ago without delivery (default 7)' },
+        limit: { type: 'INTEGER', description: 'Maximum orders to return (default 20)' },
+      },
+    },
+  },
+
+  // ─── APPROVAL MANAGEMENT TOOLS ────────────────────────────────────
+  {
+    name: 'get_pending_approvals',
+    description: 'List all HIGH and CRITICAL actions currently waiting for admin approval before they can execute.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'create_approval_request',
+    description: 'Create an approval request for a HIGH-risk action that requires explicit admin confirmation before execution. Use this instead of directly executing dangerous operations.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        tool_name: { type: 'STRING', description: 'Name of the tool/action requiring approval' },
+        description: { type: 'STRING', description: 'Clear human-readable description of what this action will do' },
+        risk_level: {
+          type: 'STRING',
+          enum: ['HIGH', 'CRITICAL'],
+          description: 'Risk classification of the action',
+        },
+        tool_args: {
+          type: 'OBJECT',
+          description: 'Arguments that will be passed to the tool upon approval',
+          properties: {},
+        },
+      },
+      required: ['tool_name', 'description'],
+    },
+  },
+
+  // ─── AGENT MEMORY TOOLS ───────────────────────────────────────────
+  {
+    name: 'get_agent_memory',
+    description: 'Retrieve stored operational preferences and context from agent memory.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        memory_type: {
+          type: 'STRING',
+          enum: ['all', 'preference', 'operational', 'context'],
+          description: 'Filter by memory type',
+        },
+      },
+    },
+  },
+
+
   // ─── READ TOOLS ──────────────────────────────────────────────────
   {
     name: 'get_artisans',

@@ -245,3 +245,96 @@ exports.getStatus = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ─── New Controllers ──────────────────────────────────────────────────────────
+
+/**
+ * Real-time system health check across all platform services.
+ */
+exports.getSystemHealth = async (req, res) => {
+  try {
+    const agentHealthService = require('../services/agentHealthService');
+    const health = await agentHealthService.checkSystemHealth();
+    res.json(health);
+  } catch (error) {
+    console.error('❌ [AI Admin] Health check error:', error.message);
+    res.status(500).json({ error: error.message, overall: 'UNKNOWN' });
+  }
+};
+
+/**
+ * List all pending approval requests.
+ */
+exports.getApprovals = async (req, res) => {
+  try {
+    const agentApprovalService = require('../services/agentApprovalService');
+    const { all } = req.query;
+    const approvals = all === 'true'
+      ? await agentApprovalService.getAllApprovals(100)
+      : await agentApprovalService.getPendingApprovals(50);
+    res.json(approvals);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Approve a pending HIGH-risk AI action.
+ */
+exports.approveAction = async (req, res) => {
+  try {
+    const agentApprovalService = require('../services/agentApprovalService');
+    const { id } = req.params;
+    const adminId = req.user?.id;
+
+    const updated = await agentApprovalService.approveAction(id, adminId);
+
+    // After approval, optionally execute the tool
+    // For now, just mark it approved — the admin can then re-issue the command
+    console.log(`✅ [AI Approval] Approval ${id} approved by admin ${adminId}`);
+
+    res.json({ success: true, approval: updated, message: 'Action approved. Re-issue the command in chat to execute it.' });
+  } catch (error) {
+    console.error('❌ [AI Approval] Approve error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Reject a pending HIGH-risk AI action.
+ */
+exports.rejectAction = async (req, res) => {
+  try {
+    const agentApprovalService = require('../services/agentApprovalService');
+    const { id } = req.params;
+    const { reason } = req.body;
+    const adminId = req.user?.id;
+
+    const updated = await agentApprovalService.rejectAction(id, adminId, reason || 'Rejected by admin');
+    res.json({ success: true, approval: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Retrieve agent memory entries.
+ */
+exports.getAgentMemory = async (req, res) => {
+  try {
+    const supabase = require('../config/supabase');
+    const { safeQuery } = require('../config/supabase');
+    const { memory_type } = req.query;
+
+    let query = supabase.from('ai_agent_memory').select('id, memory_type, key, description, updated_at');
+    if (memory_type && memory_type !== 'all') {
+      query = query.eq('memory_type', memory_type);
+    }
+
+    const { data, error } = await safeQuery(() => query.limit(50));
+    res.json(data || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+

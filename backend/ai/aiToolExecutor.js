@@ -14,6 +14,10 @@ const whatsappService = require('../services/whatsappService');
 const complaintService = require('../services/complaintService');
 const analyticsReportService = require('../services/analyticsReportService');
 const { broadcastSync } = require('../utils/realtime');
+const agentHealthService = require('../services/agentHealthService');
+const agentApprovalService = require('../services/agentApprovalService');
+const marketingService = require('../services/marketingService');
+const recommendationService = require('../services/recommendationService');
 
 const { v4: uuidv4 } = require('uuid');
 
@@ -96,6 +100,21 @@ const SAFETY_LEVELS = {
   get_suspicious_orders: 1,
   analyze_order_risk: 1,
   generate_daily_business_report: 1,
+  // New Level 1 tools
+  get_system_health: 1,
+  get_recent_errors: 1,
+  get_seasonal_context: 1,
+  suggest_seasonal_products: 1,
+  generate_product_recommendations: 1,
+  analyze_seasonal_inventory: 1,
+  get_shipping_status: 1,
+  detect_delayed_shipments: 1,
+  get_pending_approvals: 1,
+  get_agent_memory: 1,
+  // AI content generation (read-like, no side effects)
+  generate_product_description: 1,
+  generate_ad_copy: 1,
+  generate_social_content: 1,
 
   // LEVEL 2: Controlled Operational Actions (Autonomous with audit log)
   verify_artisan: 2,
@@ -108,6 +127,9 @@ const SAFETY_LEVELS = {
   moderate_review: 2,
   resolve_complaint: 2,
   update_automation_rule: 2,
+  create_approval_request: 2,
+  // Marketing campaigns require approval before any publishing
+  generate_marketing_campaign: 2,
 
   // LEVEL 3: High Risk (Strict human admin confirmation required)
   reject_artisan: 3,
@@ -171,6 +193,172 @@ async function executeTool(toolName, args = {}, context = {}) {
     }
 
     switch (toolName) {
+      // ─── SYSTEM HEALTH TOOLS ────────────────────────────────────────
+      case 'get_system_health':
+        result = await agentHealthService.checkSystemHealth();
+        break;
+
+      case 'get_recent_errors': {
+        const errData = await agentHealthService.getRecentErrors(args.limit || 10);
+        result = errData;
+        break;
+      }
+
+      // ─── MARKETING TOOLS ─────────────────────────────────────────────
+      case 'generate_marketing_campaign': {
+        // Fetch relevant products first
+        const { data: marketingProducts } = await safeQuery(() =>
+          supabase
+            .from('products')
+            .select('id, name, price, category, description, image_url')
+            .eq('is_in_stock', true)
+            .eq('status', 'approved')
+            .ilike('category', args.category ? `%${args.category}%` : '%')
+            .limit(12)
+        );
+        result = await marketingService.generateCampaign({
+          theme: args.theme,
+          products: marketingProducts || [],
+          audience: args.audience || 'handmade craft enthusiasts',
+          platform: args.platform || 'Social Media',
+        });
+        break;
+      }
+
+      case 'generate_ad_copy': {
+        entityType = 'product';
+        entityId = args.product_id;
+        const { data: adProduct } = await safeQuery(() =>
+          supabase.from('products').select('id, name, price, category, description, material, tags, artisan_id').eq('id', args.product_id).single()
+        );
+        if (!adProduct) throw new Error(`Product ${args.product_id} not found`);
+        result = await marketingService.generateAdCopy(adProduct, args.format || 'medium');
+        break;
+      }
+
+      case 'generate_product_description': {
+        entityType = 'product';
+        entityId = args.product_id;
+        const { data: descProduct } = await safeQuery(() =>
+          supabase.from('products').select('id, name, price, category, description, material, tags, artisan_id').eq('id', args.product_id).single()
+        );
+        if (!descProduct) throw new Error(`Product ${args.product_id} not found`);
+        result = await marketingService.generateProductDescription(descProduct);
+        break;
+      }
+
+      case 'generate_social_content': {
+        let socialProducts = [];
+        if (args.category) {
+          const { data } = await safeQuery(() =>
+            supabase.from('products').select('id, name, price, category').eq('is_in_stock', true).ilike('category', `%${args.category}%`).limit(6)
+          );
+          socialProducts = data || [];
+        }
+        result = await marketingService.generateSocialContent(socialProducts, args.occasion || 'general');
+        break;
+      }
+
+      // ─── RECOMMENDATION TOOLS ─────────────────────────────────────────
+      case 'get_seasonal_context':
+        result = recommendationService.getSeasonalContext();
+        break;
+
+      case 'suggest_seasonal_products':
+        result = await recommendationService.generateSeasonalRecommendations({ limit: args.limit || 12 });
+        break;
+
+      case 'generate_product_recommendations':
+        result = await recommendationService.getProductRecommendationsByCategory({ category: args.category, limit: args.limit || 10 });
+        break;
+
+      case 'analyze_seasonal_inventory':
+        result = await recommendationService.analyzeSeasonalInventory();
+        break;
+
+      // ─── SHIPPING TOOLS ─────────────────────────────────────────────
+      case 'get_shipping_status': {
+        const shiprocketConfigured = process.env.SHIPROCKET_EMAIL && !process.env.SHIPROCKET_EMAIL.startsWith('your_');
+        if (!shiprocketConfigured) {
+          result = {
+            configured: false,
+            message: 'Shiprocket integration is not configured. Set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD in backend/.env to enable shipping management.',
+            shipments: [],
+          };
+        } else if (args.order_id) {
+          // Check order shipping status from our DB
+          const { data: order } = await safeQuery(() =>
+            supabase.from('orders').select('id, order_number, status, created_at, shipping_address').eq('id', args.order_id).single()
+          );
+          result = { configured: true, order: order || null, message: 'Check Shiprocket dashboard for live tracking.' };
+        } else {
+          // General shipping stats from orders
+          const { data: shippedOrders } = await safeQuery(() =>
+            supabase.from('orders').select('id, order_number, status, created_at').eq('status', 'shipped').limit(20)
+          );
+          result = { configured: true, shippedOrders: shippedOrders || [], message: 'Shiprocket credentials present. Live tracking available via Shiprocket dashboard.' };
+        }
+        break;
+      }
+
+      case 'detect_delayed_shipments': {
+        const threshold = args.days_threshold || 7;
+        const cutoffDate = new Date(Date.now() - threshold * 24 * 60 * 60 * 1000).toISOString();
+        const { data: delayedOrders } = await safeQuery(() =>
+          supabase
+            .from('orders')
+            .select('id, order_number, status, payment_status, created_at, shipping_address, users(name, phone)')
+            .in('status', ['shipped', 'processing', 'confirmed'])
+            .lt('updated_at', cutoffDate)
+            .order('created_at', { ascending: true })
+            .limit(args.limit || 20)
+        );
+        result = {
+          total: (delayedOrders || []).length,
+          threshold_days: threshold,
+          delayed_orders: delayedOrders || [],
+          message: (delayedOrders || []).length === 0
+            ? `No orders found delayed beyond ${threshold} days.`
+            : `${(delayedOrders || []).length} order(s) may be delayed. Verify with Shiprocket dashboard.`,
+        };
+        break;
+      }
+
+      // ─── APPROVAL MANAGEMENT TOOLS ───────────────────────────────────
+      case 'get_pending_approvals':
+        result = await agentApprovalService.getPendingApprovals();
+        break;
+
+      case 'create_approval_request': {
+        entityType = 'approval';
+        const approval = await agentApprovalService.createApproval({
+          toolName: args.tool_name,
+          toolArgs: args.tool_args || {},
+          description: args.description,
+          riskLevel: args.risk_level || 'HIGH',
+          adminId: conversationId,
+          conversationId,
+        });
+        result = {
+          success: true,
+          approval,
+          message: `Approval request created for action "${args.tool_name}". An admin must approve this before execution.`,
+        };
+        decision = 'approval_requested';
+        break;
+      }
+
+      // ─── AGENT MEMORY ────────────────────────────────────────────────
+      case 'get_agent_memory': {
+        let memQuery = supabase.from('ai_agent_memory').select('id, memory_type, key, description, updated_at');
+        if (args.memory_type && args.memory_type !== 'all') {
+          memQuery = memQuery.eq('memory_type', args.memory_type);
+        }
+        const { data: memData } = await safeQuery(() => memQuery.limit(50));
+        result = { memory: memData || [], count: (memData || []).length };
+        break;
+      }
+
       // ─── READ TOOLS ────────────────────────────────────────────────
       case 'get_artisans':
         result = await artisanService.getArtisans(args);
@@ -530,6 +718,9 @@ async function executeTool(toolName, args = {}, context = {}) {
       'update_product_inventory', 'confirm_order', 'hold_order', 'cancel_order',
       'send_artisan_whatsapp', 'moderate_review', 'resolve_complaint',
       'generate_daily_business_report', 'update_automation_rule',
+      // New write tools
+      'create_approval_request', 'generate_marketing_campaign',
+      'generate_product_description', 'generate_ad_copy',
     ].includes(toolName);
 
     if (isWrite) {
