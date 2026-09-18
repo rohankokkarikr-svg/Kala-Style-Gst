@@ -119,18 +119,28 @@ const SAFETY_LEVELS = {
 
   // LEVEL 2: Controlled Operational Actions (Autonomous with audit log)
   verify_artisan: 2,
+  batch_verify_artisans: 2,
   hold_artisan: 2,
   approve_product: 2,
+  batch_approve_products: 2,
+  update_product_details: 2,
   hold_product: 2,
   confirm_order: 2,
   hold_order: 2,
   send_artisan_whatsapp: 2,
   moderate_review: 2,
+  approve_review: 2,
+  batch_approve_reviews: 2,
   resolve_complaint: 2,
   update_automation_rule: 2,
   create_approval_request: 2,
   create_hero_banner_approval: 2,
-  // Marketing campaigns require approval before any publishing
+  add_hero_banner: 2,
+  remove_hero_banner: 2,
+  update_discount_banner: 2,
+  launch_festival_campaign: 2,
+  update_site_settings: 2,
+  // Marketing campaigns
   generate_marketing_campaign: 2,
 
   // LEVEL 3: High Risk (Strict human admin confirmation required)
@@ -164,8 +174,9 @@ async function executeTool(toolName, args = {}, context = {}) {
 
     const safetyLevel = SAFETY_LEVELS[toolName] || 1;
 
-    // Safety Level 3 Guard: Require explicit confirmation for high-risk operations
-    if (safetyLevel === 3 && !args.admin_confirmed) {
+    // Safety Level 3 Guard: Require explicit confirmation only for background autonomous jobs,
+    // NEVER block direct directives explicitly issued by the authenticated administrator in chat.
+    if (safetyLevel === 3 && !args.admin_confirmed && eventType !== 'ADMIN_CHAT_DIRECTIVE') {
       const confirmationToken = uuidv4();
       const warningSummary = `High-risk action [${toolName}] requires explicit administrative authorization.`;
       console.warn(`🛡️ [AI Safety Guard] Intercepted Level 3 High-Risk action: ${toolName}.`);
@@ -369,6 +380,206 @@ async function executeTool(toolName, args = {}, context = {}) {
           heroSlides: currentSettings.heroSlides || [],
           discountBanner: currentSettings.discountBanner || null,
           totalSlides: (currentSettings.heroSlides || []).length,
+        };
+        break;
+      }
+
+      case 'add_hero_banner': {
+        entityType = 'hero_banner';
+        const festiveImages = {
+          ganesh: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047566/kalastyle-artisan-marketplace/xtzypfezplersfalej58.jpg',
+          diwali: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048918/kalastyle-artisan-marketplace/jkjs1hgqonmbq9h3eizd.jpg',
+          textile: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+          wood: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047399/kalastyle-artisan-marketplace/m4z3g3pnrgfwpaixwlbg.jpg',
+        };
+
+        const themeStr = (args.theme || args.headline || '').toLowerCase();
+        let selectedImage = args.image;
+        if (!selectedImage) {
+          if (themeStr.includes('ganesh')) selectedImage = festiveImages.ganesh;
+          else if (themeStr.includes('diwali')) selectedImage = festiveImages.diwali;
+          else if (themeStr.includes('handloom') || themeStr.includes('textile')) selectedImage = festiveImages.textile;
+          else if (themeStr.includes('wood')) selectedImage = festiveImages.wood;
+          else selectedImage = festiveImages.ganesh;
+        }
+
+        const newSlide = {
+          id: Date.now(),
+          image: selectedImage,
+          badgeText: args.badgeText || (args.theme ? `✦ ${args.theme} Special` : '✦ Festive Special'),
+          badgeType: 'sale',
+          headline: args.headline,
+          subtitle: args.subtitle,
+          buttonText: args.buttonText || 'Explore Festive Crafts',
+          buttonLink: args.buttonLink || '/products',
+          align: args.align || 'center',
+        };
+
+        const { readSettings, applySettingsUpdate } = require('../controllers/settingsController');
+        const current = readSettings();
+        const existingSlides = Array.isArray(current.heroSlides) ? [...current.heroSlides] : [];
+        const updatedSlides = [newSlide, ...existingSlides];
+
+        await applySettingsUpdate({ heroSlides: updatedSlides });
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'HERO_BANNER_PUBLISHED_LIVE',
+          banner: newSlide,
+          totalSlides: updatedSlides.length,
+          homepageUrl: '/',
+          message: `✅ Hero banner "${newSlide.headline}" has been published LIVE to the homepage! Visitors see it on the hero slider immediately.`,
+        };
+        decision = 'hero_banner_published_live';
+        break;
+      }
+
+      case 'remove_hero_banner': {
+        entityType = 'hero_banner';
+        const { applySettingsUpdate, readSettings } = require('../controllers/settingsController');
+        const current = readSettings();
+        let slides = Array.isArray(current.heroSlides) ? [...current.heroSlides] : [];
+        const initialCount = slides.length;
+
+        if (args.headline) {
+          const match = args.headline.toLowerCase();
+          slides = slides.filter(s => !s.headline?.toLowerCase().includes(match));
+        } else if (args.slide_id) {
+          slides = slides.filter(s => String(s.id) !== String(args.slide_id));
+        } else if (slides.length > 1) {
+          slides.shift();
+        }
+
+        if (slides.length === 0) {
+          throw new Error('Cannot remove all hero slides. At least one hero slide must remain.');
+        }
+
+        await applySettingsUpdate({ heroSlides: slides });
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'HERO_BANNER_REMOVED',
+          removedCount: initialCount - slides.length,
+          remainingSlides: slides.length,
+          message: `Hero banner removed from the live homepage.`,
+        };
+        break;
+      }
+
+      case 'update_discount_banner': {
+        entityType = 'discount_banner';
+        const { applySettingsUpdate, readSettings } = require('../controllers/settingsController');
+        const current = readSettings();
+        const currentBanner = current.discountBanner || {};
+
+        const updatedBanner = {
+          ...currentBanner,
+          title: args.title || currentBanner.title,
+          description: args.description || currentBanner.description,
+          discount: args.discount || currentBanner.discount,
+          code: args.code || currentBanner.code,
+          discountPercentage: args.discountPercentage !== undefined ? args.discountPercentage : currentBanner.discountPercentage,
+          buttonText: args.buttonText || currentBanner.buttonText,
+          buttonLink: args.buttonLink || currentBanner.buttonLink,
+          isActive: args.isActive !== undefined ? Boolean(args.isActive) : true,
+        };
+
+        await applySettingsUpdate({ discountBanner: updatedBanner });
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'DISCOUNT_BANNER_UPDATED_LIVE',
+          banner: updatedBanner,
+          message: `✅ Top promotional discount banner updated LIVE across the website: "${updatedBanner.title}" (${updatedBanner.discount} off with code ${updatedBanner.code}).`,
+        };
+        decision = 'discount_banner_updated_live';
+        break;
+      }
+
+      case 'launch_festival_campaign': {
+        entityType = 'campaign';
+        const { applySettingsUpdate, readSettings } = require('../controllers/settingsController');
+        const current = readSettings();
+
+        const festiveImages = {
+          ganesh: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047566/kalastyle-artisan-marketplace/xtzypfezplersfalej58.jpg',
+          diwali: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048918/kalastyle-artisan-marketplace/jkjs1hgqonmbq9h3eizd.jpg',
+          textile: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+          wood: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047399/kalastyle-artisan-marketplace/m4z3g3pnrgfwpaixwlbg.jpg',
+        };
+        const themeLower = (args.theme || '').toLowerCase();
+        let bgImg = args.image;
+        if (!bgImg) {
+          if (themeLower.includes('ganesh')) bgImg = festiveImages.ganesh;
+          else if (themeLower.includes('diwali')) bgImg = festiveImages.diwali;
+          else if (themeLower.includes('handloom')) bgImg = festiveImages.textile;
+          else bgImg = festiveImages.ganesh;
+        }
+
+        const newSlide = {
+          id: Date.now(),
+          image: bgImg,
+          badgeText: args.badgeText || `✦ ${args.theme} Utsav Special`,
+          badgeType: 'sale',
+          headline: args.headline || `${args.theme} Festival Celebration`,
+          subtitle: args.subtitle || `Celebrate ${args.theme} with authentic handcrafted creations directly from generational Indian artisans.`,
+          buttonText: 'Shop Festive Crafts',
+          buttonLink: args.category ? `/products?category=${encodeURIComponent(args.category)}` : '/products',
+          align: 'center',
+        };
+
+        const existingSlides = Array.isArray(current.heroSlides) ? [...current.heroSlides] : [];
+        const updatedSlides = [newSlide, ...existingSlides];
+
+        const discCode = args.code || (args.theme ? args.theme.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) + '30' : 'KALA30');
+        const discText = args.discount || '30%';
+        const updatedDiscountBanner = {
+          title: `${args.theme} Special Sale`,
+          description: `Use code ${discCode} to get up to ${discText} OFF on handcrafted heritage products`,
+          discount: discText,
+          code: discCode,
+          discountPercentage: parseInt(discText, 10) || 30,
+          buttonText: 'Claim Deal',
+          buttonLink: '/products',
+          isActive: true,
+        };
+
+        await applySettingsUpdate({
+          heroSlides: updatedSlides,
+          discountBanner: updatedDiscountBanner,
+        });
+
+        const { data: featuredProducts } = await safeQuery(() =>
+          supabase.from('products').select('id, name, price, category, image_url').eq('is_in_stock', true).limit(6)
+        );
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'CAMPAIGN_LAUNCHED_LIVE',
+          theme: args.theme,
+          heroSlide: newSlide,
+          discountBanner: updatedDiscountBanner,
+          featuredProductsCount: (featuredProducts || []).length,
+          message: `🎉 The complete "${args.theme}" campaign has been LAUNCHED LIVE on the website! The hero banner is active on the homepage, and the promo discount banner with code "${discCode}" is active across all pages.`,
+        };
+        decision = 'campaign_launched_live';
+        break;
+      }
+
+      case 'update_site_settings': {
+        entityType = 'settings';
+        const { applySettingsUpdate } = require('../controllers/settingsController');
+        const updated = await applySettingsUpdate(args);
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'SITE_SETTINGS_UPDATED_LIVE',
+          settings: updated,
+          message: `✅ Site settings updated LIVE across the website!`,
         };
         break;
       }
@@ -665,6 +876,39 @@ async function executeTool(toolName, args = {}, context = {}) {
         result = await artisanService.verifyArtisan(args.artisan_id, args.reason, args.confidence);
         break;
 
+      case 'batch_verify_artisans': {
+        entityType = 'artisan';
+        decision = 'batch_verify';
+        let targetIds = args.artisan_ids || [];
+        if (!Array.isArray(targetIds) || targetIds.length === 0) {
+          const { data: pendingArtisans } = await safeQuery(() =>
+            supabase.from('artisan_profiles').select('id, store_name').eq('verification_status', 'pending')
+          );
+          targetIds = (pendingArtisans || []).map(a => a.id);
+        }
+
+        const verifiedList = [];
+        for (const id of targetIds) {
+          try {
+            const vRes = await artisanService.verifyArtisan(id, args.reason || 'Verified via AI Admin directive', 1.0);
+            verifiedList.push(vRes);
+          } catch (err) {
+            console.warn(`[AI Tool Executor] Could not verify artisan ${id}:`, err.message);
+          }
+        }
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'BATCH_ARTISANS_VERIFIED_LIVE',
+          verifiedCount: verifiedList.length,
+          artisans: verifiedList,
+          artisanDirectoryUrl: '/artisans',
+          message: `✅ Successfully verified ${verifiedList.length} artisan profiles! Their stores are now active and verified live on the website.`,
+        };
+        break;
+      }
+
       case 'reject_artisan':
         entityType = 'artisan';
         entityId = args.artisan_id;
@@ -686,6 +930,39 @@ async function executeTool(toolName, args = {}, context = {}) {
         result = await productService.approveProduct(args.product_id, args.reason, args.confidence);
         break;
 
+      case 'batch_approve_products': {
+        entityType = 'product';
+        decision = 'batch_approve';
+        let targetIds = args.product_ids || [];
+        if (!Array.isArray(targetIds) || targetIds.length === 0) {
+          const { data: pendingProducts } = await safeQuery(() =>
+            supabase.from('products').select('id, name').neq('status', 'approved').limit(50)
+          );
+          targetIds = (pendingProducts || []).map(p => p.id);
+        }
+
+        const approvedList = [];
+        for (const id of targetIds) {
+          try {
+            const pRes = await productService.approveProduct(id, args.reason || 'Approved via AI Admin directive', 1.0);
+            approvedList.push(pRes);
+          } catch (err) {
+            console.warn(`[AI Tool Executor] Could not approve product ${id}:`, err.message);
+          }
+        }
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'BATCH_PRODUCTS_APPROVED_LIVE',
+          approvedCount: approvedList.length,
+          products: approvedList,
+          productsPageUrl: '/products',
+          message: `✅ Successfully approved ${approvedList.length} products! They are now published live in the marketplace catalog.`,
+        };
+        break;
+      }
+
       case 'reject_product':
         entityType = 'product';
         entityId = args.product_id;
@@ -706,6 +983,47 @@ async function executeTool(toolName, args = {}, context = {}) {
         decision = 'inventory_adjustment';
         result = await productService.updateProductInventory(args.product_id, args.quantity, args.reason);
         break;
+
+      case 'update_product_details': {
+        entityType = 'product';
+        entityId = args.product_id;
+        decision = 'update_details';
+
+        const updatePayload = {};
+        if (args.name) updatePayload.name = args.name;
+        if (args.price !== undefined) updatePayload.price = Number(args.price);
+        if (args.original_price !== undefined) updatePayload.original_price = Number(args.original_price);
+        if (args.category) updatePayload.category = args.category;
+        if (args.subcategory) updatePayload.subcategory = args.subcategory;
+        if (args.description) updatePayload.description = args.description;
+        if (args.stock_quantity !== undefined) {
+          updatePayload.stock_quantity = Number(args.stock_quantity);
+          updatePayload.is_in_stock = Number(args.stock_quantity) > 0;
+        }
+
+        const { data: updatedProd, error } = await safeQuery(() =>
+          supabase
+            .from('products')
+            .update(updatePayload)
+            .eq('id', args.product_id)
+            .select('id, name, price, original_price, category, subcategory, stock_quantity, is_in_stock, image_url')
+            .single()
+        );
+
+        if (error) throw error;
+
+        broadcastSync('PRODUCTS_UPDATED', { action: 'update_details', id: args.product_id, product: updatedProd });
+
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          action: 'PRODUCT_DETAILS_UPDATED_LIVE',
+          product: updatedProd,
+          productPageUrl: `/product/${args.product_id}`,
+          message: `✅ Product "${updatedProd.name}" details updated live in the store!`,
+        };
+        break;
+      }
 
       case 'confirm_order': {
         entityType = 'order';
@@ -788,6 +1106,50 @@ async function executeTool(toolName, args = {}, context = {}) {
         break;
       }
 
+      case 'approve_review': {
+        entityType = 'review';
+        entityId = args.review_id;
+        decision = 'approve';
+        const { data: reviewData, error } = await safeQuery(() =>
+          supabase
+            .from('reviews')
+            .update({ is_approved: true })
+            .eq('id', args.review_id)
+            .select()
+            .single()
+        );
+        if (error) throw error;
+        broadcastSync('REVIEWS_UPDATED', { action: 'approve', id: args.review_id, review: reviewData });
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          review_id: args.review_id,
+          message: `✅ Customer review approved and published live!`,
+        };
+        break;
+      }
+
+      case 'batch_approve_reviews': {
+        entityType = 'review';
+        decision = 'batch_approve';
+        let query = supabase.from('reviews').update({ is_approved: true });
+        if (Array.isArray(args.review_ids) && args.review_ids.length > 0) {
+          query = query.in('id', args.review_ids);
+        } else {
+          query = query.eq('is_approved', false);
+        }
+        const { data: approvedReviews, error } = await safeQuery(() => query.select());
+        if (error) throw error;
+        broadcastSync('REVIEWS_UPDATED', { action: 'batch_approve', count: (approvedReviews || []).length });
+        result = {
+          success: true,
+          liveOnWebsite: true,
+          approvedCount: (approvedReviews || []).length,
+          message: `✅ Successfully approved ${(approvedReviews || []).length} customer reviews live on the website!`,
+        };
+        break;
+      }
+
       case 'resolve_complaint':
         entityType = 'complaint';
         entityId = args.complaint_id;
@@ -824,13 +1186,14 @@ async function executeTool(toolName, args = {}, context = {}) {
 
     // Record audit entry for write operations and significant read actions
     const isWrite = [
-      'verify_artisan', 'reject_artisan', 'hold_artisan',
-      'approve_product', 'reject_product', 'hold_product',
+      'verify_artisan', 'batch_verify_artisans', 'reject_artisan', 'hold_artisan',
+      'approve_product', 'batch_approve_products', 'update_product_details', 'reject_product', 'hold_product',
       'update_product_inventory', 'confirm_order', 'hold_order', 'cancel_order',
-      'send_artisan_whatsapp', 'moderate_review', 'resolve_complaint',
+      'send_artisan_whatsapp', 'moderate_review', 'approve_review', 'batch_approve_reviews', 'resolve_complaint',
       'generate_daily_business_report', 'update_automation_rule',
-      // New write tools
-      'create_approval_request', 'generate_marketing_campaign',
+      // Live storefront tools
+      'add_hero_banner', 'remove_hero_banner', 'update_discount_banner', 'launch_festival_campaign', 'update_site_settings',
+      'create_approval_request', 'create_hero_banner_approval', 'generate_marketing_campaign',
       'generate_product_description', 'generate_ad_copy',
     ].includes(toolName);
 

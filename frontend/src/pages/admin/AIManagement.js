@@ -12,27 +12,92 @@ import {
   HiPaperAirplane,
   HiChevronDown,
   HiChevronUp,
+  HiExternalLink,
 } from 'react-icons/hi';
 import { aiManagerAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const QUICK_PROMPTS = [
-  "Add hero section banners on account of the Ganesh Festival.",
-  "Which artisans are waiting for verification?",
-  "Show today's orders and payment statuses.",
+  "Add hero section banner on account of the Ganesh Festival.",
+  "Launch complete Ganesh Festival Campaign with 30% discount.",
+  "Update top discount banner: 25% OFF with code KALA25.",
+  "Approve all pending craft products live to catalog.",
+  "Verify all pending artisan profiles & activate storefronts.",
+  "Approve all pending customer reviews.",
   "Find low-stock and out-of-stock products.",
   "Check the entire website health.",
+  "Show today's orders and payment statuses.",
   "What should we promote this season?",
   "Detect suspicious or high-risk orders.",
-  "Generate a Diwali campaign for handmade products.",
   "Show delayed shipments.",
   "Generate today's complete business report.",
   "Analyze artisan performance this month.",
-  "Find products missing descriptions.",
-  "Check failed or pending payments.",
-  "Moderate pending customer reviews.",
   "Show active autonomous operational rules."
 ];
+
+function renderFormattedText(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return lines.map((line, lIdx) => {
+    // Match markdown links [label](url)
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = linkRegex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.substring(lastIndex, match.index));
+      }
+      const title = match[1];
+      const url = match[2];
+      parts.push(
+        <a
+          key={`link-${lIdx}-${match.index}`}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 font-semibold text-gold-400 hover:text-gold-300 underline underline-offset-2 mx-1"
+        >
+          {title} ↗
+        </a>
+      );
+      lastIndex = linkRegex.lastIndex;
+    }
+    if (lastIndex < line.length) {
+      parts.push(line.substring(lastIndex));
+    }
+
+    const formattedParts = parts.map((part, pIdx) => {
+      if (typeof part !== 'string') return part;
+      const boldRegex = /\*\*([^*]+)\*\*/g;
+      const boldParts = [];
+      let bLast = 0;
+      let bMatch;
+      while ((bMatch = boldRegex.exec(part)) !== null) {
+        if (bMatch.index > bLast) {
+          boldParts.push(part.substring(bLast, bMatch.index));
+        }
+        boldParts.push(
+          <strong key={`b-${lIdx}-${pIdx}-${bMatch.index}`} className="text-white font-semibold">
+            {bMatch[1]}
+          </strong>
+        );
+        bLast = boldRegex.lastIndex;
+      }
+      if (bLast < part.length) {
+        boldParts.push(part.substring(bLast));
+      }
+      return boldParts;
+    });
+
+    return (
+      <div key={lIdx} className={line.trim() === '' ? 'h-2' : 'min-h-[1.25rem]'}>
+        {formattedParts}
+      </div>
+    );
+  });
+}
 
 export default function AIManagement() {
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'approvals' | 'rules' | 'actions' | 'queue' | 'reports'
@@ -52,7 +117,7 @@ export default function AIManagement() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '👋 Hello Administrator! I am **KalaStyle AI Operations Manager** — powered by Google Gemini.\n\nI can help you:\n✅ Monitor orders, payments & suspicious activity\n📦 Manage products, artisans & inventory\n📊 Generate sales analytics & daily reports\n🌟 Create seasonal campaigns & marketing content\n🔍 Check website health across all services\n\nTry asking: *"Check website health"* or *"What should we promote this season?"*',
+      content: '👋 Hello Administrator! I am **KalaStyle AI Operations Manager** — powered by Google Gemini.\n\nAssign any task to me and I will execute it **fully and immediately** on the live website:\n🎨 **Hero Banners & Campaigns**: Add festive slides, set discounts, launch campaigns\n🛍️ **Product Catalog**: Batch approve products, adjust prices, manage inventory\n👨‍🎨 **Artisan Governance**: Verify artisans, activate storefronts, dispatch notifications\n⭐ **Reviews & Feedback**: Screen, approve, and publish reviews live\n⚙️ **Store Settings**: Update shipping rates, support details, and announcements live\n\nTry clicking any directive on the right or type a custom command below!',
       toolCalls: []
     }
   ]);
@@ -282,6 +347,18 @@ export default function AIManagement() {
               <span>Pending Jobs: <strong className="text-white">{queueData.counts?.pending || 0}</strong></span>
             </div>
 
+            {/* Live Website Link */}
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/40 text-gold-400 hover:text-gold-300 text-xs font-semibold transition-all shadow-sm"
+              title="View Live Storefront Website"
+            >
+              <HiExternalLink className="w-4 h-4" />
+              <span>Live Website ↗</span>
+            </a>
+
             <button
               onClick={fetchStatusAndData}
               disabled={loading}
@@ -365,7 +442,7 @@ export default function AIManagement() {
                       )}
                     </div>
 
-                    <div className="whitespace-pre-wrap">{m.content}</div>
+                    <div className="text-sm leading-relaxed space-y-1">{renderFormattedText(m.content)}</div>
 
                     {/* Tool Execution Badges */}
                     {m.toolCalls && m.toolCalls.length > 0 && (

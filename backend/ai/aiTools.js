@@ -104,6 +104,111 @@ const FUNCTION_DECLARATIONS = [
     },
   },
   {
+    name: 'add_hero_banner',
+    description: 'Directly add a new hero section banner slide to the live homepage hero slider. The banner will immediately be displayed on the live website.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        headline: {
+          type: 'STRING',
+          description: 'Main captivating headline for the hero banner (e.g. "Ganesh Chaturthi Utsav — Sacred Clay Idols & Heritage Crafts")',
+        },
+        subtitle: {
+          type: 'STRING',
+          description: 'Descriptive subtitle highlighting the handcrafted quality, cultural significance, or discount',
+        },
+        badgeText: {
+          type: 'STRING',
+          description: 'Top badge text (e.g. "✦ Ganesh Utsav Special", "★ 25% Off Festive Craft")',
+        },
+        buttonText: {
+          type: 'STRING',
+          description: 'Call to action button label (e.g. "Explore Festive Crafts", "Shop Eco Idols")',
+        },
+        buttonLink: {
+          type: 'STRING',
+          description: 'Target link on click (e.g. "/products", "/products?category=Traditional+Paintings+%26+Wall+Art")',
+        },
+        image: {
+          type: 'STRING',
+          description: 'Banner background image URL (optional — an appropriate high-definition festive craft image will be selected automatically if omitted)',
+        },
+        theme: {
+          type: 'STRING',
+          description: 'Festival or theme name (e.g. "Ganesh Festival", "Diwali", "Navratri")',
+        },
+        align: {
+          type: 'STRING',
+          enum: ['center', 'left', 'right'],
+          description: 'Text alignment on the slide (default: center)',
+        },
+      },
+      required: ['headline', 'subtitle'],
+    },
+  },
+  {
+    name: 'remove_hero_banner',
+    description: 'Remove a hero slide from the live homepage hero slider by matching its headline or slide ID.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        headline: { type: 'STRING', description: 'Headline of the banner to remove (partial match)' },
+        slide_id: { type: 'STRING', description: 'ID of the banner slide to remove' },
+      },
+    },
+  },
+  {
+    name: 'update_discount_banner',
+    description: 'Update the top promotional discount announcement banner displayed across the live website. Changes immediately appear on the live storefront.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Title of the promotional banner (e.g. "Ganesh Chaturthi Special Sale")' },
+        description: { type: 'STRING', description: 'Supporting description text (e.g. "Use this code and get up to 30% off on handmade crafts")' },
+        discount: { type: 'STRING', description: 'Discount display string (e.g. "30%", "25% OFF")' },
+        code: { type: 'STRING', description: 'Coupon promo code (e.g. "GANESH30", "KALA25")' },
+        discountPercentage: { type: 'INTEGER', description: 'Numeric discount percentage (e.g. 30)' },
+        buttonText: { type: 'STRING', description: 'Button text (e.g. "Grab the Deal", "Explore Offers")' },
+        buttonLink: { type: 'STRING', description: 'Target link path (e.g. "/products")' },
+        isActive: { type: 'BOOLEAN', description: 'Whether the discount banner is visible (default: true)' },
+      },
+    },
+  },
+  {
+    name: 'launch_festival_campaign',
+    description: 'Completely launch a festival or seasonal campaign on the live website in one step: adds a festive hero banner to the homepage, activates the top promotional discount banner with a festival coupon code, and curates festival products.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        theme: { type: 'STRING', description: 'Festival or season theme (e.g. "Ganesh Festival", "Diwali", "Dussehra", "Raksha Bandhan")' },
+        headline: { type: 'STRING', description: 'Headline for the hero banner' },
+        subtitle: { type: 'STRING', description: 'Subtitle for the hero banner' },
+        discount: { type: 'STRING', description: 'Discount percentage or text (e.g. "30%", "25% OFF")' },
+        code: { type: 'STRING', description: 'Coupon code for the campaign (e.g. "GANESH30")' },
+        badgeText: { type: 'STRING', description: 'Badge text on banner (e.g. "✦ Ganesh Utsav Special")' },
+        category: { type: 'STRING', description: 'Category to feature (optional)' },
+      },
+      required: ['theme'],
+    },
+  },
+  {
+    name: 'update_site_settings',
+    description: 'Update global store and platform settings displayed across the live website: storeName, supportEmail, supportPhone, delivery_fee, free_delivery_above, cod_enabled, maintenanceMode, shipping_estimated_days.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        storeName: { type: 'STRING', description: 'Store / Brand Name' },
+        supportEmail: { type: 'STRING', description: 'Customer support email' },
+        supportPhone: { type: 'STRING', description: 'Customer support phone number' },
+        delivery_fee: { type: 'NUMBER', description: 'Standard delivery fee in INR' },
+        free_delivery_above: { type: 'NUMBER', description: 'Minimum cart value for free delivery in INR (0 for always free)' },
+        shipping_estimated_days: { type: 'STRING', description: 'Estimated delivery window (e.g. "2 - 4 Business Days")' },
+        cod_enabled: { type: 'BOOLEAN', description: 'Enable or disable Cash on Delivery' },
+        maintenanceMode: { type: 'BOOLEAN', description: 'Enable or disable maintenance mode' },
+      },
+    },
+  },
+  {
     name: 'create_hero_banner_approval',
     description: 'Propose and register an approval request to add a new hero section banner to the homepage for a festival or occasion (e.g., Ganesh Festival, Diwali, Handloom Utsav). Once the admin clicks Approve in the Approvals tab, this banner immediately publishes live to the homepage.',
     parameters: {
@@ -521,6 +626,21 @@ const FUNCTION_DECLARATIONS = [
     },
   },
   {
+    name: 'batch_verify_artisans',
+    description: 'Verify multiple or all pending artisans and activate their stores live on the website.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        artisan_ids: {
+          type: 'ARRAY',
+          description: 'Array of artisan UUIDs to verify (optional — leave empty to verify all pending artisans)',
+          items: { type: 'STRING' },
+        },
+        reason: { type: 'STRING', description: 'Verification rationale' },
+      },
+    },
+  },
+  {
     name: 'reject_artisan',
     description: 'Reject an artisan profile that fails authenticity or safety guidelines.',
     parameters: {
@@ -558,6 +678,21 @@ const FUNCTION_DECLARATIONS = [
     },
   },
   {
+    name: 'batch_approve_products',
+    description: 'Approve multiple or all pending products and publish them live to the marketplace catalog so customers can view and buy them immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        product_ids: {
+          type: 'ARRAY',
+          description: 'Array of product UUIDs to approve (optional — leave empty to approve all pending products)',
+          items: { type: 'STRING' },
+        },
+        reason: { type: 'STRING', description: 'Operational reason for approval' },
+      },
+    },
+  },
+  {
     name: 'reject_product',
     description: 'Reject a product submission due to policy violation, pricing anomalies, or inappropriate content.',
     parameters: {
@@ -592,6 +727,23 @@ const FUNCTION_DECLARATIONS = [
         reason: { type: 'STRING', description: 'Reason for stock change' },
       },
       required: ['product_id', 'quantity'],
+    },
+  },
+  {
+    name: 'update_product_details',
+    description: 'Update a craft product details live in the marketplace catalog: price, original_price, category, subcategory, name, or description.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        product_id: { type: 'STRING', description: 'UUID of the product' },
+        name: { type: 'STRING', description: 'New product title/name' },
+        price: { type: 'NUMBER', description: 'Selling price in INR' },
+        original_price: { type: 'NUMBER', description: 'Original strike-through MRP in INR' },
+        category: { type: 'STRING', description: 'Product category' },
+        subcategory: { type: 'STRING', description: 'Product subcategory' },
+        description: { type: 'STRING', description: 'Updated product description' },
+      },
+      required: ['product_id'],
     },
   },
   {
@@ -662,6 +814,20 @@ const FUNCTION_DECLARATIONS = [
         reason: { type: 'STRING', description: 'Reason for moderation action' },
       },
       required: ['review_id', 'action', 'reason'],
+    },
+  },
+  {
+    name: 'batch_approve_reviews',
+    description: 'Approve all pending customer reviews and publish them live across all products.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        review_ids: {
+          type: 'ARRAY',
+          description: 'Optional array of review IDs to approve (omit to approve all pending reviews)',
+          items: { type: 'STRING' },
+        },
+      },
     },
   },
   {

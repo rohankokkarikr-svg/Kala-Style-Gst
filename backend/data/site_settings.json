@@ -12,6 +12,17 @@
   "footerTagline": "Empowering India's generational artisans, master handloom weavers, and traditional craftsmen with AI-driven direct commerce.",
   "heroSlides": [
     {
+      "id": 1789717709126,
+      "image": "https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047566/kalastyle-artisan-marketplace/xtzypfezplersfalej58.jpg",
+      "badgeText": "✦ Ganesh Festival Special",
+      "badgeType": "sale",
+      "headline": "Ganesh Utsav Grand Heritage Sale",
+      "subtitle": "Celebrate Ganesh Chaturthi with authentic handcrafted brass & clay idols",
+      "buttonText": "Explore Idols & Decor",
+      "buttonLink": "/products?category=Brassware",
+      "align": "center"
+    },
+    {
       "id": 1,
       "image": "https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg",
       "badgeText": "✦ Heritage Handlooms",
@@ -40,6 +51,17 @@
   "cod_min_order_value": 100,
   "cod_max_order_value": 5000,
   "hero_slides": [
+    {
+      "id": 1789717709126,
+      "image": "https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047566/kalastyle-artisan-marketplace/xtzypfezplersfalej58.jpg",
+      "badgeText": "✦ Ganesh Festival Special",
+      "badgeType": "sale",
+      "headline": "Ganesh Utsav Grand Heritage Sale",
+      "subtitle": "Celebrate Ganesh Chaturthi with authentic handcrafted brass & clay idols",
+      "buttonText": "Explore Idols & Decor",
+      "buttonLink": "/products?category=Brassware",
+      "align": "center"
+    },
     {
       "id": 1,
       "image": "https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg",
