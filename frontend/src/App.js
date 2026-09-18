@@ -55,6 +55,7 @@ const Customers = lazy(() => import('./pages/admin/Customers'));
 const AdminProducts = lazy(() => import('./pages/admin/Products'));
 const Categories = lazy(() => import('./pages/admin/Categories'));
 const AdminOrders = lazy(() => import('./pages/admin/Orders'));
+const AdminShipping = lazy(() => import('./pages/admin/AdminShipping'));
 const Payments = lazy(() => import('./pages/admin/Payments'));
 const AIManagement = lazy(() => import('./pages/admin/AIManagement'));
 const AdminReviews = lazy(() => import('./pages/admin/Reviews'));
@@ -124,6 +125,7 @@ function App() {
                       <Route path="products" element={<AdminProducts />} />
                       <Route path="categories" element={<Categories />} />
                       <Route path="orders" element={<AdminOrders />} />
+                      <Route path="shipping" element={<AdminShipping />} />
                       <Route path="payments" element={<Payments />} />
                       <Route path="ai" element={<AIManagement />} />
                       <Route path="ai-manager" element={<AIManagement />} />

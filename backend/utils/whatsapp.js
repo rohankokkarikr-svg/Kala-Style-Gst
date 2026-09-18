@@ -447,9 +447,27 @@ If you have questions, reply to this message or visit our website.`;
   return await sendWhatsappToRecipients([customerPhone], messageBody);
 };
 
+// ── sendShippingDispatchNotification ──────────────────────────────────────────
+const sendShippingDispatchNotification = async (customerPhone, customerName, order, shipment = {}) => {
+  const trackingLink = shipment.tracking_url || (shipment.awb_code ? `https://shiprocket.co/tracking/${encodeURIComponent(shipment.awb_code)}` : 'https://kalastyle.ai/tracking');
+  const messageBody = `🚚 *ORDER DISPATCHED — KalaStyle AI*
+----------------------------------------
+Hi ${customerName || 'Valued Customer'}, your handcrafted order is on its way!
+🆔 *Order:* #${String(order.order_number || order.id || '').substring(0, 8).toUpperCase()}
+📦 *Courier Partner:* ${shipment.courier_name || 'Express Logistics'}
+🏷️ *AWB / Tracking No:* ${shipment.awb_code || 'Assigned'}
+🔗 *Live Tracking Link:* ${trackingLink}
+========================================
+Track your package in real-time or visit our tracking portal.
+Thank you for supporting Indian Artisans! 🎨✨`;
+
+  return await sendWhatsappToRecipients([customerPhone], messageBody);
+};
+
 module.exports = {
   ...module.exports,
   sendCODOrderNotification,
   sendDeliveredNotification,
   sendRefundInitiatedNotification,
+  sendShippingDispatchNotification,
 };

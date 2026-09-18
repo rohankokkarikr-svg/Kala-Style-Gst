@@ -99,6 +99,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/orders', require('./routes/orders'));
+app.use('/api/shipping', require('./routes/shipping'));
 app.use('/api/sales', require('./routes/sales'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/reviews', require('./routes/reviews'));

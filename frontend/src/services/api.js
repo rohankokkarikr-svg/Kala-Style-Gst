@@ -272,11 +272,27 @@ export const aiManagerAPI = {
   getApprovals:     (params)   => api.get('/admin/ai-manager/approvals', { params }),
   approveAction:    (id)       => api.post(`/admin/ai-manager/approvals/${id}/approve`),
   rejectAction:     (id, data) => api.post(`/admin/ai-manager/approvals/${id}/reject`, data),
-  // New: Agent Memory
-  getAgentMemory:   (params)   => api.get('/admin/ai-manager/memory', { params }),
 };
 
+// ─── Shiprocket Shipping & Logistics ─────────────
+export const shippingAPI = {
+  checkServiceability:  (data)         => api.post('/shipping/serviceability', data),
+  getRates:             (data)         => api.post('/shipping/rates', data),
+  getShipments:         (params)       => api.get('/shipping', { params }),
+  getShipmentById:      (id)           => api.get(`/shipping/${id}`),
+  getByOrderId:         (orderId)      => api.get(`/shipping/order/${orderId}`),
+  createShipment:       (orderId, data)=> api.post(`/shipping/orders/${orderId}/create`, data),
+  assignAWB:            (id, data)     => api.post(`/shipping/${id}/awb`, data),
+  schedulePickup:       (id, data)     => api.post(`/shipping/${id}/pickup`, data),
+  generateLabel:        (id)           => api.post(`/shipping/${id}/label`),
+  generateInvoice:      (id)           => api.post(`/shipping/${id}/invoice`),
+  trackShipment:        (id)           => api.get(`/shipping/${id}/tracking`),
+  getStatistics:        ()             => api.get('/shipping/statistics'),
+  getDelayed:           ()             => api.get('/shipping/delayed'),
+  retryShipment:        (id)           => api.post(`/shipping/${id}/retry`),
+};
 
 export default api;
 export { apiCache };
+
 

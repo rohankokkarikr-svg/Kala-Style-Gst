@@ -18,6 +18,7 @@ const agentHealthService = require('../services/agentHealthService');
 const agentApprovalService = require('../services/agentApprovalService');
 const marketingService = require('../services/marketingService');
 const recommendationService = require('../services/recommendationService');
+const shippingService = require('../services/shipping/shippingService');
 
 const { v4: uuidv4 } = require('uuid');
 
@@ -109,6 +110,14 @@ const SAFETY_LEVELS = {
   analyze_seasonal_inventory: 1,
   get_shipping_status: 1,
   detect_delayed_shipments: 1,
+  check_shipping_serviceability: 1,
+  get_shipping_rates: 1,
+  calculate_shipping_rate: 1,
+  get_shipment: 1,
+  track_shipment: 1,
+  get_shipping_statistics: 1,
+  generate_shipping_label: 1,
+  generate_shipping_invoice: 1,
   get_pending_approvals: 1,
   get_agent_memory: 1,
   get_hero_banners: 1,
@@ -118,6 +127,10 @@ const SAFETY_LEVELS = {
   generate_social_content: 1,
 
   // LEVEL 2: Controlled Operational Actions (Autonomous with audit log)
+  create_shiprocket_order: 2,
+  assign_awb: 2,
+  schedule_pickup: 2,
+  retry_failed_shipment: 2,
   verify_artisan: 2,
   batch_verify_artisans: 2,
   hold_artisan: 2,
@@ -868,6 +881,135 @@ async function executeTool(toolName, args = {}, context = {}) {
         break;
       }
 
+      // ─── SHIPROCKET SHIPPING & LOGISTICS TOOLS ─────────────────────
+      case 'check_shipping_serviceability':
+        result = await shippingService.checkServiceability(args);
+        break;
+
+      case 'get_shipping_rates':
+      case 'calculate_shipping_rate':
+        result = await shippingService.getShippingRates(args);
+        break;
+
+      case 'create_shiprocket_order': {
+        entityType = 'shipment';
+        decision = 'create_shipment';
+        let resolvedOrderId = args.order_id;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+          const { data: oByNum } = await safeQuery(() =>
+            supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
+          );
+          if (oByNum?.id) resolvedOrderId = oByNum.id;
+        }
+        entityId = resolvedOrderId;
+        result = await shippingService.createShipmentFromOrder(resolvedOrderId, args);
+        break;
+      }
+
+      case 'get_shipment': {
+        let shipment = null;
+        if (args.shipment_id) {
+          shipment = await shippingService.getShipmentById(args.shipment_id);
+        } else if (args.order_id) {
+          let resolvedOrderId = args.order_id;
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+            const { data: oByNum } = await safeQuery(() =>
+              supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
+            );
+            if (oByNum?.id) resolvedOrderId = oByNum.id;
+          }
+          shipment = await shippingService.getShipmentByOrderId(resolvedOrderId);
+        }
+        result = shipment || { found: false, message: 'Shipment not found' };
+        break;
+      }
+
+      case 'assign_awb':
+        entityType = 'shipment';
+        entityId = args.shipment_id;
+        decision = 'assign_awb';
+        result = await shippingService.assignAWB(args.shipment_id, args.courier_id);
+        break;
+
+      case 'schedule_pickup':
+        entityType = 'shipment';
+        entityId = args.shipment_id;
+        decision = 'schedule_pickup';
+        result = await shippingService.schedulePickup(args.shipment_id, args.pickup_date);
+        break;
+
+      case 'generate_shipping_label':
+        result = await shippingService.generateShippingLabel(args.shipment_id);
+        break;
+
+      case 'generate_shipping_invoice':
+        result = await shippingService.generateShippingInvoice(args.shipment_id);
+        break;
+
+      case 'track_shipment': {
+        let targetShipmentId = args.shipment_id;
+        if (!targetShipmentId && args.order_id) {
+          let resolvedOrderId = args.order_id;
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+            const { data: oByNum } = await safeQuery(() =>
+              supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
+            );
+            if (oByNum?.id) resolvedOrderId = oByNum.id;
+          }
+          const s = await shippingService.getShipmentByOrderId(resolvedOrderId);
+          if (s) targetShipmentId = s.id;
+        }
+        if (!targetShipmentId && !args.awb_code) {
+          throw new Error('Either shipment_id, order_id, or awb_code is required to track a shipment.');
+        }
+        if (targetShipmentId) {
+          result = await shippingService.trackShipment(targetShipmentId);
+        } else {
+          const provider = require('../services/shipping/shippingProvider').getShippingProvider();
+          result = await provider.trackShipment({ awb_code: args.awb_code });
+        }
+        break;
+      }
+
+      case 'get_shipping_status': {
+        let shipment = null;
+        if (args.shipment_id) {
+          shipment = await shippingService.getShipmentById(args.shipment_id);
+        } else if (args.order_id) {
+          let resolvedOrderId = args.order_id;
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+            const { data: oByNum } = await safeQuery(() =>
+              supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
+            );
+            if (oByNum?.id) resolvedOrderId = oByNum.id;
+          }
+          shipment = await shippingService.getShipmentByOrderId(resolvedOrderId);
+        }
+        result = {
+          found: Boolean(shipment),
+          status: shipment?.status || 'PENDING',
+          awb_code: shipment?.awb_code || null,
+          courier_name: shipment?.courier_name || null,
+          tracking_url: shipment?.tracking_url || null,
+        };
+        break;
+      }
+
+      case 'get_shipping_statistics':
+        result = await shippingService.getShippingStatistics();
+        break;
+
+      case 'detect_delayed_shipments':
+        result = await shippingService.detectDelayedShipments();
+        break;
+
+      case 'retry_failed_shipment':
+        entityType = 'shipment';
+        entityId = args.shipment_id;
+        decision = 'retry_shipment';
+        result = await shippingService.retryFailedShipment(args.shipment_id);
+        break;
+
       // ─── ACTION / WRITE TOOLS ──────────────────────────────────────
       case 'verify_artisan':
         entityType = 'artisan';
@@ -1191,6 +1333,8 @@ async function executeTool(toolName, args = {}, context = {}) {
       'update_product_inventory', 'confirm_order', 'hold_order', 'cancel_order',
       'send_artisan_whatsapp', 'moderate_review', 'approve_review', 'batch_approve_reviews', 'resolve_complaint',
       'generate_daily_business_report', 'update_automation_rule',
+      // Shipping write tools
+      'create_shiprocket_order', 'assign_awb', 'schedule_pickup', 'retry_failed_shipment',
       // Live storefront tools
       'add_hero_banner', 'remove_hero_banner', 'update_discount_banner', 'launch_festival_campaign', 'update_site_settings',
       'create_approval_request', 'create_hero_banner_approval', 'generate_marketing_campaign',

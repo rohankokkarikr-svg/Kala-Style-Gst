@@ -19,7 +19,8 @@ import {
   HiLogout, 
   HiMenu, 
   HiX,
-  HiExternalLink
+  HiExternalLink,
+  HiTruck
 } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import NotificationCenter from '../../components/NotificationCenter';
@@ -51,6 +52,7 @@ export default function AdminLayout() {
         { name: 'Products', path: '/admin/products', icon: HiCollection },
         { name: 'Categories', path: '/admin/categories', icon: HiFolder },
         { name: 'Orders', path: '/admin/orders', icon: HiShoppingBag },
+        { name: 'Shipping & Logistics', path: '/admin/shipping', icon: HiTruck },
         { name: 'Payments', path: '/admin/payments', icon: HiCurrencyRupee },
       ]
     },

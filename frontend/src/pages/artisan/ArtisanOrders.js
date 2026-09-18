@@ -71,10 +71,12 @@ export default function ArtisanOrders() {
     window.addEventListener('kala:sync:orders_updated', handleSync);
     window.addEventListener('kala:sync:payments_updated', handleSync);
     window.addEventListener('kala:sync:artisan_orders_updated', handleSync);
+    window.addEventListener('kala:sync:shipment_updated', handleSync);
     return () => {
       window.removeEventListener('kala:sync:orders_updated', handleSync);
       window.removeEventListener('kala:sync:payments_updated', handleSync);
       window.removeEventListener('kala:sync:artisan_orders_updated', handleSync);
+      window.removeEventListener('kala:sync:shipment_updated', handleSync);
     };
   }, []);
 
@@ -325,6 +327,29 @@ export default function ArtisanOrders() {
                     {orderObj.payment_method && (
                       <span className="text-[10px] font-medium text-gray-300 bg-dark-700 px-2 py-0.5 rounded border border-dark-600">
                         💳 {orderObj.payment_method.toUpperCase()} {orderObj.payment_status === 'completed' ? '• Paid' : ''}
+                      </span>
+                    )}
+                    {orderObj.shipping_status && (
+                      <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                        <HiTruck className="w-3 h-3 text-emerald-400" />
+                        {orderObj.shipping_status.replace(/_/g, ' ')}
+                        {orderObj.courier_name ? ` • ${orderObj.courier_name}` : ''}
+                      </span>
+                    )}
+                    {orderObj.awb_code && (
+                      <span className="text-[10px] font-mono text-gray-300 bg-dark-700 px-2 py-0.5 rounded border border-dark-600 flex items-center gap-1">
+                        AWB: <strong className="text-gold-400">{orderObj.awb_code}</strong>
+                        {orderObj.tracking_url && (
+                          <a
+                            href={orderObj.tracking_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 ml-1 inline-flex items-center gap-0.5"
+                            title="Track Courier"
+                          >
+                            Track <HiExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
                       </span>
                     )}
                   </div>

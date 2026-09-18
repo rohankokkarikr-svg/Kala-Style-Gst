@@ -271,6 +271,11 @@ exports.getMyOrders = async (req, res) => {
           payment_status,
           transaction_id,
           razorpay_payment_id,
+          shipping_status,
+          awb_code,
+          courier_name,
+          tracking_url,
+          shipment_id,
           users(id, name, email, phone)
         ),
         products(id, name, price, image_url, category)
@@ -303,7 +308,13 @@ exports.getMyOrders = async (req, res) => {
 
     if (error) throw error;
 
-    // Attach extracted clean utr_number to order objects
+    // Optional shipping service augmentation
+    let shippingService = null;
+    try {
+      shippingService = require('../services/shipping/shippingService');
+    } catch (e) {}
+
+    // Attach extracted clean utr_number and shipping details to order objects
     const sorted = (orderItems || []).map(item => {
       if (item.orders) {
         let utr = item.orders.transaction_id || item.orders.razorpay_payment_id;
@@ -312,6 +323,19 @@ exports.getMyOrders = async (req, res) => {
           if (match) utr = match[1].trim();
         }
         item.orders.utr_number = utr || null;
+
+        if (shippingService && typeof shippingService.getShipmentByOrderId === 'function') {
+          try {
+            const shipment = shippingService.getShipmentByOrderId(item.orders.id);
+            if (shipment) {
+              item.orders.shipping_status = item.orders.shipping_status || shipment.status || shipment.shipment_status;
+              item.orders.awb_code = item.orders.awb_code || shipment.awb_code;
+              item.orders.courier_name = item.orders.courier_name || shipment.courier_name;
+              item.orders.tracking_url = item.orders.tracking_url || shipment.tracking_url;
+              item.orders.shipment_id = item.orders.shipment_id || shipment.id;
+            }
+          } catch (err) {}
+        }
       }
       return item;
     }).sort((a, b) => {

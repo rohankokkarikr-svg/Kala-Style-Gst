@@ -881,6 +881,157 @@ const FUNCTION_DECLARATIONS = [
       required: ['rule_id', 'is_enabled'],
     },
   },
+  // ─── SHIPROCKET SHIPPING & LOGISTICS TOOLS ─────────────────────────────
+  {
+    name: 'check_shipping_serviceability',
+    description: 'Check whether a customer PIN code is serviceable by courier partners, and check available rates and COD support.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        delivery_postcode: { type: 'STRING', description: '6-digit destination/customer postal PIN code' },
+        pickup_postcode: { type: 'STRING', description: '6-digit origin/artisan postal PIN code (optional, defaults to 560001)' },
+        weight: { type: 'NUMBER', description: 'Package weight in kg (default 0.5)' },
+        cod: { type: 'BOOLEAN', description: 'Whether Cash on Delivery is requested' },
+        declared_value: { type: 'NUMBER', description: 'Declared value of order items in INR' },
+      },
+      required: ['delivery_postcode'],
+    },
+  },
+  {
+    name: 'get_shipping_rates',
+    description: 'Calculate shipping rate estimates across multiple couriers (Delhivery, BlueDart, DTDC, Shadowfax) for an order or destination.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        delivery_postcode: { type: 'STRING', description: '6-digit destination postal PIN code' },
+        pickup_postcode: { type: 'STRING', description: '6-digit origin postal PIN code' },
+        weight: { type: 'NUMBER', description: 'Package weight in kg' },
+        cod: { type: 'BOOLEAN', description: 'Whether COD is required' },
+      },
+      required: ['delivery_postcode'],
+    },
+  },
+  {
+    name: 'create_shiprocket_order',
+    description: 'Create a shipment for a confirmed/paid order in Shiprocket logistics and register it in the marketplace.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        order_id: { type: 'STRING', description: 'UUID or order number of the order to ship' },
+        pickup_location: { type: 'STRING', description: 'Registered artisan pickup location nickname (optional)' },
+        weight: { type: 'NUMBER', description: 'Package weight in kg (optional override)' },
+        force_recreate: { type: 'BOOLEAN', description: 'Force re-creation if previous shipment failed' },
+      },
+      required: ['order_id'],
+    },
+  },
+  {
+    name: 'get_shipment',
+    description: 'Fetch detailed shipment information by shipment ID or order ID.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+        order_id: { type: 'STRING', description: 'UUID of the order' },
+      },
+    },
+  },
+  {
+    name: 'assign_awb',
+    description: 'Assign Air Waybill (AWB) tracking number and courier company to a created shipment.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+        courier_id: { type: 'STRING', description: 'Specific courier company ID (optional)' },
+      },
+      required: ['shipment_id'],
+    },
+  },
+  {
+    name: 'schedule_pickup',
+    description: 'Schedule courier pickup for an AWB-assigned shipment from artisan workshop.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+        pickup_date: { type: 'STRING', description: 'YYYY-MM-DD pickup date (optional)' },
+      },
+      required: ['shipment_id'],
+    },
+  },
+  {
+    name: 'generate_shipping_label',
+    description: 'Generate a printable PDF shipping label URL for an order shipment.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+      },
+      required: ['shipment_id'],
+    },
+  },
+  {
+    name: 'generate_shipping_invoice',
+    description: 'Generate a printable tax invoice URL for an order shipment.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+      },
+      required: ['shipment_id'],
+    },
+  },
+  {
+    name: 'track_shipment',
+    description: 'Track live courier progress, current location, scan activities, and estimated delivery date for a shipment.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment' },
+        awb_code: { type: 'STRING', description: 'Air Waybill tracking number (optional)' },
+        order_id: { type: 'STRING', description: 'Order UUID (optional)' },
+      },
+    },
+  },
+  {
+    name: 'get_shipping_status',
+    description: 'Get current normalized shipping status for an order or shipment.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        order_id: { type: 'STRING', description: 'Order UUID' },
+        shipment_id: { type: 'STRING', description: 'Shipment UUID' },
+      },
+    },
+  },
+  {
+    name: 'get_shipping_statistics',
+    description: 'Get platform-wide logistics metrics: total shipments, in transit, delivered, delayed, and courier distribution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'detect_delayed_shipments',
+    description: 'Identify delayed, stalled, or unassigned shipments requiring administrative or operational intervention.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'retry_failed_shipment',
+    description: 'Retry a failed shipment creation, AWB assignment, or pickup schedule.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        shipment_id: { type: 'STRING', description: 'UUID of the shipment to retry' },
+      },
+      required: ['shipment_id'],
+    },
+  },
 ];
 
 const GEMINI_TOOLS = [{

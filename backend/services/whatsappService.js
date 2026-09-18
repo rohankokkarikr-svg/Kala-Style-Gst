@@ -14,6 +14,7 @@ const {
   sendCODOrderNotification,
   sendArtisanUtrSubmittedNotification,
   sendOrderCancelWhatsappNotification,
+  sendShippingDispatchNotification,
 } = require('../utils/whatsapp');
 
 /**
@@ -177,4 +178,75 @@ exports.notifyOrderArtisans = async (orderId, notificationType = 'NEW_ORDER') =>
   }
 
   return results;
+};
+
+/**
+ * Send real-time WhatsApp shipping dispatch and tracking notification to the customer.
+ */
+exports.sendShippingDispatchWhatsApp = async ({ orderId, shipment }) => {
+  if (!orderId) return { success: false, reason: 'orderId is required' };
+
+  const awbCode = shipment?.awb_code || 'assigned';
+  const idempotencyKey = `${orderId}_${awbCode}_SHIPPING_DISPATCH`;
+
+  try {
+    const { data: existing } = await safeQuery(() =>
+      supabase
+        .from('whatsapp_notifications')
+        .select('id, status, twilio_message_sid')
+        .eq('idempotency_key', idempotencyKey)
+        .maybeSingle()
+    );
+
+    if (existing && existing.status === 'sent') {
+      return { success: true, cached: true, sid: existing.twilio_message_sid };
+    }
+  } catch (e) {}
+
+  try {
+    const { data: order } = await safeQuery(() =>
+      supabase
+        .from('orders')
+        .select('*, users(name, phone)')
+        .eq('id', orderId)
+        .single()
+    );
+
+    if (!order) return { success: false, reason: 'Order not found' };
+
+    const customerPhone = order.phone || order.users?.phone;
+    if (!customerPhone) {
+      return { success: false, reason: 'No customer phone number available' };
+    }
+
+    const customerName = order.shipping_name || order.users?.name || 'Customer';
+
+    const twilioResult = await sendShippingDispatchNotification(customerPhone, customerName, order, shipment);
+    const status = twilioResult?.success ? 'sent' : 'failed';
+    const sid = twilioResult?.results?.[0]?.sid || twilioResult?.sid || null;
+    const errMsg = twilioResult?.results?.[0]?.error || (twilioResult?.success ? null : 'Failed to deliver');
+
+    await safeQuery(() =>
+      supabase.from('whatsapp_notifications').upsert({
+        order_id: orderId,
+        phone_number: formatPhone(customerPhone) || customerPhone,
+        message_type: 'SHIPPING_DISPATCH',
+        idempotency_key: idempotencyKey,
+        twilio_message_sid: sid,
+        status,
+        error_message: errMsg,
+        payload_snapshot: {
+          courier: shipment?.courier_name,
+          awb: shipment?.awb_code,
+          trackingUrl: shipment?.tracking_url,
+        },
+        sent_at: status === 'sent' ? new Date().toISOString() : null,
+      }, { onConflict: 'idempotency_key' })
+    );
+
+    return { success: twilioResult?.success || false, sid, error: errMsg };
+  } catch (err) {
+    console.warn('[whatsappService] sendShippingDispatchWhatsApp non-blocking warning:', err.message);
+    return { success: false, error: err.message };
+  }
 };

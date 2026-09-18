@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { orderAPI } from '../services/api';
+import { orderAPI, shippingAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import {
   HiCheckCircle, HiClock, HiExclamationCircle, HiTruck,
   HiLocationMarker, HiShoppingBag, HiArrowLeft, HiRefresh,
-  HiChatAlt2
+  HiChatAlt2, HiExternalLink, HiClipboardCopy
 } from 'react-icons/hi';
 import { motion } from 'framer-motion';
 import SendMessageModal from '../components/SendMessageModal';
@@ -119,6 +119,7 @@ function ArtisanTimeline({ artisanOrder, overallStatus }) {
 export default function OrderTracking() {
   const { id } = useParams();
   const [order, setOrder] = useState(null);
+  const [shipment, setShipment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [messageModalOpen, setMessageModalOpen] = useState(false);
@@ -129,12 +130,24 @@ export default function OrderTracking() {
     try {
       const { data } = await orderAPI.getTracking(id);
       setOrder(data);
+      if (data?.id) {
+        try {
+          const sRes = await shippingAPI.getByOrderId(data.id);
+          if (sRes?.data) setShipment(sRes.data);
+        } catch (e) {}
+      }
     } catch (err) {
       // Automatic fallback: attempt to load order via getById
       try {
         const { data: fallbackData } = await orderAPI.getById(id);
         if (fallbackData) {
           setOrder(fallbackData);
+          if (fallbackData.id) {
+            try {
+              const sRes = await shippingAPI.getByOrderId(fallbackData.id);
+              if (sRes?.data) setShipment(sRes.data);
+            } catch (e) {}
+          }
           return;
         }
       } catch (fallbackErr) {
@@ -167,10 +180,12 @@ export default function OrderTracking() {
     window.addEventListener('kala:sync:orders_updated', handler);
     window.addEventListener('kala:sync:artisan_orders_updated', handler);
     window.addEventListener('kala:sync:payments_updated', handler);
+    window.addEventListener('kala:sync:shipment_updated', handler);
     return () => {
       window.removeEventListener('kala:sync:orders_updated', handler);
       window.removeEventListener('kala:sync:artisan_orders_updated', handler);
       window.removeEventListener('kala:sync:payments_updated', handler);
+      window.removeEventListener('kala:sync:shipment_updated', handler);
     };
   }, [id, order]);
 
@@ -341,6 +356,90 @@ export default function OrderTracking() {
             </div>
           )}
         </motion.div>
+
+        {/* Shiprocket Logistics & Courier Tracking Card */}
+        {(shipment || order.awb_code || order.shipping_status) && (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-dark-800 border border-gold-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-700/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gold-500/10 border border-gold-500/30 rounded-xl">
+                  <HiTruck className="w-6 h-6 text-gold-400" />
+                </div>
+                <div>
+                  <h2 className="text-base font-serif font-bold text-white flex items-center gap-2">
+                    <span>Shiprocket Courier Logistics</span>
+                    <span className="text-[10px] bg-gold-500/20 text-gold-300 font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Verified
+                    </span>
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Courier: <strong className="text-white">{shipment?.courier_name || order.courier_name || 'Standard Courier'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full text-xs font-bold uppercase tracking-wider">
+                  {(shipment?.status || order.shipping_status || 'PROCESSING').replace(/_/g, ' ')}
+                </span>
+                {(shipment?.tracking_url || order.tracking_url) && (
+                  <a
+                    href={shipment?.tracking_url || order.tracking_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-gold-500 hover:bg-gold-400 text-dark-900 font-bold rounded-lg text-xs transition-colors shadow-sm"
+                  >
+                    <span>Track on Courier Site</span>
+                    <HiExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-xs">
+              <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700/60">
+                <span className="text-gray-400 block mb-1">Air Waybill (AWB)</span>
+                {shipment?.awb_code || order.awb_code ? (
+                  <div className="flex items-center justify-between font-mono font-bold text-gold-400">
+                    <span>{shipment?.awb_code || order.awb_code}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(shipment?.awb_code || order.awb_code);
+                        toast.success('AWB copied!');
+                      }}
+                      className="text-gray-400 hover:text-white"
+                      title="Copy AWB"
+                    >
+                      <HiClipboardCopy className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-amber-400/80 font-medium">Assignment in progress</span>
+                )}
+              </div>
+
+              <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700/60">
+                <span className="text-gray-400 block mb-1">Estimated Delivery Date</span>
+                <span className="font-semibold text-white">
+                  {shipment?.estimated_delivery_date
+                    ? new Date(shipment.estimated_delivery_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : '2 - 4 Business Days'}
+                </span>
+              </div>
+
+              <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700/60">
+                <span className="text-gray-400 block mb-1">Package Weight</span>
+                <span className="font-semibold text-white">
+                  {shipment?.package_weight || 0.5} kg (Standard Craft Packaging)
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Artisan Order Tracking */}
         {artisanOrders.length > 0 ? (
