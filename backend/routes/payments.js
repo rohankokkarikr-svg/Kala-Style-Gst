@@ -368,6 +368,25 @@ router.post('/webhook', async (req, res) => {
               .then((sRes) => console.log(`[webhook] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
               .catch((sErr) => console.warn(`[webhook] Auto Shiprocket shipment notice:`, sErr.message));
           } catch (shpErr) {}
+
+          // Send Real-Time WhatsApp Alert for Razorpay Payment Captured
+          try {
+            const { sendOrderWhatsappNotification } = require('../utils/whatsapp');
+            const { data: fullOrder } = await supabase
+              .from('orders')
+              .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
+              .eq('id', order.id)
+              .single();
+            const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+            await sendOrderWhatsappNotification(
+              targetAdminPhone,
+              { ...(fullOrder || order), payment_status: 'paid', razorpay_payment_id: razorpayPaymentId },
+              fullOrder?.shipping_name || 'Customer'
+            );
+            console.log(`[webhook] ✅ Real-time Razorpay Paid WhatsApp alert dispatched for order ${order.id}`);
+          } catch (wsErr) {
+            console.warn('[webhook] WhatsApp notification notice:', wsErr.message);
+          }
         }
       } catch (err) {
         console.error('[webhook] Error updating payment.captured:', err.message);

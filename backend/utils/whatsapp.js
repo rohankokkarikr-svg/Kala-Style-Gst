@@ -9,17 +9,20 @@ const getEffectivePaymentMethod = (order) => {
   }
   if (!pm) return 'COD (Cash on Delivery)';
   const pmLower = pm.toLowerCase();
-  if (pmLower.includes('upi') || pmLower.includes('phonepe') || pmLower.includes('online')) {
-    return 'UPI / PhonePe QR';
-  }
   if (pmLower.includes('cod')) {
     return 'COD (Cash on Delivery)';
   }
-  return pm.toUpperCase();
+  if (pmLower.includes('razorpay') || pmLower.includes('online') || pmLower.includes('upi') || pmLower.includes('card') || pmLower.includes('netbanking')) {
+    return 'Razorpay (Online / UPI)';
+  }
+  return 'Razorpay (Online / UPI)';
 };
 
 // Helper to extract reference number from order
 const extractRefNo = (order) => {
+  if (order.razorpay_payment_id) {
+    return order.razorpay_payment_id;
+  }
   if (order.transaction_id && !order.transaction_id.startsWith('TXN_') && !order.transaction_id.startsWith('REF_')) {
     return order.transaction_id;
   }
@@ -137,16 +140,17 @@ const buildOrderWhatsappText = (order, customerName) => {
   const discount = order.discount_amount || 0;
   const shipping = Math.max(0, (order.total_price || 0) - subtotal + discount);
   const payMethod = getEffectivePaymentMethod(order);
-  const refNo = extractRefNo(order);
   const liveLocationUrl = extractLiveLocationLink(order);
   const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location:* ${liveLocationUrl}` : '';
 
   const rawPayStatus = String(order.payment_status || '').toLowerCase().trim();
   const rawOrderStatus = String(order.order_status || order.status || '').toLowerCase().trim();
   const isCod = payMethod.toLowerCase().includes('cod');
-  const isUpi = payMethod.toLowerCase().includes('upi') || payMethod.toLowerCase().includes('phonepe');
   const isPaid = rawPayStatus === 'paid' || rawOrderStatus === 'paid';
   const totalFormatted = (order.total_price || 0).toLocaleString('en-IN');
+
+  const razorpayPaymentId = order.razorpay_payment_id || (order.transaction_id && !order.transaction_id.startsWith('TXN_') && !order.transaction_id.startsWith('REF_') ? order.transaction_id : null);
+  const razorpayOrderId = order.razorpay_order_id || null;
 
   let headerBanner = '';
   let paymentBadge = '';
@@ -162,30 +166,19 @@ const buildOrderWhatsappText = (order, customerName) => {
       paymentBadge = `🔴 *PAYMENT STATUS: PENDING (COD - Collect ₹${totalFormatted} on Delivery)*`;
       actionDirective = `📦 *Next Action:* Pack & dispatch order. Courier partner must collect ₹${totalFormatted} cash on delivery.`;
     }
-  } else if (isUpi) {
-    if (isPaid) {
-      headerBanner = '🟢 *[REAL-TIME ALERT: UPI PAYMENT VERIFIED & PAID]*';
-      paymentBadge = `🟢 *PAYMENT STATUS: PAID (UPI Payment Verified)*\n🔑 *Verified UTR / Ref No:* ${refNo !== 'N/A' ? refNo : 'Verified in Bank'}`;
-      actionDirective = '🚀 *Next Action:* Funds received in account. Proceed with packaging and shipping.';
-    } else if (refNo && refNo !== 'N/A') {
-      headerBanner = '🟡 *[REAL-TIME ALERT: UPI PAYMENT SUBMITTED - PENDING VERIFICATION]*';
-      paymentBadge = `🟡 *PAYMENT STATUS: PENDING VERIFICATION (UTR Submitted)*\n🔑 *Submitted UTR / Ref No:* *${refNo}*`;
-      actionDirective = `⚡ *Next Action:* Verify UTR *${refNo}* in bank/UPI app, then click 'Verify Payment' in Admin Portal.`;
-    } else {
-      headerBanner = '🟡 *[REAL-TIME ALERT: NEW UPI ORDER - PAYMENT PENDING]*';
-      paymentBadge = '⏳ *PAYMENT STATUS: PENDING (Awaiting Customer UPI Payment / UTR)*';
-      actionDirective = '⌛ *Next Action:* Customer placed order via UPI. Awaiting UPI UTR / Reference number submission.';
-    }
   } else {
-    // Online prepaid (Razorpay)
+    // Razorpay (Online / UPI Payment Gateway)
+    const rzpPayIdLine = razorpayPaymentId ? `\n💳 *Razorpay Payment ID:* *${razorpayPaymentId}*` : '';
+    const rzpOrderIdLine = razorpayOrderId ? `\n🆔 *Razorpay Order ID:* ${razorpayOrderId}` : '';
+
     if (isPaid) {
-      headerBanner = '🟢 *[REAL-TIME ALERT: ONLINE PREPAID ORDER - PAID]*';
-      paymentBadge = `🟢 *PAYMENT STATUS: PAID (Prepaid Online / Razorpay)*\n💳 *Payment ID:* ${order.razorpay_payment_id || order.transaction_id || 'Captured Online'}`;
-      actionDirective = '🚀 *Next Action:* Payment captured online. Ready for shipping label generation.';
+      headerBanner = '🟢 *[REAL-TIME ALERT: RAZORPAY PAYMENT RECEIVED / PAID]*';
+      paymentBadge = `🟢 *PAYMENT STATUS: PAID (Captured Online via Razorpay)*${rzpPayIdLine}${rzpOrderIdLine}`;
+      actionDirective = '🚀 *Next Action:* Payment verified & captured online via Razorpay. Order confirmed! Ready for packing & shipping.';
     } else {
-      headerBanner = '🟡 *[REAL-TIME ALERT: ONLINE ORDER - PAYMENT PENDING]*';
-      paymentBadge = '⏳ *PAYMENT STATUS: PENDING (Awaiting Payment Gateway)*';
-      actionDirective = '⌛ *Next Action:* Awaiting Razorpay gateway confirmation.';
+      headerBanner = '🟡 *[REAL-TIME ALERT: NEW RAZORPAY ORDER - PAYMENT PENDING]*';
+      paymentBadge = `⏳ *PAYMENT STATUS: PENDING (Awaiting Razorpay Online Payment)*${rzpOrderIdLine}`;
+      actionDirective = '⌛ *Next Action:* Customer initiated Razorpay checkout. Awaiting payment completion by customer.';
     }
   }
 
@@ -318,14 +311,14 @@ exports.sendPaymentVerifiedWhatsappNotification = async (artisanPhone, order, cu
     .join('\n');
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
-  const refNo = extractRefNo(order);
+  const paymentId = order.razorpay_payment_id || extractRefNo(order);
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
 
-  const messageBody = `🟢 *[REAL-TIME ALERT: UPI PAYMENT VERIFIED & PAID]*
+  const messageBody = `🟢 *[REAL-TIME ALERT: RAZORPAY PAYMENT RECEIVED / PAID]*
 ========================================
 📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
-🟢 *PAYMENT STATUS: PAID (UPI Payment Verified & Confirmed)*
-🔑 *Verified UTR / Ref No:* *${refNo}*
+🟢 *PAYMENT STATUS: PAID (Captured Online via Razorpay)*
+💳 *Razorpay Payment ID:* *${paymentId !== 'N/A' ? paymentId : 'Captured Online'}*
 ----------------------------------------
 🎨 *Artisan Partner:* ${artisanStore || 'Artisan Partner'}
 👤 *Customer Name:* ${customerName || 'Customer'}
@@ -337,7 +330,7 @@ exports.sendPaymentVerifiedWhatsappNotification = async (artisanPhone, order, cu
 ${itemsText || '• Handcrafted item'}
 ========================================
 🚀 *Order Status:* CONFIRMED & READY FOR SHIPPING
-Payment is verified. Artisan has begun preparing the order!
+Payment is captured via Razorpay. Order confirmed! Ready for dispatch.
 ========================================`;
 
   const recipients = [adminPhone, order.phone];
