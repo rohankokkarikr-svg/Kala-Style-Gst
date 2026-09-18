@@ -194,6 +194,15 @@ const buildOrderWhatsappText = (order, customerName) => {
 
   const discountText = discount > 0 ? `-₹${discount.toLocaleString('en-IN')}${order.coupon_code ? ` (${order.coupon_code})` : ''}` : '₹0';
 
+  let displayPhone = 'N/A';
+  if (order.phone) {
+    let rawDigits = String(order.phone).replace(/\D/g, '');
+    if (rawDigits.startsWith('91') && rawDigits.length === 12) {
+      rawDigits = rawDigits.slice(2);
+    }
+    displayPhone = `+91 ${rawDigits}`;
+  }
+
   return `${headerBanner}
 ========================================
 📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
@@ -201,7 +210,7 @@ const buildOrderWhatsappText = (order, customerName) => {
 ${paymentBadge}
 ----------------------------------------
 👤 *Customer Name:* ${customerName || 'Valued Customer'}
-📞 *Customer Phone:* +91 ${order.phone || 'N/A'}
+📞 *Customer Phone:* ${displayPhone}
 📍 *Delivery Address:* ${order.shipping_address || 'N/A'}${liveLocLine}
 
 🛒 *Items Ordered (${itemsCount} items):*
