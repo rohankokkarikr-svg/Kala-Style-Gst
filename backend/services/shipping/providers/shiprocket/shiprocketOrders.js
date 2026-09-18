@@ -89,23 +89,32 @@ async function createOrder(shipmentData) {
     weight: parseFloat(shipmentData.weight) || getDefaultWeight(),
   };
 
-  const response = await request({
-    method: 'POST',
-    path: '/orders/create/adhoc',
-    data: payload,
-  });
+  try {
+    const response = await request({
+      method: 'POST',
+      path: '/orders/create/adhoc',
+      data: payload,
+    });
 
-  return {
-    success: true,
-    provider_order_id: String(response.order_id || ''),
-    provider_shipment_id: String(response.shipment_id || ''),
-    status: response.status || 'NEW',
-    status_code: response.status_code,
-    awb_code: response.awb_code || null,
-    courier_company_id: response.courier_company_id || null,
-    courier_name: response.courier_name || null,
-    raw_response: response,
-  };
+    return {
+      success: true,
+      provider_order_id: String(response.order_id || ''),
+      provider_shipment_id: String(response.shipment_id || ''),
+      status: response.status || 'NEW',
+      status_code: response.status_code,
+      awb_code: response.awb_code || null,
+      courier_company_id: response.courier_company_id || null,
+      courier_name: response.courier_name || null,
+      raw_response: response,
+    };
+  } catch (err) {
+    if (err.message && err.message.toLowerCase().includes('billing/shipping address')) {
+      throw new Error(
+        `Shiprocket account requires a registered pickup address. Please log in to Shiprocket Dashboard (app.shiprocket.in) -> Settings -> Pickup Locations, and add a pickup address with nickname '${payload.pickup_location}'.`
+      );
+    }
+    throw err;
+  }
 }
 
 module.exports = {

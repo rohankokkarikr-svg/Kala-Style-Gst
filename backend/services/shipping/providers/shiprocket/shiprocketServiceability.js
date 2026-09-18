@@ -67,6 +67,8 @@ async function checkServiceability({
     available_couriers_count: couriers.length,
     lowest_rate: couriers[0]?.rate || null,
     recommended_courier: couriers[0] || null,
+    cheapest_courier: couriers[0] || null,
+    cheapest: couriers[0] || null,
     couriers,
   };
 }
