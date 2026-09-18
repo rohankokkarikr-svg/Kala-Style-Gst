@@ -87,14 +87,21 @@ exports.register = async (req, res) => {
     if (existingWithEmail) {
       // If user exists by email but has no phone (e.g. created via OTP session), update it into full account
       if (!existingWithEmail.phone) {
+        // Section 13: Never allow public registration to overwrite existing role if it is admin or artisan
+        const existingRole = normalizeRole(existingWithEmail.role);
+        let preservedRole = existingRole;
+        if (existingRole !== 'admin' && existingRole !== 'artisan') {
+          preservedRole = userRole;
+        }
+
         const { data: updatedUser, error: updateErr } = await supabase
           .from('users')
           .update({
-            name,
+            name: name || existingWithEmail.name,
             phone: cleanPhone,
             password: hashedPassword,
-            role: userRole,
-            status: 'active'
+            role: preservedRole,
+            status: existingWithEmail.status || 'active'
           })
           .eq('id', existingWithEmail.id)
           .select()
@@ -532,14 +539,32 @@ exports.syncOtpSession = async (req, res) => {
       return res.status(400).json({ error: 'Verified email is required from OTP session' });
     }
 
-    // Check if user already exists in public.users table (case-insensitive by email)
-    const { data: existingUsers, error: userFindErr } = await supabase
-      .from('users')
-      .select('*')
-      .ilike('email', verifiedEmail)
-      .limit(1);
+    // Canonical identity resolution priority (Section 5):
+    // 1. Resolve by verified supabase_uid if present
+    // 2. Resolve by normalized verified email
+    // 3. Create new public.users record
+    let user = null;
+    if (verifiedUid) {
+      try {
+        const { data: userByUid } = await supabase
+          .from('users')
+          .select('*')
+          .eq('supabase_uid', verifiedUid)
+          .maybeSingle();
+        if (userByUid) {
+          user = userByUid;
+        }
+      } catch (_) {}
+    }
 
-    let user = existingUsers && existingUsers[0];
+    if (!user) {
+      const { data: existingUsers } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', verifiedEmail)
+        .limit(1);
+      user = existingUsers && existingUsers[0];
+    }
 
     if (user) {
       if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
@@ -548,9 +573,20 @@ exports.syncOtpSession = async (req, res) => {
       // Preserve existing role strictly! Never overwrite or downgrade existing role
       user.role = normalizeRole(user.role);
 
-      // Link supabase_uid if present and not yet linked
+      // Section 6: Link supabase_uid if present and not yet linked, preventing duplicate ownership
       if (!user.supabase_uid && verifiedUid) {
         try {
+          const { data: conflictUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('supabase_uid', verifiedUid)
+            .neq('id', user.id)
+            .maybeSingle();
+
+          if (conflictUser) {
+            return res.status(409).json({ error: 'This Supabase identity is already linked to another account.' });
+          }
+
           await supabase.from('users').update({ supabase_uid: verifiedUid }).eq('id', user.id);
           user.supabase_uid = verifiedUid;
         } catch (_) {}

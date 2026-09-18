@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { normalizeRole, getRoleHome } from '../utils/authHelper';
@@ -20,26 +20,40 @@ export const AuthProvider = ({ children }) => {
     return null;
   });
   const [loading, setLoading] = useState(true);
+  const isSyncingRef = useRef(false);
+
+  const syncOtpSessionSingleFlight = useCallback(async (session) => {
+    if (isSyncingRef.current || !session?.access_token) return null;
+    isSyncingRef.current = true;
+    try {
+      const { data } = await authAPI.otpSession({
+        accessToken: session.access_token,
+        email: session.user?.email,
+        supabase_uid: session.user?.id
+      });
+      if (data?.user && data?.token) {
+        const normalized = { ...data.user, role: normalizeRole(data.user.role) };
+        setUser(normalized);
+        localStorage.setItem('sh_token', data.token);
+        localStorage.setItem('sh_user', JSON.stringify(normalized));
+        return normalized;
+      }
+    } catch (e) {
+      console.warn('Single-flight OTP session sync error:', e?.message || e);
+    } finally {
+      isSyncingRef.current = false;
+    }
+    return null;
+  }, []);
 
   const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('sh_token');
     if (!token) {
-      // Check if active Supabase session exists
+      // Check if active Supabase session exists and exchange via single-flight lock
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token && session?.user?.email) {
-          const { data } = await authAPI.otpSession({
-            accessToken: session.access_token,
-            email: session.user.email,
-            supabase_uid: session.user.id
-          });
-          if (data?.user && data?.token) {
-            const normalized = { ...data.user, role: normalizeRole(data.user.role) };
-            setUser(normalized);
-            localStorage.setItem('sh_token', data.token);
-            localStorage.setItem('sh_user', JSON.stringify(normalized));
-            return normalized;
-          }
+        if (session?.access_token) {
+          return await syncOtpSessionSingleFlight(session);
         }
       } catch (e) {}
       return null;
@@ -54,14 +68,17 @@ export const AuthProvider = ({ children }) => {
         return normalized;
       }
     } catch (err) {
-      if (err.response?.status === 401) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
         localStorage.removeItem('sh_token');
         localStorage.removeItem('sh_user');
         setUser(null);
+        if (err.response?.status === 403) {
+          toast.error(err.response?.data?.error || 'Your account has been deactivated or suspended.');
+        }
       }
     }
     return null;
-  }, []);
+  }, [syncOtpSessionSingleFlight]);
 
   // Auto-sync session on mount with database
   useEffect(() => {
@@ -86,7 +103,7 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Single global Supabase auth state listener (no duplicates)
+  // Single global Supabase auth state listener (no duplicate session creations)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
@@ -96,21 +113,7 @@ export const AuthProvider = ({ children }) => {
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         const currentToken = localStorage.getItem('sh_token');
         if (session && !currentToken) {
-          try {
-            const { data } = await authAPI.otpSession({
-              accessToken: session.access_token,
-              email: session.user?.email,
-              supabase_uid: session.user?.id
-            });
-            if (data?.user && data?.token) {
-              const normalized = { ...data.user, role: (data.user.role || 'user').trim().toLowerCase() };
-              localStorage.setItem('sh_token', data.token);
-              localStorage.setItem('sh_user', JSON.stringify(normalized));
-              setUser(normalized);
-            }
-          } catch (e) {
-            console.warn('Silent OTP session sync error:', e?.message || e);
-          }
+          await syncOtpSessionSingleFlight(session);
         }
       }
     });
@@ -118,7 +121,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       subscription?.unsubscribe();
     };
-  }, []);
+  }, [syncOtpSessionSingleFlight]);
 
   // Real-time listener: immediately sync artisan verification across all devices
   useEffect(() => {
@@ -186,7 +189,7 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
-    if (!cleanEmail || cleanToken.length < 6 || cleanToken.length > 10) {
+    if (!cleanEmail || cleanToken.length !== 6) {
       throw new Error('The OTP is incorrect. Please try again.');
     }
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { normalizeRole, getRoleHome } from '../utils/authHelper';
+import { normalizeRole, getRoleHome, resolveSafeRedirect } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
 export default function Login() {
@@ -11,7 +11,7 @@ export default function Login() {
   // OTP flow state: 'email' (input screen) vs 'otp' (verify screen)
   const [otpStep, setOtpStep] = useState('email');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '', '', '']);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [countdown, setCountdown] = useState(0);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
@@ -59,18 +59,8 @@ export default function Login() {
   const handleRedirectAfterAuth = (user) => {
     const role = normalizeRole(user?.role);
     const returnUrl = location.state?.from?.pathname;
-
-    if (returnUrl && returnUrl !== '/login') {
-      if (returnUrl.startsWith('/admin') && role !== 'admin') {
-        navigate(getRoleHome(role), { replace: true });
-      } else if (returnUrl.startsWith('/artisan') && role !== 'artisan' && role !== 'admin') {
-        navigate(getRoleHome(role), { replace: true });
-      } else {
-        navigate(returnUrl, { replace: true });
-      }
-    } else {
-      navigate(getRoleHome(role), { replace: true });
-    }
+    const destination = resolveSafeRedirect(role, returnUrl);
+    navigate(destination, { replace: true });
   };
 
   // ─── Step 1: Send OTP ─────────────────────────────────────────
@@ -91,7 +81,7 @@ export default function Login() {
       await sendOtp(cleanEmail);
       setOtpStep('otp');
       setCountdown(30);
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       toast.success('OTP sent successfully to your email! 📩');
     } catch (err) {
       setOtpError(err.message);
@@ -110,7 +100,7 @@ export default function Login() {
     try {
       await sendOtp(email.trim().toLowerCase());
       setCountdown(30);
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       toast.success('A new OTP has been sent to your email.');
     } catch (err) {
       setOtpError(err.message);
@@ -123,8 +113,8 @@ export default function Login() {
   // ─── Step 3: Verify OTP ───────────────────────────────────────
   const handleVerifyOtp = async (codeToVerify) => {
     const code = (codeToVerify || otp.join('')).trim();
-    if (code.length < 6 || code.length > 8) {
-      setOtpError('Please enter your OTP verification code.');
+    if (code.length !== 6) {
+      setOtpError('Please enter your 6-digit OTP verification code.');
       return;
     }
 
@@ -138,14 +128,14 @@ export default function Login() {
       setOtpError(err.message);
       toast.error(err.message);
       // Clear OTP fields after invalid verification as required
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       otpInputsRef.current[0]?.focus();
     } finally {
       setOtpLoading(false);
     }
   };
 
-  // ─── OTP Input Handlers (8-digit UX) ─────────────────────────
+  // ─── OTP Input Handlers (Canonical 6-digit UX) ───────────────
   const handleOtpChange = (index, value) => {
     const cleanDigit = value.replace(/\D/g, '');
     if (!cleanDigit && value !== '') return;
@@ -154,12 +144,12 @@ export default function Login() {
     newOtp[index] = cleanDigit.slice(-1);
     setOtp(newOtp);
 
-    if (cleanDigit && index < 7) {
+    if (cleanDigit && index < 5) {
       otpInputsRef.current[index + 1]?.focus();
     }
 
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === 8 && cleanDigit) {
+    if (filledDigits.length === 6 && cleanDigit) {
       handleVerifyOtp(filledDigits);
     }
   };
@@ -175,7 +165,7 @@ export default function Login() {
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       otpInputsRef.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 7) {
+    } else if (e.key === 'ArrowRight' && index < 5) {
       otpInputsRef.current[index + 1]?.focus();
     }
   };
@@ -183,12 +173,12 @@ export default function Login() {
   const handleOtpPaste = (e) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').trim();
-    const numericChars = pastedData.replace(/\D/g, '').slice(0, 8);
+    const numericChars = pastedData.replace(/\D/g, '').slice(0, 6);
 
     if (!numericChars) return;
 
     const newOtp = [...otp];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       newOtp[i] = numericChars[i] || '';
     }
     setOtp(newOtp);
@@ -197,8 +187,8 @@ export default function Login() {
     if (nextEmptyIndex !== -1) {
       otpInputsRef.current[nextEmptyIndex]?.focus();
     } else {
-      otpInputsRef.current[7]?.focus();
-      if (numericChars.length >= 6) {
+      otpInputsRef.current[5]?.focus();
+      if (numericChars.length === 6) {
         handleVerifyOtp(numericChars);
       }
     }
@@ -207,7 +197,7 @@ export default function Login() {
   // ─── Change Email Action ─────────────────────────────────────
   const handleChangeEmail = () => {
     setOtpStep('email');
-    setOtp(['', '', '', '', '', '', '', '']);
+    setOtp(['', '', '', '', '', '']);
     setCountdown(0);
     setOtpError('');
     setOtpLoading(false);
