@@ -218,6 +218,17 @@ exports.createOrder = async (req, res) => {
       });
     } catch (e) {}
 
+    // Auto-create Shiprocket logistics shipment for COD orders (non-blocking)
+    if (normalizedMethod === 'cod') {
+      try {
+        const shippingService = require('../services/shipping/shippingService');
+        shippingService
+          .createShipmentFromOrder(order.id)
+          .then((sRes) => console.log(`[createOrder COD] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
+          .catch((sErr) => console.warn(`[createOrder COD] Auto Shiprocket shipment notice:`, sErr.message));
+      } catch (shpErr) {}
+    }
+
     res.status(201).json({
       ...order,
       artisan_orders: artisanOrders,
@@ -798,6 +809,15 @@ exports.verifyPayment = async (req, res) => {
       await supabase.from('artisan_orders').update({ status: 'pending', updated_at: new Date().toISOString() }).eq('order_id', id);
       // Update payment record
       await supabase.from('payments').update({ status: 'paid', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('order_id', id);
+
+      // Auto-create Shiprocket logistics shipment on artisan confirmation (non-blocking)
+      try {
+        const shippingService = require('../services/shipping/shippingService');
+        shippingService
+          .createShipmentFromOrder(id)
+          .then((sRes) => console.log(`[verifyPayment] ✅ Auto Shiprocket shipment created for order ${id}:`, sRes.shipment?.id))
+          .catch((sErr) => console.warn(`[verifyPayment] Auto Shiprocket shipment notice:`, sErr.message));
+      } catch (shpErr) {}
     } else {
       // Restore inventory on rejection
       await restoreInventory(id);

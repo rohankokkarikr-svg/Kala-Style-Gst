@@ -65,14 +65,32 @@ async function createOrder(shipmentData) {
     tax: item.tax || 0,
   }));
 
+function sanitizeAddress(addrStr) {
+  if (!addrStr) return { address: 'Artisan Delivery Address', address_2: '' };
+  let cleaned = String(addrStr)
+    .replace(/📍\s*Live Location:[^\n,]*/gi, '')
+    .replace(/https?:\/\/[^\s,]+/gi, '')
+    .replace(/[^\x20-\x7E\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  cleaned = cleaned.replace(/(,\s*)+/g, ', ').replace(/^,\s*|,\s*$/g, '');
+  if (!cleaned) cleaned = 'Artisan Delivery Address';
+
+  const address = cleaned.substring(0, 90).trim();
+  const address_2 = cleaned.length > 90 ? cleaned.substring(90, 180).trim() : '';
+  return { address, address_2 };
+}
+
+  const { address, address_2 } = sanitizeAddress(shipmentData.billing_address);
+
   const payload = {
     order_id: shipmentData.order_number,
     order_date: formatShiprocketDate(shipmentData.order_date),
     pickup_location: shipmentData.pickup_location || getDefaultPickupLocation(),
-    billing_customer_name: shipmentData.billing_customer_name || 'Customer',
+    billing_customer_name: (shipmentData.billing_customer_name || 'Customer').substring(0, 50),
     billing_last_name: '',
-    billing_address: shipmentData.billing_address || 'Address Not Provided',
-    billing_address_2: '',
+    billing_address: address,
+    billing_address_2: address_2,
     billing_city: shipmentData.billing_city || 'City',
     billing_pincode: String(shipmentData.billing_pincode || '').trim(),
     billing_state: shipmentData.billing_state || 'State',
@@ -90,11 +108,23 @@ async function createOrder(shipmentData) {
   };
 
   try {
-    const response = await request({
+    let response = await request({
       method: 'POST',
       path: '/orders/create/adhoc',
       data: payload,
     });
+
+    // Auto-heal if Shiprocket returned a list of valid pickup locations
+    if (response?.message && response.message.toLowerCase().includes('wrong pickup location') && response?.data?.data?.[0]?.pickup_location) {
+      const validPickup = response.data.data[0].pickup_location;
+      console.log(`ℹ️ [Shiprocket] Auto-recovering pickup location: using registered location "${validPickup}"`);
+      payload.pickup_location = validPickup;
+      response = await request({
+        method: 'POST',
+        path: '/orders/create/adhoc',
+        data: payload,
+      });
+    }
 
     return {
       success: true,
@@ -108,6 +138,31 @@ async function createOrder(shipmentData) {
       raw_response: response,
     };
   } catch (err) {
+    // If Shiprocket returned 400/422 with valid pickup locations attached
+    const fallbackLocations = err.rawError?.data?.data;
+    if (Array.isArray(fallbackLocations) && fallbackLocations[0]?.pickup_location) {
+      const validPickup = fallbackLocations[0].pickup_location;
+      console.log(`ℹ️ [Shiprocket] Retrying order creation with active account pickup location: "${validPickup}"`);
+      payload.pickup_location = validPickup;
+      const response = await request({
+        method: 'POST',
+        path: '/orders/create/adhoc',
+        data: payload,
+      });
+
+      return {
+        success: true,
+        provider_order_id: String(response.order_id || ''),
+        provider_shipment_id: String(response.shipment_id || ''),
+        status: response.status || 'NEW',
+        status_code: response.status_code,
+        awb_code: response.awb_code || null,
+        courier_company_id: response.courier_company_id || null,
+        courier_name: response.courier_name || null,
+        raw_response: response,
+      };
+    }
+
     if (err.message && err.message.toLowerCase().includes('billing/shipping address')) {
       throw new Error(
         `Shiprocket account requires a registered pickup address. Please log in to Shiprocket Dashboard (app.shiprocket.in) -> Settings -> Pickup Locations, and add a pickup address with nickname '${payload.pickup_location}'.`

@@ -237,6 +237,16 @@ router.post('/verify', protect, async (req, res) => {
     });
 
     console.log(`[verify] ✅ Payment successfully verified for order ${order.id}`);
+
+    // Auto-create Shiprocket logistics shipment (non-blocking)
+    try {
+      const shippingService = require('../services/shipping/shippingService');
+      shippingService
+        .createShipmentFromOrder(order.id)
+        .then((sRes) => console.log(`[verify] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
+        .catch((sErr) => console.warn(`[verify] Auto Shiprocket shipment notice:`, sErr.message));
+    } catch (shpErr) {}
+
     res.json({
       success: true,
       message: 'Payment verified successfully',
@@ -331,6 +341,15 @@ router.post('/webhook', async (req, res) => {
           broadcastSync('PAYMENTS_UPDATED', { orderId: order.id, status: 'paid' });
           broadcastSync('ORDERS_UPDATED', { orderId: order.id, order_status: 'confirmed' });
           console.log(`[webhook] ✅ Processed payment.captured for order ${order.id}`);
+
+          // Auto-create Shiprocket logistics shipment (non-blocking)
+          try {
+            const shippingService = require('../services/shipping/shippingService');
+            shippingService
+              .createShipmentFromOrder(order.id)
+              .then((sRes) => console.log(`[webhook] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
+              .catch((sErr) => console.warn(`[webhook] Auto Shiprocket shipment notice:`, sErr.message));
+          } catch (shpErr) {}
         }
       } catch (err) {
         console.error('[webhook] Error updating payment.captured:', err.message);
