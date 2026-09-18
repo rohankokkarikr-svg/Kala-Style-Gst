@@ -137,37 +137,92 @@ const buildOrderWhatsappText = (order, customerName) => {
   const discount = order.discount_amount || 0;
   const shipping = Math.max(0, (order.total_price || 0) - subtotal + discount);
   const payMethod = getEffectivePaymentMethod(order);
-  const isPaid = order.payment_status === 'paid' || order.status === 'paid';
-  const isUpi = payMethod.includes('UPI') || payMethod.includes('PhonePe');
+  const refNo = extractRefNo(order);
   const liveLocationUrl = extractLiveLocationLink(order);
-  const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location Link:* ${liveLocationUrl}` : '';
+  const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location:* ${liveLocationUrl}` : '';
 
-  let paymentStatusDisplay = '✅ *Order Status:* CONFIRMED (COD)';
-  if (isPaid) {
-    paymentStatusDisplay = '✅ *Payment Status:* PAID (Online / Razorpay)';
+  const rawPayStatus = String(order.payment_status || '').toLowerCase().trim();
+  const rawOrderStatus = String(order.order_status || order.status || '').toLowerCase().trim();
+  const isCod = payMethod.toLowerCase().includes('cod');
+  const isUpi = payMethod.toLowerCase().includes('upi') || payMethod.toLowerCase().includes('phonepe');
+  const isPaid = rawPayStatus === 'paid' || rawOrderStatus === 'paid';
+  const totalFormatted = (order.total_price || 0).toLocaleString('en-IN');
+
+  let headerBanner = '';
+  let paymentBadge = '';
+  let actionDirective = '';
+
+  if (isCod) {
+    if (isPaid) {
+      headerBanner = '🟢 *[REAL-TIME ALERT: COD PAYMENT COLLECTED / PAID]*';
+      paymentBadge = '🟢 *PAYMENT STATUS: PAID (Cash Collected upon Delivery)*';
+      actionDirective = '✅ *Next Action:* Cash collected from customer. Order completed.';
+    } else {
+      headerBanner = '🔵 *[REAL-TIME ALERT: NEW COD ORDER - PAYMENT PENDING]*';
+      paymentBadge = `🔴 *PAYMENT STATUS: PENDING (COD - Collect ₹${totalFormatted} on Delivery)*`;
+      actionDirective = `📦 *Next Action:* Pack & dispatch order. Courier partner must collect ₹${totalFormatted} cash on delivery.`;
+    }
   } else if (isUpi) {
-    paymentStatusDisplay = '⏳ *Payment Status:* Awaiting UPI Ref. No. Submission';
+    if (isPaid) {
+      headerBanner = '🟢 *[REAL-TIME ALERT: UPI PAYMENT VERIFIED & PAID]*';
+      paymentBadge = `🟢 *PAYMENT STATUS: PAID (UPI Payment Verified)*\n🔑 *Verified UTR / Ref No:* ${refNo !== 'N/A' ? refNo : 'Verified in Bank'}`;
+      actionDirective = '🚀 *Next Action:* Funds received in account. Proceed with packaging and shipping.';
+    } else if (refNo && refNo !== 'N/A') {
+      headerBanner = '🟡 *[REAL-TIME ALERT: UPI PAYMENT SUBMITTED - PENDING VERIFICATION]*';
+      paymentBadge = `🟡 *PAYMENT STATUS: PENDING VERIFICATION (UTR Submitted)*\n🔑 *Submitted UTR / Ref No:* *${refNo}*`;
+      actionDirective = `⚡ *Next Action:* Verify UTR *${refNo}* in bank/UPI app, then click 'Verify Payment' in Admin Portal.`;
+    } else {
+      headerBanner = '🟡 *[REAL-TIME ALERT: NEW UPI ORDER - PAYMENT PENDING]*';
+      paymentBadge = '⏳ *PAYMENT STATUS: PENDING (Awaiting Customer UPI Payment / UTR)*';
+      actionDirective = '⌛ *Next Action:* Customer placed order via UPI. Awaiting UPI UTR / Reference number submission.';
+    }
+  } else {
+    // Online prepaid (Razorpay)
+    if (isPaid) {
+      headerBanner = '🟢 *[REAL-TIME ALERT: ONLINE PREPAID ORDER - PAID]*';
+      paymentBadge = `🟢 *PAYMENT STATUS: PAID (Prepaid Online / Razorpay)*\n💳 *Payment ID:* ${order.razorpay_payment_id || order.transaction_id || 'Captured Online'}`;
+      actionDirective = '🚀 *Next Action:* Payment captured online. Ready for shipping label generation.';
+    } else {
+      headerBanner = '🟡 *[REAL-TIME ALERT: ONLINE ORDER - PAYMENT PENDING]*';
+      paymentBadge = '⏳ *PAYMENT STATUS: PENDING (Awaiting Payment Gateway)*';
+      actionDirective = '⌛ *Next Action:* Awaiting Razorpay gateway confirmation.';
+    }
   }
 
-  return `🔔 *New Order Placed on KalaStyle AI!*
-----------------------------------------
+  const orderTimeStr = new Date(order.created_at || Date.now()).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  const discountText = discount > 0 ? `-₹${discount.toLocaleString('en-IN')}${order.coupon_code ? ` (${order.coupon_code})` : ''}` : '₹0';
+
+  return `${headerBanner}
+========================================
 📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
+📅 *Date & Time:* ${orderTimeStr} IST
+${paymentBadge}
+----------------------------------------
 👤 *Customer Name:* ${customerName || 'Valued Customer'}
-📞 *Phone Number:* +91 ${order.phone}
-📍 *Shipping Address:* ${order.shipping_address || 'N/A'}${liveLocLine}
+📞 *Customer Phone:* +91 ${order.phone || 'N/A'}
+📍 *Delivery Address:* ${order.shipping_address || 'N/A'}${liveLocLine}
 
 🛒 *Items Ordered (${itemsCount} items):*
-${itemsText || '• Handcrafted artisan merchandise'}
+${itemsText || '• Handcrafted item'}
 
 💰 *Payment Method:* ${payMethod}
 💵 *Subtotal:* ₹${subtotal.toLocaleString('en-IN')}
-🚚 *Shipping Fee:* ₹${shipping.toLocaleString('en-IN')}
-🏷️ *Discount:* -₹${discount.toLocaleString('en-IN')} ${order.coupon_code ? `(${order.coupon_code})` : ''}
+🚚 *Delivery Fee:* ₹${shipping.toLocaleString('en-IN')}
+🏷️ *Discount Applied:* ${discountText}
 ========================================
-💵 *Total Amount:* ₹${(order.total_price || 0).toLocaleString('en-IN')}
+💵 *TOTAL AMOUNT:* ₹${totalFormatted}
 ----------------------------------------
-${paymentStatusDisplay}
-----------------------------------------`;
+${actionDirective}
+========================================`;
 };
 
 exports.getEffectivePaymentMethod = getEffectivePaymentMethod;
@@ -196,43 +251,48 @@ exports.sendOrderWhatsappNotification = async (adminPhone, order, customerName) 
 };
 
 /**
- * Sends a WhatsApp notification directly to the related Artisan when customer submits UPI Ref. No. / UTR.
+ * Sends a WhatsApp notification directly to Admin & Artisan when customer submits UPI Ref. No. / UTR.
  */
 exports.sendArtisanUtrSubmittedNotification = async (artisanPhone, artisanStore, order, customerName, refNo) => {
   const itemsText = (order.items || [])
-    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size || 'Standard'}, Qty: ${item.quantity || 1}) - ₹${((item.price_at_time || item.product?.price || 0) * (item.quantity || 1)).toLocaleString()}`)
+    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size || 'Standard'}, Qty: ${item.quantity || 1}) - ₹${((item.price_at_time || item.product?.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}`)
     .join('\n');
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
   const cleanRef = refNo || extractRefNo(order);
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
 
-  const messageBody = `🔔 *New Order Payment Received! Please Verify UTR*
+  const messageBody = `🟡 *[REAL-TIME ALERT: UPI PAYMENT SUBMITTED - PENDING VERIFICATION]*
+========================================
+📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
+🔑 *Submitted UTR / Ref No:* *${cleanRef}*
+🟡 *PAYMENT STATUS: PENDING VERIFICATION*
 ----------------------------------------
 🎨 *Assigned Artisan:* ${artisanStore || 'Artisan Partner'}
-📦 *Order ID:* #${order.id?.substring(0, 8)}
-👤 *Customer Name:* ${customerName}
+👤 *Customer Name:* ${customerName || 'Customer'}
 📞 *Customer Phone:* +91 ${order.phone}
-📍 *Shipping Address:* ${order.shipping_address || 'N/A'}
-🔑 *Customer Submitted UTR / Ref. No:* *${cleanRef}*
+📍 *Delivery Address:* ${order.shipping_address || 'N/A'}
 💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
-💵 *Amount to Receive:* ₹${order.total_price?.toLocaleString()}
+💵 *Amount to Verify:* ₹${(order.total_price || 0).toLocaleString('en-IN')}
 
-🛒 *Your Ordered Items (${itemsCount} items):*
-${itemsText || 'No items listed'}
+🛒 *Items Ordered (${itemsCount} items):*
+${itemsText || '• Handcrafted item'}
 ========================================
-⚡ *Action Required by Artisan:*
-1. Check your UPI / Bank account for UTR *${cleanRef}*.
-2. Open your Artisan Portal (Orders) to *Verify UTR & Confirm Order*!
-(Note: Only you can confirm this order).
-----------------------------------------`;
+⚡ *Action Required:*
+1. Check UPI / Bank account for UTR *${cleanRef}*.
+2. Open Admin / Artisan Portal to verify payment and confirm order!
+========================================`;
 
-  const recipients = [artisanPhone];
-  if (order.phone && String(order.phone) !== String(artisanPhone)) {
+  const recipients = [adminPhone];
+  if (artisanPhone && String(artisanPhone) !== String(adminPhone)) {
+    recipients.push(artisanPhone);
+  }
+  if (order.phone && String(order.phone) !== String(adminPhone) && String(order.phone) !== String(artisanPhone)) {
     recipients.push(order.phone);
   }
 
   const twilioRes = await sendWhatsappToRecipients(recipients, messageBody);
-  const directLink = getWhatsappDirectLink(artisanPhone, messageBody);
+  const directLink = getWhatsappDirectLink(adminPhone, messageBody);
 
   return {
     ...twilioRes,
@@ -245,69 +305,43 @@ ${itemsText || 'No items listed'}
  * Sends a WhatsApp notification to Admin & Customer when UPI Ref. No. / UTR is submitted (fallback).
  */
 exports.sendRefNoSubmittedWhatsappNotification = async (adminPhone, order, customerName) => {
-  const itemsText = (order.items || [])
-    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size}, Qty: ${item.quantity}) - ₹${(item.price_at_time * item.quantity).toLocaleString()}`)
-    .join('\n');
-
-  const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
-  const refNo = extractRefNo(order);
-
-  const messageBody = `⏱️ *UPI Payment Ref. No. Submitted!*
-----------------------------------------
-📦 *Order ID:* #${order.id?.substring(0, 8)}
-👤 *Customer Name:* ${customerName}
-📞 *Phone Number:* +91 ${order.phone}
-📍 *Shipping Address:* ${order.shipping_address || 'N/A'}
-🔑 *Submitted Ref. No / UTR:* ${refNo}
-💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
-💵 *Total Amount:* ₹${order.total_price?.toLocaleString()}
-
-🛒 *Items in Order (${itemsCount} items):*
-${itemsText || 'No items listed'}
-========================================
-⌛ *Status:* Pending Artisan Payment Verification
-----------------------------------------`;
-
-  const twilioRes = await sendWhatsappToRecipients([adminPhone, order.phone], messageBody);
-  const directLink = getWhatsappDirectLink(adminPhone, messageBody);
-
-  return {
-    ...twilioRes,
-    messageText: messageBody,
-    directLink
-  };
+  const effectiveAdmin = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+  return await exports.sendArtisanUtrSubmittedNotification(effectiveAdmin, 'Admin', order, customerName);
 };
 
 /**
- * Sends a WhatsApp notification to Customer & Artisan when order payment is verified & confirmed by the Artisan.
+ * Sends a WhatsApp notification to Admin, Customer & Artisan when order payment is verified & confirmed.
  */
 exports.sendPaymentVerifiedWhatsappNotification = async (artisanPhone, order, customerName, artisanStore) => {
   const itemsText = (order.items || [])
-    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size || 'Standard'}, Qty: ${item.quantity || 1}) - ₹${((item.price_at_time || item.product?.price || 0) * (item.quantity || 1)).toLocaleString()}`)
+    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size || 'Standard'}, Qty: ${item.quantity || 1}) - ₹${((item.price_at_time || item.product?.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}`)
     .join('\n');
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
   const refNo = extractRefNo(order);
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
 
-  const messageBody = `🎉 *Payment Verified & Order Confirmed by Artisan!*
-----------------------------------------
-🎨 *Artisan:* ${artisanStore || 'Artisan Partner'}
-📦 *Order ID:* #${order.id?.substring(0, 8)}
-👤 *Customer Name:* ${customerName}
-📞 *Customer Phone:* +91 ${order.phone}
-🔑 *Verified UTR / Ref. No:* ${refNo}
-💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
-💵 *Verified Paid Amount:* ₹${order.total_price?.toLocaleString()}
-
-🛒 *Handcrafted Items in Preparation (${itemsCount} items):*
-${itemsText || 'No items listed'}
+  const messageBody = `🟢 *[REAL-TIME ALERT: UPI PAYMENT VERIFIED & PAID]*
 ========================================
-✨ *Status:* UTR CONFIRMED & ORDER IN PREPARATION
-The artisan has confirmed your payment and started preparing your order!
-----------------------------------------`;
+📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
+🟢 *PAYMENT STATUS: PAID (UPI Payment Verified & Confirmed)*
+🔑 *Verified UTR / Ref No:* *${refNo}*
+----------------------------------------
+🎨 *Artisan Partner:* ${artisanStore || 'Artisan Partner'}
+👤 *Customer Name:* ${customerName || 'Customer'}
+📞 *Customer Phone:* +91 ${order.phone}
+💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
+💵 *Verified Paid Amount:* ₹${(order.total_price || 0).toLocaleString('en-IN')}
 
-  const recipients = [order.phone];
-  if (artisanPhone && String(artisanPhone) !== String(order.phone)) {
+🛒 *Items in Order (${itemsCount} items):*
+${itemsText || '• Handcrafted item'}
+========================================
+🚀 *Order Status:* CONFIRMED & READY FOR SHIPPING
+Payment is verified. Artisan has begun preparing the order!
+========================================`;
+
+  const recipients = [adminPhone, order.phone];
+  if (artisanPhone && !recipients.includes(artisanPhone)) {
     recipients.push(artisanPhone);
   }
 

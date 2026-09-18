@@ -590,6 +590,40 @@ exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', op
       status: 'finalized',
     });
 
+    // 12. Send Real-Time WhatsApp Alert: COD Payment Collected / Paid
+    try {
+      const { sendOrderWhatsappNotification } = require('../utils/whatsapp');
+      let customerName = order.shipping_name || 'Customer';
+      if (order.user_id) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('name, full_name, phone')
+          .eq('id', order.user_id)
+          .maybeSingle();
+        if (userData) {
+          customerName = userData.name || userData.full_name || customerName;
+        }
+      }
+      const { data: orderItems } = await supabase
+        .from('order_items')
+        .select('*, product:products(id, name, image_url, category)')
+        .eq('order_id', order.id);
+
+      const codPaidOrder = {
+        ...order,
+        ...updatedOrder,
+        payment_status: 'paid',
+        payment_method: 'cod',
+        items: orderItems || [],
+      };
+
+      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+      await sendOrderWhatsappNotification(targetAdminPhone, codPaidOrder, customerName);
+      console.log(`[confirmCODCollection] ✅ Real-time COD Paid WhatsApp alert dispatched for order ${order.id}`);
+    } catch (waErr) {
+      console.warn('[confirmCODCollection] WhatsApp notification notice:', waErr.message);
+    }
+
     return {
       success: true,
       message: `COD payment of ₹${order.total_amount || order.total_price} for order ${order.order_number || order.id} successfully confirmed as collected!`,
