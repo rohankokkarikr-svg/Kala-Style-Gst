@@ -90,15 +90,29 @@ async function createShipmentFromOrder(orderIdOrData, options = {}) {
     order = dbOrder;
   }
 
-  // 3. Payment verification: Prepaid orders must be paid/confirmed before shipping
-  const isCod = order.payment_method === 'cod';
-  const isPaid = ['paid', 'completed'].includes(order.payment_status?.toLowerCase());
-  const isConfirmed = ['confirmed', 'processing', 'accepted'].includes(order.status?.toLowerCase());
+  // 3. Payment verification & state machine guard:
+  // - COD orders may ship when payment_status is 'cod_pending' or 'paid' (unless cancelled).
+  // - Prepaid / Razorpay / UPI orders MUST have payment_status === 'paid' (or 'completed').
+  // - order_status = confirmed CANNOT bypass prepaid payment verification!
+  const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+  const isPaid = ['paid', 'completed'].includes(String(order.payment_status || '').toLowerCase().trim());
+  const isCancelled = ['cancelled', 'rejected'].includes(String(order.status || order.order_status || '').toLowerCase().trim());
 
-  if (!isCod && !isPaid && !isConfirmed && !options.override_payment_guard) {
-    throw new Error(
-      `Cannot ship prepaid order ${order.order_number || orderId}: Payment is '${order.payment_status}'. Payment must be verified before shipment.`
-    );
+  if (isCancelled) {
+    throw new Error(`Cannot ship cancelled order ${order.order_number || orderId}.`);
+  }
+
+  if (isCod) {
+    const validCodPayment = ['cod_pending', 'paid'].includes(String(order.payment_status || '').toLowerCase().trim());
+    if (!validCodPayment) {
+      throw new Error(`Cannot ship COD order ${order.order_number || orderId}: Payment status is '${order.payment_status}'.`);
+    }
+  } else {
+    if (!isPaid) {
+      throw new Error(
+        `Shipment creation blocked because the prepaid order has not been payment-verified. Order ${order.order_number || orderId} has payment_status '${order.payment_status}'.`
+      );
+    }
   }
 
   // 4. Fetch order items (or use provided in order.items)
@@ -446,6 +460,67 @@ async function generateShippingInvoice(shipmentId) {
 }
 
 /**
+ * Synchronize shipment delivery to parent order and artisan sub-orders safely.
+ * CRITICAL RULE: For COD orders, delivery sets shipping_status = DELIVERED,
+ * but payment_status strictly remains 'cod_pending' until explicit confirmCODCollection!
+ */
+async function syncDeliveryMilestoneToOrder(shipment) {
+  if (!shipment || !shipment.order_id) return;
+  const now = new Date().toISOString();
+
+  const { data: order } = await safeQuery(() =>
+    supabase.from('orders').select('*').eq('id', shipment.order_id).maybeSingle()
+  );
+  if (!order) return;
+
+  const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+  const isPaid = ['paid', 'completed'].includes(String(order.payment_status || '').toLowerCase().trim());
+
+  await safeQuery(() =>
+    supabase.from('orders').update({
+      shipping_status: SHIPPING_STATUS.DELIVERED,
+      updated_at: now,
+    }).eq('id', shipment.order_id)
+  );
+
+  if (isCod) {
+    console.log(`[shippingService] COD order ${order.order_number || order.id} delivered by courier. Payment remains 'cod_pending' until collection confirmation.`);
+    broadcastSync('ORDERS_UPDATED', {
+      orderId: order.id,
+      shipping_status: SHIPPING_STATUS.DELIVERED,
+      payment_status: order.payment_status,
+    });
+  } else if (isPaid) {
+    try {
+      const orderService = require('../orderService');
+      await safeQuery(() =>
+        supabase.from('artisan_orders').update({
+          status: 'delivered',
+          delivered_at: now,
+          updated_at: now,
+        }).eq('order_id', order.id)
+      );
+      await orderService.syncMasterOrderStatus(order.id);
+
+      const { data: artOrders } = await safeQuery(() =>
+        supabase.from('artisan_orders').select('*').eq('order_id', order.id)
+      );
+      if (artOrders && artOrders.length > 0) {
+        for (const ao of artOrders) {
+          if (ao.artisan_id) {
+            try {
+              await orderService.createArtisanEarning(ao.id, ao, ao.artisan_id);
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[shippingService] Prepaid delivery sync notice:', err.message);
+    }
+  }
+}
+
+/**
  * Track shipment status and milestones.
  */
 async function trackShipment(shipmentId) {
@@ -463,6 +538,9 @@ async function trackShipment(shipmentId) {
     shipment.status = tracking.normalized_status;
     shipment.shipment_status = tracking.normalized_status;
     shipment.last_tracking_update = new Date().toISOString();
+    if (tracking.normalized_status === SHIPPING_STATUS.DELIVERED && !shipment.delivered_at) {
+      shipment.delivered_at = new Date().toISOString();
+    }
     inMemoryShipments.set(shipment.id, shipment);
 
     try {
@@ -472,6 +550,7 @@ async function trackShipment(shipmentId) {
           .update({
             status: tracking.normalized_status,
             shipment_status: tracking.normalized_status,
+            delivered_at: shipment.delivered_at || null,
             last_tracking_update: new Date().toISOString(),
           })
           .eq('id', shipment.id)
@@ -485,6 +564,10 @@ async function trackShipment(shipmentId) {
           })
           .eq('id', shipment.order_id)
       );
+
+      if (tracking.normalized_status === SHIPPING_STATUS.DELIVERED) {
+        await syncDeliveryMilestoneToOrder(shipment);
+      }
     } catch (e) {}
   }
 
@@ -641,10 +724,30 @@ async function detectDelayedShipments() {
 
 /**
  * Retry failed shipment operation.
+ * CRITICAL: Re-checks payment guard and order validity before retry.
  */
 async function retryFailedShipment(shipmentId) {
   const shipment = await getShipmentById(shipmentId);
   if (!shipment) throw new Error(`Shipment not found: ${shipmentId}`);
+
+  // Re-verify order payment status and cancellation status during retry
+  if (shipment.order_id) {
+    const { data: order } = await safeQuery(() =>
+      supabase.from('orders').select('*').eq('id', shipment.order_id).maybeSingle()
+    );
+    if (order) {
+      const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+      const isPaid = ['paid', 'completed'].includes(String(order.payment_status || '').toLowerCase().trim());
+      const isCancelled = ['cancelled', 'rejected'].includes(String(order.status || order.order_status || '').toLowerCase().trim());
+
+      if (isCancelled) {
+        throw new Error(`Cannot retry shipment for cancelled order ${order.order_number || shipment.order_id}.`);
+      }
+      if (!isCod && !isPaid) {
+        throw new Error(`Shipment creation blocked because the prepaid order has not been payment-verified. Order ${order.order_number || shipment.order_id} has payment_status '${order.payment_status}'.`);
+      }
+    }
+  }
 
   shipment.attempt_count = (shipment.attempt_count || 0) + 1;
   shipment.last_attempt_at = new Date().toISOString();
@@ -687,12 +790,20 @@ async function handleWebhook(payload) {
       target.status = normalized;
       target.shipment_status = normalized;
       target.updated_at = new Date().toISOString();
+      if (normalized === SHIPPING_STATUS.DELIVERED && !target.delivered_at) {
+        target.delivered_at = new Date().toISOString();
+      }
 
       try {
         await safeQuery(() =>
           supabase
             .from('shipping_shipments')
-            .update({ status: normalized, shipment_status: normalized, updated_at: new Date().toISOString() })
+            .update({
+              status: normalized,
+              shipment_status: normalized,
+              delivered_at: target.delivered_at || null,
+              updated_at: new Date().toISOString(),
+            })
             .eq('id', target.id)
         );
 
@@ -702,6 +813,10 @@ async function handleWebhook(payload) {
             .update({ shipping_status: normalized })
             .eq('id', target.order_id)
         );
+
+        if (normalized === SHIPPING_STATUS.DELIVERED) {
+          await syncDeliveryMilestoneToOrder(target);
+        }
       } catch (e) {}
 
       broadcastSync('SHIPMENT_UPDATED', {
@@ -717,10 +832,81 @@ async function handleWebhook(payload) {
   return { success: true, processed: true };
 }
 
+/**
+ * Sync a delivery milestone event to the master order record.
+ * Decouples logistics delivery from payment collection (critical for COD).
+ *
+ * Rules:
+ *  - COD orders: set order_status='delivered', shipping_status='DELIVERED'
+ *                set payment_status='cod_collected' (NOT 'paid')
+ *  - Prepaid:    set order_status='delivered', shipping_status='DELIVERED'
+ *                payment_status stays 'paid' (already collected online)
+ *
+ * @param {string} orderId - UUID of the master order
+ * @param {object} [options] - { awb_code, courier, delivered_at }
+ * @returns {Promise<object>} Update result
+ */
+async function syncDeliveryMilestoneToOrder(orderId, options = {}) {
+  if (!orderId) throw new Error('syncDeliveryMilestoneToOrder: orderId required');
+
+  const { data: order, error: fetchErr } = await safeQuery(() =>
+    supabase.from('orders').select('id, payment_method, payment_status, order_status, status').eq('id', orderId).single()
+  );
+
+  if (fetchErr || !order) {
+    console.warn(`[shippingService] syncDeliveryMilestoneToOrder: order not found ${orderId}`);
+    return { success: false, error: 'Order not found' };
+  }
+
+  const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+  const deliveredAt = options.delivered_at || new Date().toISOString();
+
+  const updates = {
+    shipping_status: SHIPPING_STATUS.DELIVERED,
+    order_status: 'delivered',
+    status: 'delivered',
+    updated_at: deliveredAt,
+  };
+
+  // COD: mark as cod_collected — payment happened in cash on delivery,
+  //      do NOT set to 'paid' (that would falsely imply online payment received).
+  // Prepaid: payment_status stays 'paid' (already verified at checkout).
+  if (isCod) {
+    const alreadyCollected = String(order.payment_status || '').toLowerCase() === 'cod_collected';
+    if (!alreadyCollected) {
+      updates.payment_status = 'cod_collected';
+    }
+  }
+
+  const { data: updated, error: updateErr } = await safeQuery(() =>
+    supabase.from('orders').update(updates).eq('id', orderId).select().single()
+  );
+
+  if (updateErr) {
+    console.error(`[shippingService] syncDeliveryMilestoneToOrder DB update error:`, updateErr.message);
+    return { success: false, error: updateErr.message };
+  }
+
+  try {
+    broadcastSync('ORDER_DELIVERED', {
+      order_id: orderId,
+      payment_method: order.payment_method,
+      payment_status: updates.payment_status || order.payment_status,
+      awb_code: options.awb_code,
+      courier: options.courier,
+      delivered_at: deliveredAt,
+    });
+  } catch (_) {}
+
+  console.log(`[shippingService] ✅ Delivery milestone synced for order ${orderId} (COD=${isCod})`);
+  return { success: true, order: updated };
+}
+
 module.exports = {
   checkServiceability,
   getShippingRates,
   createShipmentFromOrder,
+  fulfillOrder: createShipmentFromOrder,
   assignAWB,
   schedulePickup,
   generateShippingLabel,
@@ -734,4 +920,5 @@ module.exports = {
   detectDelayedShipments,
   retryFailedShipment,
   handleWebhook,
+  syncDeliveryMilestoneToOrder,
 };

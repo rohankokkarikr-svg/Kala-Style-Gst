@@ -20,6 +20,7 @@ const {
   getOrderTracking,
   calculateTotal,
   initiateRefund,
+  confirmCODCollection,
 } = require('../controllers/orderController');
 
 // ── Customer Routes ──────────────────────────────────────────────────────────
@@ -38,5 +39,6 @@ router.get('/', protect, admin, getAllOrders);
 router.put('/:id/status', protect, artisanOrAdmin, updateOrderStatus);
 router.put('/:id/verify-payment', protect, artisanOnly, verifyPayment);
 router.post('/:id/refund', protect, admin, initiateRefund);
+router.post('/:id/confirm-cod', protect, admin, confirmCODCollection);
 
 module.exports = router;

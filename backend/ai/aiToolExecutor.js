@@ -128,6 +128,7 @@ const SAFETY_LEVELS = {
 
   // LEVEL 2: Controlled Operational Actions (Autonomous with audit log)
   create_shiprocket_order: 2,
+  confirm_cod_collection: 2,
   assign_awb: 2,
   schedule_pickup: 2,
   retry_failed_shipment: 2,
@@ -895,6 +896,46 @@ async function executeTool(toolName, args = {}, context = {}) {
         entityType = 'shipment';
         decision = 'create_shipment';
         let resolvedOrderId = args.order_id;
+        let targetOrder = null;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
+          const { data: oByNum } = await safeQuery(() =>
+            supabase.from('orders').select('*').eq('order_number', args.order_id).maybeSingle()
+          );
+          if (oByNum?.id) {
+            resolvedOrderId = oByNum.id;
+            targetOrder = oByNum;
+          }
+        } else {
+          const { data: oById } = await safeQuery(() =>
+            supabase.from('orders').select('*').eq('id', args.order_id).maybeSingle()
+          );
+          if (oById?.id) targetOrder = oById;
+        }
+
+        // Strict AI Prepaid Guard: Prepaid orders MUST be verified paid
+        if (targetOrder) {
+          const isCod = String(targetOrder.payment_method || '').toLowerCase().trim() === 'cod';
+          const isPaid = ['paid', 'completed'].includes(String(targetOrder.payment_status || '').toLowerCase().trim());
+          if (!isCod && !isPaid) {
+            result = {
+              success: false,
+              blocked: true,
+              error: 'Shipment creation blocked because the prepaid order has not been payment-verified.',
+              message: 'Shipment creation blocked because the prepaid order has not been payment-verified.',
+            };
+            break;
+          }
+        }
+
+        entityId = resolvedOrderId;
+        result = await shippingService.createShipmentFromOrder(resolvedOrderId, args);
+        break;
+      }
+
+      case 'confirm_cod_collection': {
+        entityType = 'order';
+        decision = 'confirm_cod_collection';
+        let resolvedOrderId = args.order_id;
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
           const { data: oByNum } = await safeQuery(() =>
             supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
@@ -902,7 +943,10 @@ async function executeTool(toolName, args = {}, context = {}) {
           if (oByNum?.id) resolvedOrderId = oByNum.id;
         }
         entityId = resolvedOrderId;
-        result = await shippingService.createShipmentFromOrder(resolvedOrderId, args);
+        const { confirmCODCollection } = require('../services/orderService');
+        result = await confirmCODCollection(resolvedOrderId, 'ai_operations_agent', {
+          notes: args.notes || 'Confirmed via AI Operations Agent',
+        });
         break;
       }
 
@@ -1334,7 +1378,7 @@ async function executeTool(toolName, args = {}, context = {}) {
       'send_artisan_whatsapp', 'moderate_review', 'approve_review', 'batch_approve_reviews', 'resolve_complaint',
       'generate_daily_business_report', 'update_automation_rule',
       // Shipping write tools
-      'create_shiprocket_order', 'assign_awb', 'schedule_pickup', 'retry_failed_shipment',
+      'create_shiprocket_order', 'confirm_cod_collection', 'assign_awb', 'schedule_pickup', 'retry_failed_shipment',
       // Live storefront tools
       'add_hero_banner', 'remove_hero_banner', 'update_discount_banner', 'launch_festival_campaign', 'update_site_settings',
       'create_approval_request', 'create_hero_banner_approval', 'generate_marketing_campaign',
@@ -1389,6 +1433,7 @@ async function executeTool(toolName, args = {}, context = {}) {
 
 module.exports = {
   executeTool,
+  executeAITool: executeTool, // Alias for backward-compatibility
   recordAuditAction,
   getInMemoryAuditLogs: () => inMemoryAuditLogs,
   getInMemoryRules: () => inMemoryRules,

@@ -1032,6 +1032,18 @@ const FUNCTION_DECLARATIONS = [
       required: ['shipment_id'],
     },
   },
+  {
+    name: 'confirm_cod_collection',
+    description: 'Confirm cash collection for a delivered Cash on Delivery (COD) order, updating payment status to PAID, recording audit trail, and finalizing artisan earnings.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        order_id: { type: 'STRING', description: 'UUID or order number of the delivered COD order' },
+        notes: { type: 'STRING', description: 'Optional operational notes or delivery verification reference' },
+      },
+      required: ['order_id'],
+    },
+  },
 ];
 
 const GEMINI_TOOLS = [{

@@ -520,14 +520,13 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       // Sync master order status
       const newMasterStatus = await syncMasterOrderStatus(artOrder.order_id);
 
-      // COD: mark payment as paid when all artisan orders delivered
-      if (masterOrder?.payment_method === 'cod' && newMasterStatus === 'delivered') {
-        await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', artOrder.order_id);
-        await supabase.from('payments').update({ status: 'paid', paid_at: now }).eq('order_id', artOrder.order_id);
+      // For PREPAID orders (already paid), create/finalize artisan earning record
+      if (masterOrder?.payment_status === 'paid') {
+        await createArtisanEarning(id, artOrder, profile.id);
+      } else if (masterOrder?.payment_method === 'cod') {
+        // For COD: payment remains cod_pending until explicit collection confirmation.
+        console.log(`[artisanController] Artisan sub-order ${id} delivered for COD order ${artOrder.order_id}. Earnings will finalize upon confirmed COD collection.`);
       }
-
-      // Create artisan earning record
-      await createArtisanEarning(id, artOrder, profile.id);
 
       // Check reward for customer
       if (masterOrder?.user_id) {

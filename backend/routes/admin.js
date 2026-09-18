@@ -37,6 +37,7 @@ router.delete('/categories/:id', adminController.deleteCategory);
 router.get('/orders', adminController.getOrders);
 router.put('/orders/:id/status', adminController.updateOrderStatus);
 router.post('/orders/:id/refund', initiateRefund);
+router.post('/orders/:id/confirm-cod', adminController.confirmCODCollection);
 
 // 6b. Artisan Orders & Earnings
 router.get('/artisan-orders', adminController.getAdminArtisanOrders);

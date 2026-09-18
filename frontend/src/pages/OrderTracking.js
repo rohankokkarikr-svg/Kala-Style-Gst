@@ -47,21 +47,69 @@ function getStepIndex(status) {
   return idx === -1 ? 0 : idx;
 }
 
-function StatusBadge({ status, type = 'status' }) {
+function StatusBadge({ status, type = 'status', paymentMethod, isDelivered }) {
   const norm = normalizeStatus(status);
+  
+  if (type === 'payment') {
+    if (norm === 'cod_pending' || status === 'cod_pending') {
+      return (
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+          isDelivered 
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+            : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+        }`}>
+          {isDelivered ? 'COD — Collection Pending' : 'COD — Payment Pending'}
+        </span>
+      );
+    }
+    if (norm === 'paid' || status === 'paid') {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+          {paymentMethod === 'cod' ? 'Paid — COD Collected ✓' : 'Payment Paid ✓'}
+        </span>
+      );
+    }
+    if (norm === 'failed' || status === 'failed') {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+          Payment Failed
+        </span>
+      );
+    }
+  }
+
+  if (type === 'shipping') {
+    const sMap = {
+      pending:          { label: 'Logistics: Pending', color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' },
+      ready_to_ship:    { label: 'Logistics: Ready to Ship', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
+      awb_assigned:     { label: 'Logistics: AWB Assigned', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' },
+      pickup_scheduled: { label: 'Logistics: Pickup Scheduled', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
+      picked_up:        { label: 'Logistics: Courier Picked Up', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
+      in_transit:       { label: 'Logistics: In Transit', color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
+      out_for_delivery: { label: 'Logistics: Out for Delivery', color: 'bg-amber-400/20 text-amber-300 border border-amber-400/30 font-medium' },
+      delivered:        { label: 'Courier: Delivered ✓', color: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold' },
+      returned:         { label: 'Logistics: Returned (RTO)', color: 'bg-red-500/20 text-red-300 border border-red-500/30' },
+      failed:           { label: 'Logistics: Delivery Exception', color: 'bg-red-500/20 text-red-300 border border-red-500/30' },
+    };
+    const sCfg = sMap[norm] || sMap[String(status).toLowerCase()] || { label: `Logistics: ${status}`, color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' };
+    return (
+      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${sCfg.color}`}>{sCfg.label}</span>
+    );
+  }
+
   const map = {
-    pending:          { label: type === 'payment' ? 'Payment Pending' : 'Order Received', color: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' },
+    pending:          { label: 'Order Received', color: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' },
+    confirmed:        { label: 'Order Confirmed', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium' },
+    processing:       { label: 'Order Processing', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
     accepted:         { label: 'Accepted by Artisan', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
-    preparing:        { label: 'Preparing',          color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
-    ready_for_pickup: { label: 'Ready for Pickup',   color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' },
+    preparing:        { label: 'Preparing Items',    color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
+    ready_for_pickup: { label: 'Ready for Dispatch', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' },
     dispatched:       { label: 'Dispatched',         color: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
+    shipped:          { label: 'Shipped',            color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
     out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
-    delivered:        { label: 'Delivered ✓',        color: 'bg-green-500/20 text-green-300 border border-green-500/30 font-bold' },
+    delivered:        { label: 'Order Complete ✓',   color: 'bg-green-500/20 text-green-300 border border-green-500/30 font-bold' },
     cancelled:        { label: 'Cancelled',          color: 'bg-red-500/20 text-red-300 border border-red-500/30' },
     rejected:         { label: 'Rejected',           color: 'bg-red-600/20 text-red-400 border border-red-600/30' },
-    cod_pending:      { label: 'Pay on Delivery',    color: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' },
-    paid:             { label: 'Payment Paid ✓',     color: 'bg-green-500/20 text-green-300 border border-green-500/30 font-bold' },
-    refunded:         { label: 'Refunded',           color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
   };
   const cfg = map[norm] || map[status] || { label: status, color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' };
   return (
@@ -307,9 +355,30 @@ export default function OrderTracking() {
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusBadge status={order.order_status || order.status || 'pending'} type="status" />
-              <StatusBadge status={order.payment_status || 'pending'} type="payment" />
+              <StatusBadge 
+                status={order.payment_status || 'pending'} 
+                type="payment" 
+                paymentMethod={order.payment_method} 
+                isDelivered={order.shipping_status === 'DELIVERED' || order.status === 'delivered'} 
+              />
+              {(order.shipping_status || shipment?.status) && (
+                <StatusBadge status={order.shipping_status || shipment?.status} type="shipping" />
+              )}
             </div>
           </div>
+
+          {/* Special notice for COD delivered but collection pending */}
+          {order.payment_method === 'cod' && 
+           (order.shipping_status === 'DELIVERED' || order.status === 'delivered') && 
+           order.payment_status !== 'paid' && (
+            <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3 text-amber-300 text-xs">
+              <span className="text-base">💵</span>
+              <div>
+                <p className="font-semibold">Shipment Delivered · COD Payment Collection Pending</p>
+                <p className="text-amber-400/80 text-[11px] mt-0.5">Package has been handed over. Cash collection will reflect as Paid upon courier deposit reconciliation.</p>
+              </div>
+            </div>
+          )}
 
           {/* Payment & Delivery Info */}
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">

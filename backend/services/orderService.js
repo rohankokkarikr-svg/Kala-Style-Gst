@@ -9,6 +9,7 @@
 const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const { getEcomSettings, calculateDeliveryFee, deriveMasterStatus } = require('../config/ecommerce');
+const { broadcastSync } = require('../utils/realtime');
 
 // In-memory checkout idempotency guard (5s window per user/cart)
 const recentCheckouts = new Map();
@@ -374,10 +375,12 @@ exports.syncMasterOrderStatus = async (orderId) => {
   }
 };
 
-// ── COD Delivery Finalization ─────────────────────────────────────────────────
+// ── COD Delivery Finalization & Collection ────────────────────────────────────
 
 /**
- * Finalize a COD artisan_order as delivered, collect payment, create earnings.
+ * Update a COD artisan_order as delivered.
+ * CRITICAL: Courier/artisan delivery sets fulfillment milestone,
+ * but payment_status strictly remains 'cod_pending' until explicit collection confirmation!
  *
  * @param {string} artisanOrderId
  * @param {string} artisanProfileId
@@ -391,7 +394,7 @@ exports.finalizeCODDelivery = async (artisanOrderId, artisanProfileId) => {
 
   if (!artOrder) return { error: 'Artisan order not found' };
 
-  // Update artisan order
+  // Update artisan sub-order
   await supabase
     .from('artisan_orders')
     .update({ status: 'delivered', delivered_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -400,23 +403,186 @@ exports.finalizeCODDelivery = async (artisanOrderId, artisanProfileId) => {
   // Sync master order status
   const newMasterStatus = await exports.syncMasterOrderStatus(artOrder.order_id);
 
-  // If all artisan orders are delivered → mark payment as paid (COD collected)
-  if (newMasterStatus === 'delivered') {
-    await supabase
-      .from('orders')
-      .update({ payment_status: 'paid' })
-      .eq('id', artOrder.order_id);
+  // NOTE: For COD, payment is NOT automatically marked as paid upon delivery.
+  // Payment confirmation requires explicit confirmCODCollection(orderId).
+  return { success: true, master_status: newMasterStatus };
+};
 
+/**
+ * Controlled action to confirm cash collection for a Cash on Delivery (COD) order.
+ * Follows all 12 state-machine rules:
+ * 1. Order must exist.
+ * 2. Order must be COD.
+ * 3. Shipment must be delivered or otherwise eligible.
+ * 4. Payment must currently be cod_pending.
+ * 5. Do not allow duplicate confirmation (Idempotent).
+ * 6. Update payment status to paid.
+ * 7. Update payment record to paid with timestamp.
+ * 8. Record collection timestamp.
+ * 9. Record who/system confirmed collection.
+ * 10. Create an audit record.
+ * 11. Recalculate/finalize artisan earnings according to existing system.
+ * 12. Update master order status when all relevant artisan orders are delivered/complete.
+ *
+ * @param {string} orderIdOrNumber
+ * @param {string} confirmedBy
+ * @param {object} options
+ */
+exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', options = {}) => {
+  try {
+    // 1. Resolve order
+    let query = supabase.from('orders').select('*');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderIdOrNumber)) {
+      query = query.eq('id', orderIdOrNumber);
+    } else {
+      query = query.eq('order_number', orderIdOrNumber);
+    }
+    const { data: order, error: orderErr } = await query.maybeSingle();
+
+    if (orderErr || !order) {
+      return { success: false, error: `Order not found: ${orderIdOrNumber}` };
+    }
+
+    // 2. Validate COD payment method
+    const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+    if (!isCod) {
+      return { success: false, error: `Order ${order.order_number || order.id} is not a Cash on Delivery (COD) order (method: ${order.payment_method}).` };
+    }
+
+    // 3. Prevent duplicate confirmation (Idempotent)
+    const currentPaymentStatus = String(order.payment_status || '').toLowerCase().trim();
+    if (currentPaymentStatus === 'paid') {
+      return {
+        success: true,
+        already_confirmed: true,
+        message: `COD payment for order ${order.order_number || order.id} has already been confirmed as collected.`,
+        order,
+      };
+    }
+
+    // 4. Verify payment status is currently 'cod_pending'
+    if (currentPaymentStatus !== 'cod_pending') {
+      return {
+        success: false,
+        error: `Cannot confirm COD collection for order ${order.order_number || order.id}: Current payment_status is '${order.payment_status}', expected 'cod_pending'.`,
+      };
+    }
+
+    // 5. Verify shipment status is DELIVERED (or admin override provided)
+    const shippingStatus = String(order.shipping_status || '').toUpperCase().trim();
+    if (shippingStatus !== 'DELIVERED' && !options.override_shipping_guard) {
+      return {
+        success: false,
+        error: `Cannot confirm COD collection: Shipment status is '${order.shipping_status || 'PENDING'}'. Package must be delivered before collecting COD payment.`,
+      };
+    }
+
+    const now = new Date().toISOString();
+
+    // 6. Update master order payment status to 'paid' & record collection metadata
+    const { data: updatedOrder, error: updateOrderErr } = await supabase
+      .from('orders')
+      .update({
+        payment_status: 'paid',
+        payment_collected_at: now,
+        payment_collected_by: confirmedBy,
+        payment_collection_notes: options.notes || null,
+        updated_at: now,
+      })
+      .eq('id', order.id)
+      .select()
+      .single();
+
+    if (updateOrderErr) {
+      return { success: false, error: `Failed to update order payment status: ${updateOrderErr.message}` };
+    }
+
+    // 7. Update payments record to 'paid' with collection timestamp
     await supabase
       .from('payments')
-      .update({ status: 'paid', paid_at: new Date().toISOString() })
-      .eq('order_id', artOrder.order_id);
+      .update({
+        status: 'paid',
+        paid_at: now,
+        updated_at: now,
+      })
+      .eq('order_id', order.id);
+
+    // 8. Finalize artisan earnings for each artisan sub-order
+    const { data: artisanOrders } = await supabase
+      .from('artisan_orders')
+      .select('*')
+      .eq('order_id', order.id);
+
+    let finalizedEarningsCount = 0;
+    if (artisanOrders && artisanOrders.length > 0) {
+      for (const ao of artisanOrders) {
+        if (ao.artisan_id) {
+          try {
+            await exports.createArtisanEarning(ao.id, ao, ao.artisan_id);
+            finalizedEarningsCount++;
+          } catch (earnErr) {
+            console.warn(`[confirmCODCollection] Earning finalization notice for sub-order ${ao.id}:`, earnErr.message);
+          }
+        }
+      }
+    }
+
+    // 9. Synchronize master order status if all artisan orders are delivered
+    const newMasterStatus = await exports.syncMasterOrderStatus(order.id);
+
+    // 10. Create immutable audit record
+    try {
+      const { recordAuditAction } = require('../ai/aiToolExecutor');
+      await recordAuditAction({
+        action_name: 'confirm_cod_collection',
+        risk_level: 2,
+        entity_type: 'order',
+        entity_id: order.id,
+        decision: 'confirmed_cod_payment_collection',
+        actor: confirmedBy,
+        execution_status: 'SUCCESS',
+        parameters: {
+          order_id: order.id,
+          order_number: order.order_number,
+          total_amount: order.total_amount,
+          confirmed_by: confirmedBy,
+          notes: options.notes,
+          finalized_earnings_count: finalizedEarningsCount,
+        },
+      });
+    } catch (auditErr) {
+      console.warn('[confirmCODCollection] Audit record logging notice:', auditErr.message);
+    }
+
+    // 11. Broadcast realtime synchronization events
+    broadcastSync('PAYMENTS_UPDATED', {
+      orderId: order.id,
+      status: 'paid',
+      method: 'cod',
+      collected_by: confirmedBy,
+      collected_at: now,
+    });
+    broadcastSync('ORDERS_UPDATED', {
+      orderId: order.id,
+      payment_status: 'paid',
+      order_status: newMasterStatus || updatedOrder.status,
+    });
+    broadcastSync('EARNINGS_UPDATED', {
+      orderId: order.id,
+      status: 'finalized',
+    });
+
+    return {
+      success: true,
+      message: `COD payment of ₹${order.total_amount || order.total_price} for order ${order.order_number || order.id} successfully confirmed as collected!`,
+      order: updatedOrder,
+      finalized_earnings_count: finalizedEarningsCount,
+      confirmed_at: now,
+    };
+  } catch (err) {
+    console.error('[confirmCODCollection] Error:', err);
+    return { success: false, error: err.message };
   }
-
-  // Create artisan earning record
-  await exports.createArtisanEarning(artisanOrderId, artOrder, artisanProfileId);
-
-  return { success: true };
 };
 
 // ── Artisan Earnings ──────────────────────────────────────────────────────────

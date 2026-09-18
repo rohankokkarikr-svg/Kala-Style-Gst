@@ -468,14 +468,19 @@ exports.updateOrderStatus = async (req, res) => {
         await supabase.from('artisan_orders').update(aoUpdate).eq('order_id', id);
 
         if (status === 'delivered') {
-          const { createArtisanEarning } = require('../services/orderService');
-          const { data: artOrders } = await supabase.from('artisan_orders').select('*').eq('order_id', id);
-          if (artOrders && artOrders.length > 0) {
-            for (const ao of artOrders) {
-              if (ao.artisan_id) {
-                await createArtisanEarning(ao.id, ao, ao.artisan_id);
+          const isPaid = ['paid', 'completed'].includes(String(data.payment_status || '').toLowerCase());
+          if (isPaid) {
+            const { createArtisanEarning } = require('../services/orderService');
+            const { data: artOrders } = await supabase.from('artisan_orders').select('*').eq('order_id', id);
+            if (artOrders && artOrders.length > 0) {
+              for (const ao of artOrders) {
+                if (ao.artisan_id) {
+                  await createArtisanEarning(ao.id, ao, ao.artisan_id);
+                }
               }
             }
+          } else {
+            console.log(`[orderController] Order #${id.slice(0, 8)} marked delivered with payment_status '${data.payment_status}'. Earnings deferred until confirmed payment collection.`);
           }
         }
       } catch (syncErr) {
@@ -892,5 +897,27 @@ exports.initiateRefund = async (req, res) => {
   } catch (err) {
     console.error('[initiateRefund] Error:', err);
     res.status(500).json({ error: 'Failed to initiate refund' });
+  }
+};
+
+// ── 13. CONFIRM COD COLLECTION (Admin/Controlled Action) ─────────────────────
+
+exports.confirmCODCollection = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes, override_shipping_guard } = req.body || {};
+    const confirmedBy = req.user?.name || req.user?.email || 'admin';
+
+    const { confirmCODCollection } = require('../services/orderService');
+    const result = await confirmCODCollection(id, confirmedBy, { notes, override_shipping_guard });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('[orderController.confirmCODCollection] Error:', err);
+    res.status(500).json({ error: 'Failed to confirm COD collection: ' + err.message });
   }
 };
