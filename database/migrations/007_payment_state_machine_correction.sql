@@ -21,7 +21,7 @@ ALTER TABLE orders
 
 -- ── 2. Fix legacy 'cod_collected' stuck orders ────────────────────────────────
 -- Orders with payment_status = 'cod_collected' that are NOT yet marked as
--- shipping_status = DELIVERED should be reset to 'cod_pending' (delivery not confirmed).
+-- shipping_state = DELIVERED should be reset to 'cod_pending' (delivery not confirmed).
 UPDATE orders
 SET
   payment_status = 'cod_pending',
@@ -30,8 +30,8 @@ WHERE
   payment_method = 'cod'
   AND payment_status = 'cod_collected'
   AND (
-    shipping_status IS NULL
-    OR UPPER(shipping_status) != 'DELIVERED'
+    shipping_state IS NULL
+    OR UPPER(shipping_state) != 'DELIVERED'
   )
   AND payment_collected_at IS NULL;
 
@@ -48,7 +48,7 @@ SET
 WHERE
   payment_method = 'cod'
   AND payment_status = 'cod_collected'
-  AND UPPER(COALESCE(shipping_status, '')) = 'DELIVERED';
+  AND UPPER(COALESCE(shipping_state, '')) = 'DELIVERED';
 
 -- Also sync the payments table for migrated records
 UPDATE payments p
