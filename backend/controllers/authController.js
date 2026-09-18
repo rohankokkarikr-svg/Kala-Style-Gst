@@ -3,6 +3,8 @@ const { safeQuery } = require('../config/supabase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+const { normalizeEmail, normalizePhone, normalizeRole, sanitizeUser } = require('../utils/authHelper');
+
 const generateToken = (id) => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -53,10 +55,15 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Please provide name, phone number, and password' });
     }
 
-    const validRoles = ['user', 'artisan'];
-    const userRole = validRoles.includes(role) ? role : 'user';
-    const cleanPhone = phone.replace(/\D/g, '');
-    const userEmail = (req.body.email || cleanPhone || phone).trim().toLowerCase();
+    // Admin accounts can NEVER be created via public registration
+    const requestedRole = (role || '').toString().trim().toLowerCase();
+    if (requestedRole === 'admin' || requestedRole.includes('admin')) {
+      return res.status(403).json({ error: 'Administrative accounts cannot be created via public registration.' });
+    }
+
+    const userRole = requestedRole === 'artisan' ? 'artisan' : 'user';
+    const cleanPhone = normalizePhone(phone);
+    const userEmail = normalizeEmail(req.body.email || cleanPhone || phone);
 
     // Check if user exists (by email OR phone)
     const { data: existingUsers } = await supabase
@@ -181,8 +188,8 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { phone, email, password } = req.body;
-    const identifier = (phone || email || '').trim();
+    const { phone, email, identifier: rawId, emailOrPhone, password } = req.body;
+    const identifier = String(rawId || emailOrPhone || phone || email || '').trim();
 
     if (!identifier || !password) {
       return res.status(400).json({ error: 'Please provide phone number or email and password' });
@@ -193,20 +200,16 @@ exports.login = async (req, res) => {
     let userQuery = supabase.from('users').select('*');
 
     if (isEmail) {
-      userQuery = userQuery.eq('email', identifier.toLowerCase());
+      userQuery = userQuery.ilike('email', normalizeEmail(identifier));
     } else {
-      const cleanPhone = identifier.replace(/\D/g, '');
-      const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+      const cleanPhone = normalizePhone(identifier);
       const orConditions = [
+        `phone.eq.${cleanPhone}`,
+        `phone.eq.+91${cleanPhone}`,
+        `phone.eq.91${cleanPhone}`,
+        `email.eq.${cleanPhone}`,
         `email.eq.${identifier}`,
         `phone.eq.${identifier}`,
-        cleanPhone ? `phone.eq.${cleanPhone}` : null,
-        cleanPhone ? `phone.eq.+${cleanPhone}` : null,
-        last10 ? `phone.eq.${last10}` : null,
-        last10 ? `phone.eq.+91${last10}` : null,
-        last10 ? `phone.eq.91${last10}` : null,
-        cleanPhone ? `email.eq.${cleanPhone}` : null,
-        last10 ? `email.eq.${last10}` : null,
       ].filter(Boolean);
       userQuery = userQuery.or(orConditions.join(','));
     }
@@ -231,8 +234,8 @@ exports.login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
     }
 
-    // Normalize role string to prevent whitespace issues
-    user.role = (user.role || 'user').trim().toLowerCase();
+    // Normalize role string to canonical user | artisan | admin
+    user.role = normalizeRole(user.role);
 
     // If artisan or admin, fetch artisan profile if one exists
     let artisanProfile = null;
@@ -247,13 +250,14 @@ exports.login = async (req, res) => {
 
     const token = generateToken(user.id);
     delete user.password;
+    delete user.password_hash;
 
     res.json({
       user: { ...user, artisan_profile: artisanProfile },
       token
     });
   } catch (error) {
-    console.error(error);
+    console.error('[authController.login] Error:', error);
     res.status(500).json({ error: 'Server error during login' });
   }
 };
@@ -502,34 +506,37 @@ exports.getLeaderboard = async (req, res) => {
 exports.syncOtpSession = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    let email = req.body.email;
-    let supabaseUid = req.body.supabase_uid;
-
-    // Check if token provided either in Authorization header or in body
     const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
-    if (token) {
-      try {
-        const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
-        if (sbUser && !sbError) {
-          email = sbUser.email || email;
-          supabaseUid = sbUser.id || supabaseUid;
-        }
-      } catch (e) {
-        console.warn('Could not verify Supabase token directly via getUser:', e.message);
+
+    if (!token) {
+      return res.status(401).json({ error: 'Valid Supabase session token is required to sync OTP session' });
+    }
+
+    // Verify token using official Supabase auth.getUser(token)
+    let verifiedEmail = null;
+    let verifiedUid = null;
+
+    try {
+      const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
+      if (sbError || !sbUser || !sbUser.email) {
+        return res.status(401).json({ error: 'Invalid or expired Supabase authentication token' });
       }
+      verifiedEmail = normalizeEmail(sbUser.email);
+      verifiedUid = sbUser.id;
+    } catch (tokenErr) {
+      console.error('[syncOtpSession] Token verification error:', tokenErr.message);
+      return res.status(401).json({ error: 'Failed to verify Supabase session token' });
     }
 
-    if (!email) {
-      return res.status(400).json({ error: 'Valid email is required to sync OTP session' });
+    if (!verifiedEmail) {
+      return res.status(400).json({ error: 'Verified email is required from OTP session' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-
-    // Check if user already exists in public.users table (case-insensitive)
+    // Check if user already exists in public.users table (case-insensitive by email)
     const { data: existingUsers, error: userFindErr } = await supabase
       .from('users')
       .select('*')
-      .ilike('email', cleanEmail)
+      .ilike('email', verifiedEmail)
       .limit(1);
 
     let user = existingUsers && existingUsers[0];
@@ -538,30 +545,56 @@ exports.syncOtpSession = async (req, res) => {
       if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
         return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
       }
-      user.role = (user.role || 'user').trim().toLowerCase();
+      // Preserve existing role strictly! Never overwrite or downgrade existing role
+      user.role = normalizeRole(user.role);
+
+      // Link supabase_uid if present and not yet linked
+      if (!user.supabase_uid && verifiedUid) {
+        try {
+          await supabase.from('users').update({ supabase_uid: verifiedUid }).eq('id', user.id);
+          user.supabase_uid = verifiedUid;
+        } catch (_) {}
+      }
     } else {
-      // Create user profile with existing schema and default role 'user' (never admin)
-      const defaultName = cleanEmail.split('@')[0];
+      // Create user profile with default role 'user' (never admin or artisan)
+      const defaultName = verifiedEmail.split('@')[0];
       const crypto = require('crypto');
       const salt = await bcrypt.genSalt(10);
       const randomSecret = crypto.randomBytes(16).toString('hex');
       const placeholderHash = await bcrypt.hash(randomSecret, salt);
 
-      const { data: newUser, error: createErr } = await supabase
-        .from('users')
-        .insert([{
-          name: defaultName,
-          email: cleanEmail,
-          password: placeholderHash,
-          role: 'user',
-          status: 'active'
-        }])
-        .select()
-        .single();
+      const newUserData = {
+        name: defaultName,
+        email: verifiedEmail,
+        password: placeholderHash,
+        role: 'user',
+        status: 'active',
+      };
 
-      if (createErr) {
-        console.error('Error creating user profile after OTP:', createErr);
-        throw createErr;
+      let newUser = null;
+      if (verifiedUid) {
+        const { data, error } = await supabase
+          .from('users')
+          .insert([{ ...newUserData, supabase_uid: verifiedUid }])
+          .select()
+          .single();
+        if (!error && data) {
+          newUser = data;
+        }
+      }
+
+      if (!newUser) {
+        const { data, error: createErr } = await supabase
+          .from('users')
+          .insert([newUserData])
+          .select()
+          .single();
+
+        if (createErr) {
+          console.error('Error creating user profile after OTP:', createErr);
+          throw createErr;
+        }
+        newUser = data;
       }
       user = newUser;
       user.role = 'user';

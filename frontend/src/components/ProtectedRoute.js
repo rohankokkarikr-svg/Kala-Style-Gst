@@ -2,37 +2,26 @@ import React from 'react';
 import { Navigate as NavRedirect, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-function getStoredAuth() {
-  try {
-    const token = localStorage.getItem('sh_token');
-    const userStr = localStorage.getItem('sh_user');
-    if (token && userStr) {
-      const parsed = JSON.parse(userStr);
-      return { token, role: (parsed.role || 'user').trim().toLowerCase() };
-    }
-  } catch (e) {}
-  return null;
-}
+import { normalizeRole } from '../utils/authHelper';
 
-/** Protects any route behind authentication */
+/** Protects any route behind authenticated session */
 export function PrivateRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
+
   if (loading) return <PageLoader />;
-  const authed = isAuthenticated || Boolean(getStoredAuth()?.token);
-  return authed ? children : <NavRedirect to="/login" state={{ from: location }} replace />;
+  return (isAuthenticated && user) ? children : <NavRedirect to="/login" state={{ from: location }} replace />;
 }
 
-/** Only allows admin-role users */
+/** Only allows verified admin-role users */
 export function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin, isArtisan, loading } = useAuth();
-  if (loading) return <PageLoader />;
-  const stored = getStoredAuth();
-  const authed = isAuthenticated || Boolean(stored?.token);
-  const adminAllowed = isAdmin || stored?.role === 'admin';
+  const { isAuthenticated, isAdmin, isArtisan, loading, user } = useAuth();
+  const role = normalizeRole(user?.role);
 
-  if (!authed) return <NavRedirect to="/login" replace />;
-  if (!adminAllowed) {
+  if (loading) return <PageLoader />;
+  if (!isAuthenticated || !user) return <NavRedirect to="/login" replace />;
+
+  if (role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-dark-900 px-4">
         <div className="card max-w-md w-full p-8 text-center space-y-6 border border-red-500/30">
@@ -53,10 +42,10 @@ export function AdminRoute({ children }) {
               ← Go Back
             </button>
             <Link
-              to={isArtisan || stored?.role === 'artisan' ? '/artisan' : '/'}
+              to={role === 'artisan' ? '/artisan' : '/'}
               className="btn-primary w-full text-center block"
             >
-              {isArtisan || stored?.role === 'artisan' ? 'Go to Artisan Studio' : 'Return to Storefront'}
+              {role === 'artisan' ? 'Go to Artisan Studio' : 'Return to Storefront'}
             </Link>
           </div>
         </div>
@@ -66,15 +55,15 @@ export function AdminRoute({ children }) {
   return children;
 }
 
-/** Only allows artisan-role (and admin) users */
+/** Only allows verified artisan-role (and admin) users */
 export function ArtisanRoute({ children }) {
-  const { isAuthenticated, isArtisan, isAdmin, loading } = useAuth();
-  if (loading) return <PageLoader />;
-  const stored = getStoredAuth();
-  const authed = isAuthenticated || Boolean(stored?.token);
-  const artisanAllowed = isArtisan || isAdmin || stored?.role === 'artisan' || stored?.role === 'admin';
+  const { isAuthenticated, loading, user } = useAuth();
+  const role = normalizeRole(user?.role);
 
-  if (!authed) return <NavRedirect to="/login" replace />;
+  if (loading) return <PageLoader />;
+  if (!isAuthenticated || !user) return <NavRedirect to="/login" replace />;
+
+  const artisanAllowed = role === 'artisan' || role === 'admin';
   if (!artisanAllowed) return <NavRedirect to="/" replace />;
   return children;
 }

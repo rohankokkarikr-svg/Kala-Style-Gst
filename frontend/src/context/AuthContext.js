@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
+import { normalizeRole, getRoleHome } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext(null);
@@ -12,7 +13,7 @@ export const AuthProvider = ({ children }) => {
       const token = localStorage.getItem('sh_token');
       if (stored && token) {
         const parsed = JSON.parse(stored);
-        if (parsed.role) parsed.role = parsed.role.trim().toLowerCase();
+        if (parsed.role) parsed.role = normalizeRole(parsed.role);
         return parsed;
       }
     } catch (e) {}
@@ -33,7 +34,7 @@ export const AuthProvider = ({ children }) => {
             supabase_uid: session.user.id
           });
           if (data?.user && data?.token) {
-            const normalized = { ...data.user, role: (data.user.role || 'user').trim().toLowerCase() };
+            const normalized = { ...data.user, role: normalizeRole(data.user.role) };
             setUser(normalized);
             localStorage.setItem('sh_token', data.token);
             localStorage.setItem('sh_user', JSON.stringify(normalized));
@@ -47,7 +48,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data } = await authAPI.me();
       if (data) {
-        const normalized = { ...data, role: (data.role || 'user').trim().toLowerCase() };
+        const normalized = { ...data, role: normalizeRole(data.role) };
         setUser(normalized);
         localStorage.setItem('sh_user', JSON.stringify(normalized));
         return normalized;
@@ -66,6 +67,24 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     refreshUser().finally(() => setLoading(false));
   }, [refreshUser]);
+
+  // Multi-tab session synchronization
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'sh_token' && !e.newValue) {
+        // Logged out in another tab
+        setUser(null);
+      } else if (e.key === 'sh_user' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          parsed.role = normalizeRole(parsed.role);
+          setUser(parsed);
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // Single global Supabase auth state listener (no duplicates)
   useEffect(() => {
@@ -226,17 +245,25 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Existing Password Login ─────────────────────────────────
-  const login = async (phone, password) => {
+  // ─── Existing Password Login (supports Phone or Email) ───────
+  const login = async (identifierOrPhone, password) => {
     try {
-      const { data } = await authAPI.login({ phone, password });
+      const cleanIdentifier = (identifierOrPhone || '').trim();
+      const { data } = await authAPI.login({
+        identifier: cleanIdentifier,
+        phone: cleanIdentifier,
+        email: cleanIdentifier,
+        password
+      });
+      const normalizedRole = normalizeRole(data.user?.role);
       const normalizedUser = {
         ...data.user,
-        role: (data.user?.role || 'user').trim().toLowerCase(),
+        role: normalizedRole,
       };
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      toast.success(`Welcome back, ${normalizedUser.name}! 👑`);
+      toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`);
       return normalizedUser;
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message || 'Failed to log in';
@@ -247,10 +274,20 @@ export const AuthProvider = ({ children }) => {
   // ─── Signup ──────────────────────────────────────────────────
   const signup = async (name, phone, password, role = 'user', store_name, artisan_type, email) => {
     try {
-      const { data } = await authAPI.signup({ name, phone, password, role, store_name, artisan_type, email });
+      const normalizedTargetRole = normalizeRole(role) === 'artisan' ? 'artisan' : 'user';
+      const { data } = await authAPI.signup({
+        name,
+        phone,
+        password,
+        role: normalizedTargetRole,
+        store_name,
+        artisan_type,
+        email
+      });
+      const normalizedRole = normalizeRole(data.user?.role);
       const normalizedUser = {
         ...data.user,
-        role: (data.user?.role || 'user').trim().toLowerCase(),
+        role: normalizedRole,
       };
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
@@ -274,21 +311,8 @@ export const AuthProvider = ({ children }) => {
     toast.success('Signed out successfully');
   };
 
-  const getStoredUser = () => {
-    try {
-      const stored = localStorage.getItem('sh_user');
-      const token = localStorage.getItem('sh_token');
-      if (stored && token) {
-        const parsed = JSON.parse(stored);
-        if (parsed.role) parsed.role = parsed.role.trim().toLowerCase();
-        return parsed;
-      }
-    } catch (e) {}
-    return null;
-  };
-
-  const currentUser = user || getStoredUser();
-  const currentRole = (currentUser?.role || '').trim().toLowerCase();
+  const currentUser = user;
+  const currentRole = normalizeRole(currentUser?.role);
   const isAdmin = currentRole === 'admin';
   const isArtisan = currentRole === 'artisan';
   const isAuthenticated = !!currentUser;
@@ -306,7 +330,9 @@ export const AuthProvider = ({ children }) => {
       isArtisan,
       isAuthenticated,
       refreshUser,
-      setUser
+      setUser,
+      normalizeRole,
+      getRoleHome
     }}>
       {children}
     </AuthContext.Provider>

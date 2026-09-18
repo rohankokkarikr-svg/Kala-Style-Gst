@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { normalizeRole, getRoleHome } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
 export default function Login() {
@@ -56,23 +57,19 @@ export default function Login() {
 
   // Safe redirect helper after login based on role and return URL
   const handleRedirectAfterAuth = (user) => {
-    const role = (user?.role || '').trim().toLowerCase();
+    const role = normalizeRole(user?.role);
     const returnUrl = location.state?.from?.pathname;
 
     if (returnUrl && returnUrl !== '/login') {
       if (returnUrl.startsWith('/admin') && role !== 'admin') {
-        navigate(role === 'artisan' ? '/artisan' : '/', { replace: true });
+        navigate(getRoleHome(role), { replace: true });
       } else if (returnUrl.startsWith('/artisan') && role !== 'artisan' && role !== 'admin') {
-        navigate('/', { replace: true });
+        navigate(getRoleHome(role), { replace: true });
       } else {
         navigate(returnUrl, { replace: true });
       }
-    } else if (role === 'admin') {
-      navigate('/admin', { replace: true });
-    } else if (role === 'artisan') {
-      navigate('/artisan', { replace: true });
     } else {
-      navigate('/', { replace: true });
+      navigate(getRoleHome(role), { replace: true });
     }
   };
 

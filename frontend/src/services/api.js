@@ -37,11 +37,29 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('sh_token');
-      localStorage.removeItem('sh_user');
-      // Only redirect if not already on login page to avoid loops
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      const reqUrl = error.config?.url || '';
+      const isAuthEndpoint = reqUrl.includes('/auth/login') ||
+                             reqUrl.includes('/auth/signup') ||
+                             reqUrl.includes('/auth/register') ||
+                             reqUrl.includes('/auth/otp-session');
+
+      // Do NOT trigger global redirect on login/signup failure so error toast can render cleanly
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('sh_token');
+        localStorage.removeItem('sh_user');
+
+        // Only redirect to login if currently accessing a protected dashboard or action
+        const currentPath = window.location.pathname;
+        const isProtectedRoute = currentPath.startsWith('/admin') ||
+                                 currentPath.startsWith('/artisan') ||
+                                 currentPath.startsWith('/checkout') ||
+                                 currentPath.startsWith('/orders') ||
+                                 currentPath.startsWith('/my-orders') ||
+                                 currentPath.startsWith('/account');
+
+        if (isProtectedRoute && currentPath !== '/login') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
