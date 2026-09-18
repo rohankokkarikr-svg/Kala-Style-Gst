@@ -120,6 +120,7 @@ export const orderAPI = {
   pay:                (id, data) => api.put(`/orders/${id}/pay`, data),
   verifyPayment:      (id, data) => api.put(`/orders/${id}/verify-payment`, data),
   refund:             (id, data) => api.post(`/orders/${id}/refund`, data),
+  confirmCODCollection: (id, data) => { apiCache.invalidateOrders(); return api.post(`/orders/${id}/confirm-cod`, data); },
 };
 
 // ─── Payments ─────────────────────────────────────────────────────
@@ -222,6 +223,7 @@ export const adminAPI = {
   deleteCategory:       (id)       => api.delete(`/admin/categories/${id}`),
   getOrders:            (params)   => api.get('/admin/orders', { params }),
   updateOrderStatus:    (id, data) => api.put(`/admin/orders/${id}/status`, data),
+  confirmCODCollection: (id, data) => { apiCache.invalidateOrders(); return api.post(`/admin/orders/${id}/confirm-cod`, data); },
   refundOrder:          (id, data) => api.post(`/admin/orders/${id}/refund`, data),
   getArtisanOrders:     (params)   => api.get('/admin/artisan-orders', { params }),
   getArtisanEarnings:   (params)   => api.get('/admin/artisan-earnings', { params }),

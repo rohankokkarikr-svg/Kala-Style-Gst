@@ -122,9 +122,9 @@ exports.getUPIDeepLinks = exports.generateUPIAppLinks;
 /**
  * Verify Razorpay payment signature using timing-safe comparison
  */
-exports.verifyRazorpaySignature = (orderId, paymentId, signature) => {
+exports.verifyRazorpaySignature = (orderId, paymentId, signature, secretOverride = null) => {
   try {
-    const secret = cleanStr(process.env.RAZORPAY_KEY_SECRET);
+    const secret = secretOverride ? cleanStr(secretOverride) : cleanStr(process.env.RAZORPAY_KEY_SECRET);
     if (!secret || !orderId || !paymentId || !signature) return false;
     const body = `${orderId}|${paymentId}`;
     const expectedSignature = crypto

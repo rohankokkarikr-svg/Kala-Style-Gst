@@ -814,14 +814,13 @@ async function syncDeliveryMilestoneToOrder(orderId, options = {}) {
     updated_at: deliveredAt,
   };
 
-  // COD: mark as cod_collected — payment happened in cash on delivery,
-  //      do NOT set to 'paid' (that would falsely imply online payment received).
-  // Prepaid: payment_status stays 'paid' (already verified at checkout).
+  // For COD orders: delivery milestone sets order_status='delivered' & shipping_status='DELIVERED',
+  // but payment_status MUST REMAIN 'cod_pending'. It is NOT marked as collected or paid
+  // until authorized collection confirmation occurs via confirmCODCollection().
+  // For Prepaid orders: payment_status stays 'paid' (already collected online).
   if (isCod) {
-    const alreadyCollected = String(order.payment_status || '').toLowerCase() === 'cod_collected';
-    if (!alreadyCollected) {
-      updates.payment_status = 'cod_collected';
-    }
+    // Retain cod_pending (or whatever current valid COD status is, e.g. already confirmed paid)
+    updates.payment_status = order.payment_status || 'cod_pending';
   }
 
   const { data: updated, error: updateErr } = await safeQuery(() =>

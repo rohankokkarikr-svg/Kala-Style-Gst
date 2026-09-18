@@ -80,6 +80,26 @@ export default function Orders() {
     }
   };
 
+  const handleConfirmCOD = async (id) => {
+    setUpdating(true);
+    try {
+      const res = await adminAPI.confirmCODCollection(id, { notes: 'Confirmed by Admin via Order Management' });
+      if (res.data?.success) {
+        toast.success(res.data.message || 'COD collection confirmed successfully!');
+        setOrders(prev => prev.map(o => o.id === id ? { ...o, payment_status: 'paid' } : o));
+        if (selectedOrder && selectedOrder.id === id) {
+          setSelectedOrder(prev => ({ ...prev, payment_status: 'paid' }));
+        }
+      } else {
+        toast.error(res.data?.error || 'Failed to confirm COD collection');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to confirm COD collection');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const s = (status || 'pending').toLowerCase();
     switch (s) {
@@ -244,11 +264,25 @@ export default function Orders() {
                         <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 inline-block font-mono">
                           ⏳ Awaiting Artisan UTR
                         </span>
+                      ) : String(o.payment_method || '').toLowerCase() === 'cod' ? (
+                        o.payment_status === 'paid' || o.payment_status === 'cod_collected' ? (
+                          <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded border border-emerald-500/30 inline-block">
+                            Paid — COD Collected ✓
+                          </span>
+                        ) : (String(o.status || '').toLowerCase() === 'delivered' || String(o.shipping_status || '').toUpperCase() === 'DELIVERED') ? (
+                          <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded border border-amber-500/30 inline-block">
+                            COD — Collection Pending
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-yellow-300 bg-yellow-500/15 px-2 py-0.5 rounded border border-yellow-500/30 inline-block">
+                            COD — Payment Pending
+                          </span>
+                        )
                       ) : (
                         <span className={`text-[11px] font-semibold ${
                           o.payment_status === 'paid' || o.payment_status === 'successful' ? 'text-green-400' : 'text-yellow-400'
                         }`}>
-                          {o.payment_status || 'Pending'}
+                          {o.payment_status === 'paid' ? 'Payment Paid ✓' : (o.payment_status || 'Pending')}
                         </span>
                       )}
                     </td>
@@ -303,6 +337,42 @@ export default function Orders() {
                   <span className="text-[11px] text-gray-300">Only the assigned artisan can verify the customer's payment UTR and confirm this order.</span>
                 </div>
               </div>
+            )}
+
+            {/* COD Collection Status & Action */}
+            {String(selectedOrder.payment_method || '').toLowerCase() === 'cod' && (
+              selectedOrder.payment_status === 'paid' || selectedOrder.payment_status === 'cod_collected' ? (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-xs text-emerald-300">
+                  <span className="text-base">✓</span>
+                  <div>
+                    <strong className="font-semibold block">Paid — COD Collection Confirmed</strong>
+                    <span className="text-[11px] text-gray-300">Cash collection has been recorded. Artisan earnings are finalized.</span>
+                  </div>
+                </div>
+              ) : (String(selectedOrder.status || '').toLowerCase() === 'delivered' || String(selectedOrder.shipping_status || '').toUpperCase() === 'DELIVERED') ? (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between gap-3 text-xs">
+                  <div>
+                    <strong className="font-bold text-amber-300 block">Package Delivered — COD Collection Pending</strong>
+                    <span className="text-[11px] text-gray-300">Confirm cash collection of ₹{Number(selectedOrder.total_price || selectedOrder.total_amount || 0).toLocaleString('en-IN')} to mark paid and finalize artisan earnings.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmCOD(selectedOrder.id)}
+                    disabled={updating}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shrink-0 transition-all cursor-pointer"
+                  >
+                    ✓ Confirm COD Collection
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center gap-2 text-xs text-yellow-300">
+                  <span className="text-base">💵</span>
+                  <div>
+                    <strong className="font-semibold block">Cash on Delivery (COD) — Payment Pending</strong>
+                    <span className="text-[11px] text-gray-300">Customer will pay upon package delivery. Delivery required before collection confirmation.</span>
+                  </div>
+                </div>
+              )
             )}
 
             {/* Quick Status Pill Bar */}

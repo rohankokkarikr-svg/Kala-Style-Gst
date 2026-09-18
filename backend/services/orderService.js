@@ -487,11 +487,11 @@ exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', op
 
 
     // 5. Verify shipment status is DELIVERED (or admin override provided)
-    const shippingStatus = String(order.shipping_status || '').toUpperCase().trim();
-    if (shippingStatus !== 'DELIVERED' && !options.override_shipping_guard) {
+    const effectiveDeliveryStatus = String(order.shipping_status || order.order_status || order.status || '').toUpperCase().trim();
+    if (effectiveDeliveryStatus !== 'DELIVERED' && !options.override_shipping_guard) {
       return {
         success: false,
-        error: `Cannot confirm COD collection: Shipment status is '${order.shipping_status || 'PENDING'}'. Package must be delivered before collecting COD payment.`,
+        error: `Cannot confirm COD collection: Shipment status is '${order.shipping_status || order.order_status || order.status || 'PENDING'}'. Package must be delivered before collecting COD payment.`,
       };
     }
 

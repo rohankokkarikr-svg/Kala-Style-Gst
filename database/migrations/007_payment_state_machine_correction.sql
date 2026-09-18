@@ -12,16 +12,16 @@
 -- SAFE: uses IF NOT EXISTS, no DROP, no data deletion, fully idempotent.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- ── 1. Add payment collection metadata columns (safe) ─────────────────────────
-
+-- ── 1. Add payment collection metadata and shipping status columns (safe) ─────
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS payment_collected_at     TIMESTAMPTZ DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS payment_collected_by     TEXT        DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS payment_collection_notes TEXT        DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS payment_collection_notes TEXT        DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS shipping_status          VARCHAR(50) DEFAULT 'PENDING';
 
 -- ── 2. Fix legacy 'cod_collected' stuck orders ────────────────────────────────
--- Orders with payment_status = 'cod_collected' that are NOT yet marked as
--- shipping_state = DELIVERED should be reset to 'cod_pending' (delivery not confirmed).
+-- Orders with payment_status = 'cod_collected' that are NOT yet delivered
+-- should be reset to 'cod_pending' (delivery not confirmed).
 UPDATE orders
 SET
   payment_status = 'cod_pending',
@@ -29,14 +29,11 @@ SET
 WHERE
   payment_method = 'cod'
   AND payment_status = 'cod_collected'
-  AND (
-    shipping_state IS NULL
-    OR UPPER(shipping_state) != 'DELIVERED'
-  )
+  AND UPPER(COALESCE(shipping_status, status, order_status, '')) != 'DELIVERED'
   AND payment_collected_at IS NULL;
 
 -- ── 3. Migrate 'cod_collected' orders that ARE fully delivered ─────────────────
--- If order is COD + cod_collected + shipping = DELIVERED, treat as collection
+-- If order is COD + cod_collected + delivery confirmed, treat as collection
 -- confirmed and migrate to 'paid' for state machine consistency.
 UPDATE orders
 SET
@@ -48,7 +45,7 @@ SET
 WHERE
   payment_method = 'cod'
   AND payment_status = 'cod_collected'
-  AND UPPER(COALESCE(shipping_state, '')) = 'DELIVERED';
+  AND UPPER(COALESCE(shipping_status, status, order_status, '')) = 'DELIVERED';
 
 -- Also sync the payments table for migrated records
 UPDATE payments p
