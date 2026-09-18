@@ -123,18 +123,19 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    // Notifications
+    // Notifications: Send complete order details to Admin WhatsApp
     let whatsappLink = null;
     try {
       const settings = getSiteSettings();
-      if (settings.orderNotifications && normalizedMethod === 'cod') {
+      if (settings.orderNotifications !== false) {
         const { data: fullOrder } = await supabase
           .from('orders')
           .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
           .eq('id', order.id)
           .single();
+        const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917349083982';
         const wsRes = await sendOrderWhatsappNotification(
-          settings.whatsappNumber, fullOrder || order, req.user?.name || 'Customer'
+          targetAdminPhone, fullOrder || order, req.user?.name || 'Customer'
         );
         if (wsRes) whatsappLink = wsRes.directLink;
       }

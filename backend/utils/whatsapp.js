@@ -42,10 +42,13 @@ const formatPhone = (phoneStr) => {
 
 // Initialize Twilio client supporting both Auth Token and API Key configurations
 const getTwilioClient = () => {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_API_SECRET;
-  const apiKeySid = process.env.TWILIO_API_KEY_SID || (accountSid?.startsWith('SK') ? accountSid : null);
-  const mainAccountSid = process.env.TWILIO_MAIN_ACCOUNT_SID || (accountSid?.startsWith('AC') ? accountSid : null);
+  let accountSid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
+  if (accountSid.startsWith('SAC')) {
+    accountSid = accountSid.slice(1);
+  }
+  const authToken = (process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_API_SECRET || '').trim();
+  const apiKeySid = (process.env.TWILIO_API_KEY_SID || (accountSid?.startsWith('SK') ? accountSid : null))?.trim();
+  const mainAccountSid = (process.env.TWILIO_MAIN_ACCOUNT_SID || (accountSid?.startsWith('AC') ? accountSid : null))?.trim();
 
   if (!authToken || authToken.startsWith('your_')) {
     return null;
@@ -126,35 +129,45 @@ const extractLiveLocationLink = (order) => {
 
 const buildOrderWhatsappText = (order, customerName) => {
   const itemsText = (order.items || [])
-    .map(item => `• ${item.product?.name || 'Item'} (Size: ${item.size}, Qty: ${item.quantity}) - ₹${(item.price_at_time * item.quantity).toLocaleString()}`)
+    .map(item => `• ${item.product?.name || item.title || 'Handcrafted Item'} (Size: ${item.size || 'Standard'}, Qty: ${item.quantity || 1}) - ₹${(((item.price_at_time || item.price || 0) * (item.quantity || 1))).toLocaleString('en-IN')}`)
     .join('\n');
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
-  const subtotal = (order.items || []).reduce((s, i) => s + (i.price_at_time * i.quantity), 0);
+  const subtotal = (order.items || []).reduce((s, i) => s + ((i.price_at_time || i.price || 0) * (i.quantity || 1)), 0);
   const discount = order.discount_amount || 0;
-  const shipping = (order.total_price || 0) - subtotal + discount;
-  const isUpi = getEffectivePaymentMethod(order).includes('UPI');
+  const shipping = Math.max(0, (order.total_price || 0) - subtotal + discount);
+  const payMethod = getEffectivePaymentMethod(order);
+  const isPaid = order.payment_status === 'paid' || order.status === 'paid';
+  const isUpi = payMethod.includes('UPI') || payMethod.includes('PhonePe');
   const liveLocationUrl = extractLiveLocationLink(order);
   const liveLocLine = liveLocationUrl ? `\n🗺️ *Customer Live Location Link:* ${liveLocationUrl}` : '';
 
+  let paymentStatusDisplay = '✅ *Order Status:* CONFIRMED (COD)';
+  if (isPaid) {
+    paymentStatusDisplay = '✅ *Payment Status:* PAID (Online / Razorpay)';
+  } else if (isUpi) {
+    paymentStatusDisplay = '⏳ *Payment Status:* Awaiting UPI Ref. No. Submission';
+  }
+
   return `🔔 *New Order Placed on KalaStyle AI!*
 ----------------------------------------
-📦 *Order ID:* #${order.id?.substring(0, 8)}
-👤 *Customer Name:* ${customerName}
+📦 *Order ID:* #${order.id?.substring(0, 8)} (${order.id})
+👤 *Customer Name:* ${customerName || 'Valued Customer'}
 📞 *Phone Number:* +91 ${order.phone}
-📍 *Shipping Address:* ${order.shipping_address}${liveLocLine}
+📍 *Shipping Address:* ${order.shipping_address || 'N/A'}${liveLocLine}
 
 🛒 *Items Ordered (${itemsCount} items):*
-${itemsText || 'No items listed'}
+${itemsText || '• Handcrafted artisan merchandise'}
 
-💰 *Payment Method:* ${getEffectivePaymentMethod(order)}
-💵 *Subtotal:* ₹${subtotal.toLocaleString()}
-🚚 *Shipping Fee:* ₹${Math.max(0, shipping).toLocaleString()}
-🏷️ *Discount:* -₹${discount.toLocaleString()} ${order.coupon_code ? `(${order.coupon_code})` : ''}
+💰 *Payment Method:* ${payMethod}
+💵 *Subtotal:* ₹${subtotal.toLocaleString('en-IN')}
+🚚 *Shipping Fee:* ₹${shipping.toLocaleString('en-IN')}
+🏷️ *Discount:* -₹${discount.toLocaleString('en-IN')} ${order.coupon_code ? `(${order.coupon_code})` : ''}
 ========================================
-💵 *Total Amount to Pay:* ₹${(order.total_price || 0).toLocaleString()}
+💵 *Total Amount:* ₹${(order.total_price || 0).toLocaleString('en-IN')}
 ----------------------------------------
-${isUpi ? '⏳ *Payment Status:* Awaiting UPI Ref. No. Submission' : '✅ *Order Status:* CONFIRMED (COD)'}`;
+${paymentStatusDisplay}
+----------------------------------------`;
 };
 
 exports.getEffectivePaymentMethod = getEffectivePaymentMethod;
@@ -163,12 +176,17 @@ exports.getWhatsappDirectLink = getWhatsappDirectLink;
 exports.buildOrderWhatsappText = buildOrderWhatsappText;
 
 /**
- * Sends a WhatsApp notification to Admin & Customer when a new order is placed (COD or UPI).
+ * Sends a WhatsApp notification to Admin & Customer when a new order is placed (COD or UPI or Prepaid).
  */
 exports.sendOrderWhatsappNotification = async (adminPhone, order, customerName) => {
+  const effectiveAdminPhone = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
   const messageBody = buildOrderWhatsappText(order, customerName);
-  const twilioRes = await sendWhatsappToRecipients([adminPhone, order.phone], messageBody);
-  const directLink = getWhatsappDirectLink(adminPhone, messageBody);
+  const recipients = [effectiveAdminPhone];
+  if (order.phone && String(order.phone) !== String(effectiveAdminPhone)) {
+    recipients.push(order.phone);
+  }
+  const twilioRes = await sendWhatsappToRecipients(recipients, messageBody);
+  const directLink = getWhatsappDirectLink(effectiveAdminPhone, messageBody);
 
   return {
     ...twilioRes,

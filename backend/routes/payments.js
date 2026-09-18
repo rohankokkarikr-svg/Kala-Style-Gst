@@ -247,6 +247,24 @@ router.post('/verify', protect, async (req, res) => {
         .catch((sErr) => console.warn(`[verify] Auto Shiprocket shipment notice:`, sErr.message));
     } catch (shpErr) {}
 
+    // Send Payment Success WhatsApp Notification to Admin
+    try {
+      const { sendOrderWhatsappNotification } = require('../utils/whatsapp');
+      const { data: fullOrder } = await supabase
+        .from('orders')
+        .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
+        .eq('id', order.id)
+        .single();
+      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+      await sendOrderWhatsappNotification(
+        targetAdminPhone,
+        { ...(fullOrder || order), payment_status: 'paid' },
+        req.user?.name || 'Customer'
+      );
+    } catch (wsErr) {
+      console.warn('[verify] WhatsApp payment notification notice:', wsErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Payment verified successfully',
