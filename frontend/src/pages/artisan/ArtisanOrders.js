@@ -139,22 +139,34 @@ export default function ArtisanOrders() {
     }
   };
 
-  const handleStatusChange = async (orderId, newStatus) => {
-    if (!orderId || !newStatus) return;
-    setUpdatingId(orderId);
+  const handleStatusChange = async (orderId, newStatus, artisanOrderId) => {
+    if ((!orderId && !artisanOrderId) || !newStatus) return;
+    const targetId = artisanOrderId || orderId;
+    setUpdatingId(targetId);
 
     // Optimistically update order status in state
     setOrders(prev => prev.map(item => {
-      if (item.orders?.id === orderId) {
-        return { ...item, orders: { ...item.orders, status: newStatus } };
+      const currentOrderId = item.orders?.id || item.order?.id || item.order_id;
+      if (currentOrderId === orderId || item.id === artisanOrderId) {
+        return {
+          ...item,
+          status: newStatus,
+          orders: item.orders ? { ...item.orders, status: newStatus } : undefined,
+          order: item.order ? { ...item.order, status: newStatus } : undefined
+        };
       }
       return item;
     }));
 
     try {
-      await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
-      toast.success(`Order #${orderId.substring(0, 8).toUpperCase()} updated to "${newStatus}"! 🚀`);
+      if (artisanOrderId) {
+        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus });
+      } else {
+        await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
+      }
+      toast.success(`Order updated to "${newStatus}"! 🚀`);
       window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: { orderId, status: newStatus } }));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', { detail: { artisanOrderId, status: newStatus } }));
     } catch (err) {
       console.error('Failed to update order status:', err);
       toast.error(err.response?.data?.error || 'Failed to update order status');
@@ -180,9 +192,10 @@ export default function ArtisanOrders() {
   };
 
   const filteredOrders = orders.filter(item => {
-    const status = item.orders?.status || 'pending';
-    const utrNo = item.orders?.utr_number || item.orders?.transaction_id || item.orders?.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
-    const isUtrPending = (item.orders?.payment_status === 'pending_verification' || item.orders?.status === 'payment_verification_pending') || (utrNo && item.orders?.payment_status !== 'paid' && item.orders?.status !== 'cancelled');
+    const orderObj = item.orders || item.order || {};
+    const status = item.status || orderObj.status || 'pending';
+    const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
+    const isUtrPending = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
 
     if (filter === 'utr_pending') {
       if (!isUtrPending) return false;
@@ -192,11 +205,14 @@ export default function ArtisanOrders() {
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      const customerName = (item.orders?.users?.name || '').toLowerCase();
-      const customerPhone = (item.orders?.phone || item.orders?.users?.phone || '').toLowerCase();
-      const productName = (item.products?.name || '').toLowerCase();
-      const address = (item.orders?.shipping_address || '').toLowerCase();
-      const orderId = (item.orders?.id || '').toLowerCase();
+      const customerObj = orderObj.users || orderObj.user || {};
+      const customerName = (customerObj.name || orderObj.shipping_name || '').toLowerCase();
+      const customerPhone = (orderObj.phone || customerObj.phone || '').toLowerCase();
+      const firstItem = (item.items && item.items[0]) || item;
+      const productObj = item.products || firstItem.product || { name: firstItem.product_name_snapshot };
+      const productName = (productObj.name || '').toLowerCase();
+      const address = (orderObj.shipping_address || '').toLowerCase();
+      const orderId = String(orderObj.id || item.order_id || '').toLowerCase();
 
       return (
         customerName.includes(q) ||
@@ -209,11 +225,19 @@ export default function ArtisanOrders() {
     return true;
   });
 
-  const totalRevenue = orders.reduce((sum, item) => sum + ((item.price_at_time || 0) * (item.quantity || 1)), 0);
-  const pendingCount = orders.filter(o => !o.orders?.status || o.orders?.status === 'pending').length;
+  const totalRevenue = orders.reduce((sum, item) => {
+    const firstItem = (item.items && item.items[0]) || item;
+    const price = item.subtotal || ((item.price_at_time || firstItem.price_at_time || firstItem.unit_price_snapshot || 0) * (item.quantity || firstItem.quantity || 1));
+    return sum + price;
+  }, 0);
+  const pendingCount = orders.filter(o => {
+    const st = o.status || o.orders?.status || o.order?.status || 'pending';
+    return !st || st === 'pending';
+  }).length;
   const utrPendingCount = orders.filter(item => {
-    const utrNo = item.orders?.utr_number || item.orders?.transaction_id || item.orders?.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
-    return (item.orders?.payment_status === 'pending_verification' || item.orders?.status === 'payment_verification_pending') || (utrNo && item.orders?.payment_status !== 'paid' && item.orders?.status !== 'cancelled');
+    const orderObj = item.orders || item.order || {};
+    const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
+    return (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
   }).length;
 
   return (
@@ -299,18 +323,30 @@ export default function ArtisanOrders() {
       ) : filteredOrders.length > 0 ? (
         <div className="space-y-4">
           {filteredOrders.map((item, idx) => {
-            const orderObj = item.orders || {};
-            const customerObj = orderObj.users || {};
-            const customerName = customerObj.name || 'Customer';
+            const orderObj = item.orders || item.order || {};
+            const customerObj = orderObj.users || orderObj.user || {};
+            const customerName = customerObj.name || orderObj.shipping_name || 'Customer';
             const customerPhone = orderObj.phone || customerObj.phone || '';
             const customerEmail = customerObj.email || '';
             const loc = extractOrderLocation(orderObj);
-            const statusKey = orderObj.status || 'pending';
+            const statusKey = item.status || orderObj.status || 'pending';
             const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
 
+            const firstItem = (item.items && item.items[0]) || item;
+            const productObj = item.products || firstItem.product || {
+              name: firstItem.product_name_snapshot,
+              image_url: firstItem.product_image_snapshot,
+              category: firstItem.category
+            };
+            const itemPrice = item.subtotal || ((item.price_at_time || firstItem.price_at_time || firstItem.unit_price_snapshot || productObj.price || 0) * (item.quantity || firstItem.quantity || 1));
+            const itemQty = item.quantity || firstItem.quantity || 1;
+            const itemSize = item.size || firstItem.size || 'Free Size';
+            const effectiveOrderId = orderObj.id || item.order_id || item.id;
+            const effectiveArtisanOrderId = item.order_id ? item.id : null;
+
             const locLabel = loc.hasLiveGps ? `\nLive GPS Pin: ${loc.mapsUrl}` : '';
-            const fullShippingText = `Recipient: ${customerName}\nPhone: ${customerPhone}\nAddress:\n${loc.cleanAddress}${locLabel}\nProduct: ${item.products?.name || 'Craft'} (Qty: ${item.quantity || 1}, Size: ${item.size || 'Free Size'})`;
+            const fullShippingText = `Recipient: ${customerName}\nPhone: ${customerPhone}\nAddress:\n${loc.cleanAddress}${locLabel}\nProduct: ${productObj.name || 'Craft'} (Qty: ${itemQty}, Size: ${itemSize})`;
 
             return (
               <div key={item.id || idx} className="card p-5 border border-dark-600/80 hover:border-gold-500/40 transition-all bg-dark-800/95 space-y-4">
@@ -318,7 +354,7 @@ export default function ArtisanOrders() {
                 <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-dark-700">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-gold-400 bg-gold-500/10 px-2.5 py-1 rounded-md border border-gold-500/30">
-                      #{String(orderObj.id || idx).substring(0, 8).toUpperCase()}
+                      #{String(effectiveOrderId || idx).substring(0, 8).toUpperCase()}
                     </span>
                     <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${statusConfig.bg}`}>
                       <StatusIcon className="w-3 h-3" />
@@ -326,7 +362,7 @@ export default function ArtisanOrders() {
                     </span>
                     {orderObj.payment_method && (
                       <span className="text-[10px] font-medium text-gray-300 bg-dark-700 px-2 py-0.5 rounded border border-dark-600">
-                        💳 {orderObj.payment_method.toUpperCase()} {orderObj.payment_status === 'completed' ? '• Paid' : ''}
+                        💳 {orderObj.payment_method.toUpperCase()} {orderObj.payment_status === 'completed' || orderObj.payment_status === 'paid' ? '• Paid' : ''}
                       </span>
                     )}
                     {orderObj.shipping_status && (
@@ -361,10 +397,10 @@ export default function ArtisanOrders() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                   {/* Left Column: Product Info (5 cols) */}
                   <div className="lg:col-span-5 flex gap-3.5 items-start">
-                    {item.products?.image_url ? (
+                    {productObj.image_url ? (
                       <img
-                        src={item.products.image_url}
-                        alt={item.products.name}
+                        src={productObj.image_url}
+                        alt={productObj.name}
                         className="w-20 h-20 object-cover rounded-lg border border-dark-600 shrink-0"
                         onError={(e) => {
                           e.target.onerror = null;
@@ -377,23 +413,23 @@ export default function ArtisanOrders() {
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-white text-sm line-clamp-1">{item.products?.name || 'Handcrafted Product'}</h4>
-                      <p className="text-gray-400 text-xs mt-0.5">{item.products?.category || 'Indian Handicrafts'}</p>
+                      <h4 className="font-semibold text-white text-sm line-clamp-1">{productObj.name || 'Handcrafted Product'}</h4>
+                      <p className="text-gray-400 text-xs mt-0.5">{productObj.category || 'Indian Handicrafts'}</p>
                       
                       <div className="flex items-center gap-3 mt-2 text-xs">
                         <span className="text-gray-300">
-                          Qty: <strong className="text-white">{item.quantity || 1}</strong>
+                          Qty: <strong className="text-white">{itemQty}</strong>
                         </span>
                         <span className="text-gray-400">|</span>
                         <span className="text-gray-300">
-                          Size: <strong className="text-gold-400">{item.size || 'Free Size'}</strong>
+                          Size: <strong className="text-gold-400">{itemSize}</strong>
                         </span>
                       </div>
 
                       <div className="mt-2 text-sm">
                         <span className="text-xs text-gray-400 mr-1">Your Item Amount:</span>
                         <span className="font-bold text-gold-400 text-base">
-                          ₹{((item.price_at_time || item.products?.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}
+                          ₹{itemPrice.toLocaleString('en-IN')}
                         </span>
                       </div>
                     </div>
@@ -424,6 +460,33 @@ export default function ArtisanOrders() {
 
                     {/* Quick WhatsApp, In-App Message & Map contact */}
                     <div className="mt-3 pt-2.5 border-t border-dark-700/60 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMessageTarget({
+                            recipientId: orderObj.user_id,
+                            recipientName: customerName,
+                            recipientRole: 'customer',
+                            defaultTitle: `Regarding Order #${String(effectiveOrderId)?.substring(0, 8)}`,
+                            orderContext: orderObj
+                          });
+                          setMessageModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 font-bold py-1 px-2.5 rounded-lg bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 transition-all cursor-pointer"
+                      >
+                        <HiChatAlt2 className="w-3.5 h-3.5" /> Message Customer
+                      </button>
+
+                      {customerPhone && (
+                        <a
+                          href={`https://wa.me/91${customerPhone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(customerName)},%20this%20is%20regarding%20your%20order%20%23${encodeURIComponent(String(effectiveOrderId).substring(0, 8))}%20for%20"${encodeURIComponent(productObj.name || 'craft item')}".%20We%20are%20preparing%20it%20for%20dispatch!`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 font-medium py-1 px-2 rounded bg-green-500/10 border border-green-500/20"
+                        >
+                          <FaWhatsapp className="w-3.5 h-3.5" /> Chat on WhatsApp
+                        </a>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -664,8 +727,8 @@ export default function ArtisanOrders() {
                     <div className="relative">
                       <select
                         value={statusKey}
-                        disabled={updatingId === orderObj.id}
-                        onChange={(e) => handleStatusChange(orderObj.id, e.target.value)}
+                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                        onChange={(e) => handleStatusChange(effectiveOrderId, e.target.value, effectiveArtisanOrderId)}
                         className="bg-dark-800 border border-dark-600 hover:border-gold-500/50 text-xs text-white rounded-lg px-3 py-1.5 focus:border-gold-500 focus:outline-none font-medium cursor-pointer transition-all shadow-sm"
                       >
                         <option value="pending">🟡 Pending Packing</option>
@@ -679,8 +742,8 @@ export default function ArtisanOrders() {
                     {/* Quick 1-Click Progressive Next-Step Buttons */}
                     {statusKey === 'pending' && (
                       <button
-                        onClick={() => handleStatusChange(orderObj.id, 'processing')}
-                        disabled={updatingId === orderObj.id}
+                        onClick={() => handleStatusChange(effectiveOrderId, 'processing', effectiveArtisanOrderId)}
+                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
                         className="text-xs py-1.5 px-3 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
                       >
                         <HiShoppingBag className="w-3.5 h-3.5" /> Start Preparation →
@@ -688,8 +751,8 @@ export default function ArtisanOrders() {
                     )}
                     {statusKey === 'processing' && (
                       <button
-                        onClick={() => handleStatusChange(orderObj.id, 'shipped')}
-                        disabled={updatingId === orderObj.id}
+                        onClick={() => handleStatusChange(effectiveOrderId, 'shipped', effectiveArtisanOrderId)}
+                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
                         className="text-xs py-1.5 px-3 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/40 hover:bg-purple-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
                       >
                         <HiTruck className="w-3.5 h-3.5" /> Mark Shipped →
@@ -697,14 +760,14 @@ export default function ArtisanOrders() {
                     )}
                     {statusKey === 'shipped' && (
                       <button
-                        onClick={() => handleStatusChange(orderObj.id, 'delivered')}
-                        disabled={updatingId === orderObj.id}
+                        onClick={() => handleStatusChange(effectiveOrderId, 'delivered', effectiveArtisanOrderId)}
+                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
                         className="text-xs py-1.5 px-3 rounded-lg bg-green-500/20 text-green-400 border border-green-500/40 hover:bg-green-500/30 font-bold transition-all flex items-center gap-1 shadow-sm"
                       >
                         <HiCheckCircle className="w-3.5 h-3.5" /> Mark as Delivered ✓
                       </button>
                     )}
-                    {updatingId === orderObj.id && (
+                    {(updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId) && (
                       <span className="text-xs text-gold-400 animate-pulse font-medium">Updating...</span>
                     )}
                   </div>

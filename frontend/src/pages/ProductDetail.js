@@ -88,7 +88,7 @@ export default function ProductDetail() {
           try {
             const { data: artData } = await artisanAPI.getById(found.artisan_id || found.user_id);
             if (artData) {
-              found.artisan_profiles = artData;
+              found.artisan_profiles = artData.profile || artData;
             }
           } catch (e) {
             // Ignore if artisan endpoint unavailable

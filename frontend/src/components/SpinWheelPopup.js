@@ -27,9 +27,7 @@ const SpinWheelPopup = () => {
     // Show popup after 7 seconds if on Home page
     if (location.pathname !== '/') return;
 
-    console.log('SpinWheelPopup: Timer started...');
     const timer = setTimeout(() => {
-      console.log('SpinWheelPopup: Showing popup!');
       setIsVisible(true);
     }, 7000);
     return () => clearTimeout(timer);

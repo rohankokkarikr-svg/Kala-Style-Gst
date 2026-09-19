@@ -57,12 +57,10 @@ export default function AITryOnModal({ product, isOpen, onClose }) {
     // Simulate realistic AI processing steps
     setTimeout(() => {
       // Step 1: Body detection
-      console.log('Detecting body shape and posture...');
     }, 500);
     
     setTimeout(() => {
       // Step 2: Clothing mapping
-      console.log('Mapping clothing to body...');
     }, 1500);
     
     setTimeout(() => {

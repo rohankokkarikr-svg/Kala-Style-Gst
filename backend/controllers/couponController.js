@@ -19,7 +19,7 @@ const rewards = [
 ];
 
 const generateCouponCode = (type, value) => {
-  const prefix = 'STYLE';
+  const prefix = 'KALA';
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();
   if (type === 'percentage') return `${prefix}${value}${random}`;
   if (type === 'fixed') return `${prefix}CASH${random}`;

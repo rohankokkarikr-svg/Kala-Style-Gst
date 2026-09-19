@@ -59,7 +59,7 @@ export default function Testimonials() {
             What Our <span className="text-gold-500">Customers Say</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Trusted by thousands of fashion lovers. Experience the luxury of premium menswear.
+            Trusted by thousands of craft lovers. Experience the luxury of authentic Indian artisanal craftsmanship.
           </p>
         </motion.div>
 

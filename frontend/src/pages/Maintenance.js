@@ -33,12 +33,12 @@ export default function Maintenance() {
         {/* Content */}
         <div className="space-y-4">
           <h1 className="text-4xl sm:text-5xl font-serif font-bold text-white tracking-wide">
-            Refining Our Heaven
+            Refining Our Store
           </h1>
           <div className="h-0.5 w-24 bg-gradient-luxury mx-auto rounded-full" />
           <p className="text-gray-400 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
             {settings?.storeName || 'KalaStyle AI'} is currently undergoing scheduled maintenance. 
-            We are polishing our services to bring you a more premium menswear shopping experience. 
+            We are polishing our services to bring you a more authentic Indian handicraft shopping experience. 
             Please check back shortly.
           </p>
         </div>
