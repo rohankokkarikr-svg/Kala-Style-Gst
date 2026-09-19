@@ -113,7 +113,11 @@ export const AuthProvider = ({ children }) => {
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         const currentToken = localStorage.getItem('sh_token');
         if (session && !currentToken) {
-          await syncOtpSessionSingleFlight(session);
+          const syncedUser = await syncOtpSessionSingleFlight(session);
+          if (syncedUser && typeof window !== 'undefined' && window.location.hash) {
+            // Clean up the hash fragment from the URL after confirmation / magic link login
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
         }
       }
     });
@@ -156,10 +160,12 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
+      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
       const { error } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -189,8 +195,9 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
-    if (!cleanEmail || cleanToken.length !== 8) {
-      throw new Error('Please enter the 8-digit OTP verification code sent to your email.');
+    // Supports standard 6-digit Supabase OTP as well as 8-digit fallback
+    if (!cleanEmail || (cleanToken.length !== 6 && cleanToken.length !== 8)) {
+      throw new Error('Please enter the 6-digit OTP verification code sent to your email.');
     }
 
     try {

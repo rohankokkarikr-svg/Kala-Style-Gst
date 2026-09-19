@@ -11,7 +11,7 @@ export default function Login() {
   // OTP flow state: 'email' (input screen) vs 'otp' (verify screen)
   const [otpStep, setOtpStep] = useState('email');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '', '', '']);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [countdown, setCountdown] = useState(0);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
@@ -21,11 +21,18 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [passLoading, setPassLoading] = useState(false);
 
-  const { login, sendOtp, verifyOtp } = useAuth();
+  const { user, login, sendOtp, verifyOtp } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const otpInputsRef = useRef([]);
+
+  // Auto-redirect if user is already authenticated (e.g. via confirmation / magic link click)
+  useEffect(() => {
+    if (user) {
+      handleRedirectAfterAuth(user);
+    }
+  }, [user]);
 
   // Auto-focus first input when entering OTP step
   useEffect(() => {
@@ -81,7 +88,7 @@ export default function Login() {
       await sendOtp(cleanEmail);
       setOtpStep('otp');
       setCountdown(30);
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       toast.success('OTP sent successfully to your email! 📩');
     } catch (err) {
       setOtpError(err.message);
@@ -100,7 +107,7 @@ export default function Login() {
     try {
       await sendOtp(email.trim().toLowerCase());
       setCountdown(30);
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       toast.success('A new OTP has been sent to your email.');
     } catch (err) {
       setOtpError(err.message);
@@ -113,8 +120,8 @@ export default function Login() {
   // ─── Step 3: Verify OTP ───────────────────────────────────────
   const handleVerifyOtp = async (codeToVerify) => {
     const code = (codeToVerify || otp.join('')).trim();
-    if (code.length !== 8) {
-      setOtpError('Please enter your 8-digit OTP verification code.');
+    if (code.length !== 6 && code.length !== 8) {
+      setOtpError('Please enter your 6-digit OTP verification code.');
       return;
     }
 
@@ -128,14 +135,14 @@ export default function Login() {
       setOtpError(err.message);
       toast.error(err.message);
       // Clear OTP fields after invalid verification as required
-      setOtp(['', '', '', '', '', '', '', '']);
+      setOtp(['', '', '', '', '', '']);
       otpInputsRef.current[0]?.focus();
     } finally {
       setOtpLoading(false);
     }
   };
 
-  // ─── OTP Input Handlers (8-digit UX with fallback) ───────────
+  // ─── OTP Input Handlers (6-digit UX with fallback) ───────────
   const handleOtpChange = (index, value) => {
     const cleanDigit = value.replace(/\D/g, '');
     if (!cleanDigit && value !== '') return;
@@ -144,12 +151,12 @@ export default function Login() {
     newOtp[index] = cleanDigit.slice(-1);
     setOtp(newOtp);
 
-    if (cleanDigit && index < 7) {
+    if (cleanDigit && index < 5) {
       otpInputsRef.current[index + 1]?.focus();
     }
 
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === 8 && cleanDigit) {
+    if (filledDigits.length === 6 && cleanDigit) {
       handleVerifyOtp(filledDigits);
     }
   };
@@ -165,7 +172,7 @@ export default function Login() {
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       otpInputsRef.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 7) {
+    } else if (e.key === 'ArrowRight' && index < 5) {
       otpInputsRef.current[index + 1]?.focus();
     }
   };
@@ -173,12 +180,12 @@ export default function Login() {
   const handleOtpPaste = (e) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').trim();
-    const numericChars = pastedData.replace(/\D/g, '').slice(0, 8);
+    const numericChars = pastedData.replace(/\D/g, '').slice(0, 6);
 
     if (!numericChars) return;
 
-    const newOtp = ['', '', '', '', '', '', '', ''];
-    for (let i = 0; i < numericChars.length && i < 8; i++) {
+    const newOtp = ['', '', '', '', '', ''];
+    for (let i = 0; i < numericChars.length && i < 6; i++) {
       newOtp[i] = numericChars[i];
     }
     setOtp(newOtp);
@@ -187,8 +194,8 @@ export default function Login() {
     if (nextEmptyIndex !== -1) {
       otpInputsRef.current[nextEmptyIndex]?.focus();
     } else {
-      otpInputsRef.current[7]?.focus();
-      if (numericChars.length === 8) {
+      otpInputsRef.current[5]?.focus();
+      if (numericChars.length === 6) {
         handleVerifyOtp(numericChars);
       }
     }
@@ -197,7 +204,7 @@ export default function Login() {
   // ─── Change Email Action ─────────────────────────────────────
   const handleChangeEmail = () => {
     setOtpStep('email');
-    setOtp(['', '', '', '', '', '', '', '']);
+    setOtp(['', '', '', '', '', '']);
     setCountdown(0);
     setOtpError('');
     setOtpLoading(false);
@@ -252,7 +259,7 @@ export default function Login() {
           <p className="mt-2 text-center text-sm text-gray-400">
             {authMode === 'otp' && otpStep === 'otp' ? (
               <span>
-                We sent an 8-digit verification code to{' '}
+                We sent a 6-digit verification code to{' '}
                 <span className="text-gold-400 font-semibold">{maskEmail(email)}</span>
               </span>
             ) : (
@@ -348,14 +355,14 @@ export default function Login() {
                 </div>
               </form>
             ) : (
-              /* STEP 2: 8-DIGIT OTP INPUT SCREEN */
+              /* STEP 2: 6-DIGIT OTP INPUT SCREEN */
               <div className="space-y-6">
                 <div className="text-center">
                   <label className="block text-xs font-semibold text-gray-300 mb-3 tracking-widest uppercase">
-                    Enter the 8-digit OTP verification code
+                    Enter the 6-digit OTP verification code
                   </label>
-                  {/* 8 Individual Numeric Boxes */}
-                  <div className="flex justify-center gap-1 sm:gap-1.5" onPaste={handleOtpPaste}>
+                  {/* 6 Individual Numeric Boxes */}
+                  <div className="flex justify-center gap-1.5 sm:gap-2" onPaste={handleOtpPaste}>
                     {otp.map((digit, index) => (
                       <input
                         key={index}
@@ -368,7 +375,7 @@ export default function Login() {
                         aria-label={`Digit ${index + 1}`}
                         onChange={(e) => handleOtpChange(index, e.target.value)}
                         onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-7 h-11 sm:w-10 sm:h-12 text-center text-base sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all"
+                        className="w-9 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-2xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all"
                       />
                     ))}
                   </div>
@@ -383,7 +390,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => handleVerifyOtp()}
-                  disabled={otpLoading || otp.filter(Boolean).length !== 8}
+                  disabled={otpLoading || otp.filter(Boolean).length !== 6}
                   className="w-full btn-primary flex items-center justify-center gap-2"
                 >
                   {otpLoading ? (
