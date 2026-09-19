@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
-import { normalizeRole, getRoleHome } from '../utils/authHelper';
+import { normalizeRole, getRoleHome, OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext(null);
@@ -195,9 +195,9 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
-    // Supports both 6-digit and 8-digit Supabase OTP codes
-    if (!cleanEmail || cleanToken.length < 6 || cleanToken.length > 10) {
-      throw new Error('Please enter the OTP verification code sent to your email.');
+    // Canonical 8-digit OTP validation
+    if (!cleanEmail || !isValidOtp(cleanToken)) {
+      throw new Error(`Please enter the ${OTP_LENGTH}-digit OTP verification code sent to your email.`);
     }
 
     try {

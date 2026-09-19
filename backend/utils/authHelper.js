@@ -48,7 +48,36 @@ const sanitizeUser = (user) => {
   return sanitized;
 };
 
+/**
+ * Canonical OTP length and validation: exactly 8 numeric digits
+ */
+const OTP_LENGTH = 8;
+const OTP_REGEX = /^\d{8}$/;
+
+/**
+ * Validates that an OTP is strictly an 8-digit numeric string.
+ * Rejects numbers (which may drop leading zeroes), wrong lengths, and non-digits.
+ */
+const isValidOtp = (token) => {
+  if (typeof token !== 'string') return false;
+  const clean = token.trim();
+  return clean.length === OTP_LENGTH && OTP_REGEX.test(clean);
+};
+
+/**
+ * Generates an 8-digit numeric OTP string, strictly preserving leading zeroes.
+ */
+const generateOtp = () => {
+  const crypto = require('crypto');
+  const num = crypto.randomInt(0, 100000000);
+  return String(num).padStart(OTP_LENGTH, '0');
+};
+
 module.exports = {
+  OTP_LENGTH,
+  OTP_REGEX,
+  isValidOtp,
+  generateOtp,
   normalizeEmail,
   normalizePhone,
   normalizeRole,

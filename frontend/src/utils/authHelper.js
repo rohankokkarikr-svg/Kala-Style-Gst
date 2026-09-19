@@ -1,8 +1,15 @@
+import { OTP_LENGTH, OTP_REGEX } from '../constants/auth';
+
+export { OTP_LENGTH, OTP_REGEX };
+
 /**
- * frontend/src/utils/authHelper.js
- * ─────────────────────────────────────────────────────────────────
- * Centralized role normalization and route destination resolver.
+ * Validates that an OTP is strictly an 8-digit numeric string.
  */
+export const isValidOtp = (token) => {
+  if (typeof token !== 'string') return false;
+  const clean = token.trim();
+  return clean.length === OTP_LENGTH && OTP_REGEX.test(clean);
+};
 
 /**
  * Normalizes user role string into canonical 'user' | 'artisan' | 'admin'.

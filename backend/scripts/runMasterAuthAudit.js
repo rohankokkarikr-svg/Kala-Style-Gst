@@ -49,7 +49,7 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { normalizeEmail, normalizePhone, normalizeRole, sanitizeUser } = require('../utils/authHelper');
+const { normalizeEmail, normalizePhone, normalizeRole, sanitizeUser, OTP_LENGTH, OTP_REGEX, isValidOtp } = require('../utils/authHelper');
 const { protect, admin, artisanOnly } = require('../middleware/auth');
 const supabase = require('../config/supabase');
 
@@ -255,14 +255,16 @@ async function runAllTests() {
   );
 
   // ─── A13: OTP verification token length ───────────────────────────────────
-  function checkOtpToken(token) {
-    const clean = String(token || '').trim();
-    return clean.length >= 6 && clean.length <= 10 && /^\d+$/.test(clean);
-  }
   assert(
     'A13',
-    'OTP verification accepts 6-8 digit numeric codes and rejects malformed tokens',
-    checkOtpToken('123456') === true && checkOtpToken('12') === false && checkOtpToken('abcdef') === false
+    'OTP verification accepts exact 8-digit numeric codes and rejects malformed/6/7/9-digit tokens',
+    isValidOtp('12345678') === true &&
+    isValidOtp('01234567') === true &&
+    isValidOtp('123456') === false &&
+    isValidOtp('1234567') === false &&
+    isValidOtp('123456789') === false &&
+    isValidOtp('abcdefgh') === false &&
+    OTP_LENGTH === 8
   );
 
   // ─── A14: OTP existing user preserves role ────────────────────────────────
