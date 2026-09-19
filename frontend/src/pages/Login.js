@@ -113,7 +113,7 @@ export default function Login() {
   // ─── Step 3: Verify OTP ───────────────────────────────────────
   const handleVerifyOtp = async (codeToVerify) => {
     const code = (codeToVerify || otp.join('')).trim();
-    if (code.length !== 8 && code.length !== 6) {
+    if (code.length !== 8) {
       setOtpError('Please enter your 8-digit OTP verification code.');
       return;
     }
@@ -149,7 +149,7 @@ export default function Login() {
     }
 
     const filledDigits = newOtp.filter(Boolean).join('');
-    if ((filledDigits.length === 8 || filledDigits.length === 6) && cleanDigit) {
+    if (filledDigits.length === 8 && cleanDigit) {
       handleVerifyOtp(filledDigits);
     }
   };
@@ -188,7 +188,7 @@ export default function Login() {
       otpInputsRef.current[nextEmptyIndex]?.focus();
     } else {
       otpInputsRef.current[7]?.focus();
-      if (numericChars.length === 8 || numericChars.length === 6) {
+      if (numericChars.length === 8) {
         handleVerifyOtp(numericChars);
       }
     }
@@ -252,7 +252,7 @@ export default function Login() {
           <p className="mt-2 text-center text-sm text-gray-400">
             {authMode === 'otp' && otpStep === 'otp' ? (
               <span>
-                We sent a verification code to{' '}
+                We sent an 8-digit verification code to{' '}
                 <span className="text-gold-400 font-semibold">{maskEmail(email)}</span>
               </span>
             ) : (
@@ -352,7 +352,7 @@ export default function Login() {
               <div className="space-y-6">
                 <div className="text-center">
                   <label className="block text-xs font-semibold text-gray-300 mb-3 tracking-widest uppercase">
-                    Enter the OTP verification code
+                    Enter the 8-digit OTP verification code
                   </label>
                   {/* 8 Individual Numeric Boxes */}
                   <div className="flex justify-center gap-1 sm:gap-1.5" onPaste={handleOtpPaste}>
@@ -383,7 +383,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => handleVerifyOtp()}
-                  disabled={otpLoading || (otp.filter(Boolean).length !== 8 && otp.filter(Boolean).length !== 6)}
+                  disabled={otpLoading || otp.filter(Boolean).length !== 8}
                   className="w-full btn-primary flex items-center justify-center gap-2"
                 >
                   {otpLoading ? (

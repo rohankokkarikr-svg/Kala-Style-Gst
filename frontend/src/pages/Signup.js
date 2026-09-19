@@ -121,7 +121,7 @@ export default function Signup() {
   // ─── Step 2: Verify OTP & Create the User/Artisan Account ──────
   const handleCompleteRegistration = async (codeToVerify) => {
     const code = (codeToVerify || otp.join('')).trim();
-    if (code.length !== 8 && code.length !== 6) {
+    if (code.length !== 8) {
       setOtpError('Please enter your 8-digit OTP verification code.');
       return;
     }
@@ -179,9 +179,9 @@ export default function Signup() {
       otpInputsRef.current[index + 1]?.focus();
     }
 
-    // If all 8 or 6 boxes filled, auto-verify
+    // If all 8 boxes filled, auto-verify
     const filledDigits = newOtp.filter(Boolean).join('');
-    if ((filledDigits.length === 8 || filledDigits.length === 6) && cleanDigit) {
+    if (filledDigits.length === 8 && cleanDigit) {
       handleCompleteRegistration(filledDigits);
     }
   };
@@ -220,7 +220,7 @@ export default function Signup() {
       otpInputsRef.current[nextEmptyIndex]?.focus();
     } else {
       otpInputsRef.current[7]?.focus();
-      if (numericChars.length === 8 || numericChars.length === 6) {
+      if (numericChars.length === 8) {
         handleCompleteRegistration(numericChars);
       }
     }
@@ -406,7 +406,7 @@ export default function Signup() {
           <div className="space-y-6">
             <div className="text-center">
               <label className="block text-xs font-semibold text-gray-300 mb-3 tracking-widest uppercase">
-                Enter the OTP verification code
+                Enter the 8-digit OTP verification code
               </label>
 
               {/* 8 Individual Numeric Boxes */}
@@ -438,7 +438,7 @@ export default function Signup() {
             <button
               type="button"
               onClick={() => handleCompleteRegistration()}
-              disabled={loading || (otp.filter(Boolean).length !== 8 && otp.filter(Boolean).length !== 6)}
+              disabled={loading || otp.filter(Boolean).length !== 8}
               className="w-full btn-primary flex items-center justify-center gap-2"
             >
               {loading ? (
