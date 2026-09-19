@@ -13,8 +13,9 @@ export default function Signup() {
   const [storeName, setStoreName] = useState('');
   const [artisanType, setArtisanType] = useState('Weaver');
 
-  // OTP state (Supports 6-digit standard and 8-digit fallback from Supabase)
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  // OTP state (Dual 8-digit default and 6-digit support from Supabase)
+  const [otpLength, setOtpLength] = useState(8);
+  const [otp, setOtp] = useState(['', '', '', '', '', '', '', '']);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
@@ -23,6 +24,16 @@ export default function Signup() {
   const navigate = useNavigate();
   const otpInputsRef = useRef([]);
 
+  // Switch between 8-digit and 6-digit OTP mode
+  const handleSwitchOtpLength = (newLength) => {
+    setOtpLength(newLength);
+    setOtp(Array(newLength).fill(''));
+    setOtpError('');
+    setTimeout(() => {
+      otpInputsRef.current[0]?.focus();
+    }, 50);
+  };
+
   // Auto-focus first input when entering OTP step
   useEffect(() => {
     if (step === 'otp' && otpInputsRef.current[0]) {
@@ -30,7 +41,7 @@ export default function Signup() {
         otpInputsRef.current[0]?.focus();
       }, 100);
     }
-  }, [step]);
+  }, [step, otpLength]);
 
   // Resend cooldown timer
   useEffect(() => {
@@ -90,7 +101,7 @@ export default function Signup() {
       await sendOtp(cleanEmail);
       setStep('otp');
       setCountdown(30);
-      setOtp(['', '', '', '', '', '']);
+      setOtp(Array(otpLength).fill(''));
       toast.success('Verification OTP sent to your email! 📩');
     } catch (err) {
       toast.error(err.message || 'Failed to send verification OTP');
@@ -108,7 +119,7 @@ export default function Signup() {
     try {
       await sendOtp(email.trim().toLowerCase());
       setCountdown(30);
-      setOtp(['', '', '', '', '', '']);
+      setOtp(Array(otpLength).fill(''));
       toast.success('A fresh OTP code has been sent to your email.');
     } catch (err) {
       setOtpError(err.message);
@@ -122,7 +133,7 @@ export default function Signup() {
   const handleCompleteRegistration = async (codeToVerify) => {
     const code = (codeToVerify || otp.join('')).trim();
     if (code.length !== 6 && code.length !== 8) {
-      setOtpError('Please enter your 6-digit OTP verification code.');
+      setOtpError(`Please enter your ${otpLength}-digit OTP verification code.`);
       return;
     }
 
@@ -159,14 +170,14 @@ export default function Signup() {
       setOtpError(errMsg);
       toast.error(errMsg);
       // Clear OTP fields on error
-      setOtp(['', '', '', '', '', '']);
+      setOtp(Array(otpLength).fill(''));
       otpInputsRef.current[0]?.focus();
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── OTP Input UX Handlers (6-digit UX with fallback) ─────────
+  // ─── OTP Input UX Handlers (Dual 8/6-digit UX with auto-verify) ─
   const handleOtpChange = (index, value) => {
     const cleanDigit = value.replace(/\D/g, '');
     if (!cleanDigit && value !== '') return;
@@ -175,13 +186,13 @@ export default function Signup() {
     newOtp[index] = cleanDigit.slice(-1);
     setOtp(newOtp);
 
-    if (cleanDigit && index < 5) {
+    if (cleanDigit && index < otpLength - 1) {
       otpInputsRef.current[index + 1]?.focus();
     }
 
-    // If all 6 boxes filled, auto-verify
+    // Auto-verify when all boxes of current length are filled
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === 6 && cleanDigit) {
+    if (filledDigits.length === otpLength && cleanDigit) {
       handleCompleteRegistration(filledDigits);
     }
   };
@@ -197,7 +208,7 @@ export default function Signup() {
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       otpInputsRef.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
+    } else if (e.key === 'ArrowRight' && index < otpLength - 1) {
       otpInputsRef.current[index + 1]?.focus();
     }
   };
@@ -205,23 +216,31 @@ export default function Signup() {
   const handleOtpPaste = (e) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').trim();
-    const numericChars = pastedData.replace(/\D/g, '').slice(0, 6);
+    const numericChars = pastedData.replace(/\D/g, '');
 
     if (!numericChars) return;
 
-    const newOtp = ['', '', '', '', '', ''];
-    for (let i = 0; i < numericChars.length && i < 6; i++) {
-      newOtp[i] = numericChars[i];
+    // Detect if pasted data is 6 or 8 digits and adjust mode dynamically
+    const targetLength = numericChars.length >= 8 ? 8 : (numericChars.length === 6 ? 6 : otpLength);
+    if (targetLength !== otpLength) {
+      setOtpLength(targetLength);
+    }
+
+    const codeDigits = numericChars.slice(0, targetLength);
+    const newOtp = Array(targetLength).fill('');
+    for (let i = 0; i < codeDigits.length; i++) {
+      newOtp[i] = codeDigits[i];
     }
     setOtp(newOtp);
 
-    const nextEmptyIndex = newOtp.findIndex((digit) => digit === '');
-    if (nextEmptyIndex !== -1) {
-      otpInputsRef.current[nextEmptyIndex]?.focus();
+    if (codeDigits.length === targetLength) {
+      handleCompleteRegistration(codeDigits);
     } else {
-      otpInputsRef.current[5]?.focus();
-      if (numericChars.length === 6) {
-        handleCompleteRegistration(numericChars);
+      const nextEmptyIndex = newOtp.findIndex((digit) => digit === '');
+      if (nextEmptyIndex !== -1) {
+        otpInputsRef.current[nextEmptyIndex]?.focus();
+      } else {
+        otpInputsRef.current[targetLength - 1]?.focus();
       }
     }
   };
@@ -244,7 +263,7 @@ export default function Signup() {
           <p className="mt-2 text-center text-sm text-gray-400">
             {step === 'otp' ? (
               <span>
-                We sent a 6-digit code to{' '}
+                We sent a verification code to{' '}
                 <span className="text-gold-400 font-semibold">{maskEmail(email)}</span>
               </span>
             ) : (
@@ -405,15 +424,44 @@ export default function Signup() {
         {step === 'otp' && (
           <div className="space-y-6">
             <div className="text-center">
-              <label className="block text-xs font-semibold text-gray-300 mb-3 tracking-widest uppercase">
-                Enter the 6-digit OTP verification code
-              </label>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs font-semibold text-gray-300 tracking-wider uppercase">
+                  Enter {otpLength}-digit code
+                </label>
+                <div className="inline-flex bg-dark-800 p-0.5 rounded-lg border border-dark-500 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchOtpLength(8)}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                      otpLength === 8
+                        ? 'bg-gradient-luxury text-dark-900 shadow-sm font-bold'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    8 Digits
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchOtpLength(6)}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                      otpLength === 6
+                        ? 'bg-gradient-luxury text-dark-900 shadow-sm font-bold'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    6 Digits
+                  </button>
+                </div>
+              </div>
 
-              {/* 6 Individual Numeric Boxes */}
-              <div className="flex justify-center gap-1.5 sm:gap-2" onPaste={handleOtpPaste}>
+              {/* Individual Numeric Boxes */}
+              <div
+                className={`flex justify-center ${otpLength === 8 ? 'gap-1 sm:gap-1.5' : 'gap-1.5 sm:gap-2'}`}
+                onPaste={handleOtpPaste}
+              >
                 {otp.map((digit, index) => (
                   <input
-                    key={index}
+                    key={`${otpLength}-${index}`}
                     ref={(el) => (otpInputsRef.current[index] = el)}
                     type="text"
                     inputMode="numeric"
@@ -423,7 +471,11 @@ export default function Signup() {
                     aria-label={`Digit ${index + 1}`}
                     onChange={(e) => handleOtpChange(index, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                    className="w-9 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-2xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all"
+                    className={`${
+                      otpLength === 8
+                        ? 'w-7 h-11 sm:w-10 sm:h-12 text-center text-base sm:text-xl'
+                        : 'w-9 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-2xl'
+                    } font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all`}
                   />
                 ))}
               </div>
@@ -438,7 +490,7 @@ export default function Signup() {
             <button
               type="button"
               onClick={() => handleCompleteRegistration()}
-              disabled={loading || otp.filter(Boolean).length !== 6}
+              disabled={loading || (otp.filter(Boolean).length !== 6 && otp.filter(Boolean).length !== 8)}
               className="w-full btn-primary flex items-center justify-center gap-2"
             >
               {loading ? (

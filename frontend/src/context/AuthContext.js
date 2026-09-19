@@ -195,9 +195,9 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
-    // Supports standard 6-digit Supabase OTP as well as 8-digit fallback
-    if (!cleanEmail || (cleanToken.length !== 6 && cleanToken.length !== 8)) {
-      throw new Error('Please enter the 6-digit OTP verification code sent to your email.');
+    // Supports both 6-digit and 8-digit Supabase OTP codes
+    if (!cleanEmail || cleanToken.length < 6 || cleanToken.length > 10) {
+      throw new Error('Please enter the OTP verification code sent to your email.');
     }
 
     try {
