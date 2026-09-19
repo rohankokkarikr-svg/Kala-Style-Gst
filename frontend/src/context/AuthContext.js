@@ -189,8 +189,8 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
-    if (!cleanEmail || cleanToken.length !== 6) {
-      throw new Error('The OTP is incorrect. Please try again.');
+    if (!cleanEmail || (cleanToken.length !== 8 && cleanToken.length !== 6)) {
+      throw new Error('The OTP is incorrect. Please enter the verification code sent to your email.');
     }
 
     try {
