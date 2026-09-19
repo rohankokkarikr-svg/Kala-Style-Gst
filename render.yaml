@@ -55,3 +55,7 @@ services:
       # Managed in the dashboard so you can customize the backend URL if name changes
       - key: REACT_APP_API_URL
         sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
