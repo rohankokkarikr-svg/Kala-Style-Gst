@@ -576,6 +576,7 @@ exports.syncSupabaseSession = async (req, res) => {
     // 2. Resolve by normalized verified email
     // 3. Create new public.users record
     let user = null;
+    let existingArtisanProfile = null;
     if (verifiedUid) {
       try {
         const { data: userByUid } = await supabase
@@ -607,7 +608,6 @@ exports.syncSupabaseSession = async (req, res) => {
 
       // Section 7 & 19: Check for existing artisan profile linked to this user.
       // If an artisan profile exists and user is not admin, guarantee role is preserved as 'artisan'.
-      let existingArtisanProfile = null;
       try {
         const { data: profile } = await supabase
           .from('artisan_profiles')
@@ -719,8 +719,8 @@ exports.syncSupabaseSession = async (req, res) => {
       token: backendToken
     });
   } catch (error) {
-    console.error('Session sync error:', error);
-    res.status(500).json({ error: 'Server error during session synchronization' });
+    console.error('Session sync error:', error?.message || error);
+    res.status(500).json({ error: error?.message || 'Server error during session synchronization' });
   }
 };
 
