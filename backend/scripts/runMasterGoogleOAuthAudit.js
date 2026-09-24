@@ -295,12 +295,12 @@ async function runGoogleOAuthAudit() {
     authContextContent.includes('syncSupabaseSessionSingleFlight(session)')
   );
 
-  // T28: Login.js waits for in-flight OAuth before auto-redirecting
+  // T28: Login.js handles OAuth callback with fast direct exchange and timeout protection
   assert(
     'T28',
-    'Login.js waits for in-flight OAuth synchronization before redirecting',
-    loginPageContent.includes('isOAuthInProgress') &&
-    loginPageContent.includes('!isOAuthInProgress') &&
+    'Login.js handles OAuth callback with fast direct exchange and timeout protection',
+    loginPageContent.includes('hasOAuthCallback') &&
+    loginPageContent.includes('oauthTimedOut') &&
     loginPageContent.includes('Verifying Google Account')
   );
 

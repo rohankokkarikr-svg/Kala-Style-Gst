@@ -64,6 +64,19 @@ export const AuthProvider = ({ children }) => {
 
     if (hasOAuthParams) {
       try {
+        // Fast-path: Extract access_token directly from hash without waiting
+        if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('access_token=')) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const tokenFromHash = hashParams.get('access_token');
+          if (tokenFromHash) {
+            const synced = await syncSupabaseSessionSingleFlight({ access_token: tokenFromHash });
+            if (synced) {
+              sessionStorage.removeItem('oauth_in_flight');
+              return synced;
+            }
+          }
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           const synced = await syncSupabaseSessionSingleFlight(session);
@@ -140,7 +153,7 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('auth_return_url');
         sessionStorage.removeItem('oauth_in_flight');
         setUser(null);
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         // If a signup flow is actively underway, do not trigger background session sync
         // because signup() will atomically create the full user/artisan profile with role and credentials
         if (isSigningUpRef.current) {

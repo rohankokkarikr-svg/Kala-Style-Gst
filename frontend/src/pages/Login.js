@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
+import { authAPI } from '../services/api';
 import { normalizeRole, getRoleHome, resolveSafeRedirect, OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
@@ -11,6 +12,7 @@ export default function Login() {
 
   // Google OAuth flow state
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [oauthTimedOut, setOauthTimedOut] = useState(false);
 
   // OTP flow state: 'email' (input screen) vs 'otp' (verify screen)
   const [otpStep, setOtpStep] = useState('email');
@@ -25,26 +27,66 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [passLoading, setPassLoading] = useState(false);
 
-  const { user, login, sendOtp, verifyOtp, signInWithGoogle } = useAuth();
+  const { user, login, sendOtp, verifyOtp, signInWithGoogle, setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const otpInputsRef = useRef([]);
 
-  // Check if OAuth is in-flight or actively returning from Google
-  const isOAuthInProgress = typeof window !== 'undefined' && (
-    sessionStorage.getItem('oauth_in_flight') === 'true' ||
+  // Check if OAuth callback is actively in the URL (hash token or query code)
+  const hasOAuthCallback = typeof window !== 'undefined' && (
     Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
     Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
   );
 
-  // Auto-redirect if user is already authenticated (e.g. via confirmation / magic link click / Google OAuth)
-  // Ensure we wait for in-flight OAuth sync before redirecting
+  // Auto-redirect immediately when authenticated
   useEffect(() => {
-    if (user && !isOAuthInProgress) {
+    if (user) {
       handleRedirectAfterAuth(user);
     }
-  }, [user, isOAuthInProgress]);
+  }, [user]);
+
+  // Fast direct OAuth exchange when returning with access_token in hash
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('access_token=')) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      if (accessToken && !user) {
+        authAPI.supabaseSession({ accessToken })
+          .then((res) => {
+            if (res.data?.user && res.data?.token) {
+              const normalized = { ...res.data.user, role: normalizeRole(res.data.user.role) };
+              localStorage.setItem('sh_token', res.data.token);
+              localStorage.setItem('sh_user', JSON.stringify(normalized));
+              if (setUser) setUser(normalized);
+              sessionStorage.removeItem('oauth_in_flight');
+              window.history.replaceState(null, '', window.location.pathname);
+              handleRedirectAfterAuth(normalized);
+            }
+          })
+          .catch((err) => {
+            console.error('Direct OAuth exchange error:', err);
+            sessionStorage.removeItem('oauth_in_flight');
+            window.history.replaceState(null, '', window.location.pathname);
+            setOauthTimedOut(true);
+            toast.error(err.response?.data?.error || 'Authentication error. Please try again.');
+          });
+      }
+    }
+  }, [user, setUser]);
+
+  // Safety timer: Never allow loading screen to hang for more than 3 seconds
+  useEffect(() => {
+    if (hasOAuthCallback && !user) {
+      const timer = setTimeout(() => {
+        setOauthTimedOut(true);
+        sessionStorage.removeItem('oauth_in_flight');
+      }, 3000);
+      return () => clearTimeout(timer);
+    } else if (!hasOAuthCallback) {
+      sessionStorage.removeItem('oauth_in_flight');
+    }
+  }, [hasOAuthCallback, user]);
 
   // Cleanly handle Google OAuth callback errors (e.g. user cancelled Google login)
   useEffect(() => {
@@ -301,7 +343,7 @@ export default function Login() {
     }
   };
 
-  if (isOAuthInProgress && !user) {
+  if (hasOAuthCallback && !user && !oauthTimedOut) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">
         <div className="max-w-md w-full card p-8 sm:p-10 border border-dark-500 shadow-2xl text-center space-y-4">
