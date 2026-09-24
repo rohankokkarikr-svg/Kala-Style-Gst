@@ -227,3 +227,15 @@ ALTER TABLE IF EXISTS artisan_profiles ADD COLUMN IF NOT EXISTS pickup_address T
 ALTER TABLE IF EXISTS artisan_profiles ADD COLUMN IF NOT EXISTS pickup_city VARCHAR(100);
 ALTER TABLE IF EXISTS artisan_profiles ADD COLUMN IF NOT EXISTS pickup_state VARCHAR(100);
 
+-- Migration 008: Artisan Google Auth Identity & Unique Constraint
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_uid_unique 
+  ON users (supabase_uid) 
+  WHERE supabase_uid IS NOT NULL;
+
+UPDATE users 
+SET role = 'artisan' 
+WHERE id IN (SELECT user_id FROM artisan_profiles WHERE user_id IS NOT NULL)
+  AND role != 'admin';
+
+CREATE INDEX IF NOT EXISTS idx_artisan_profiles_user_id ON artisan_profiles(user_id);
+

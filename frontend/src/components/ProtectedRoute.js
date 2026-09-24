@@ -16,10 +16,11 @@ export function PrivateRoute({ children }) {
 /** Only allows verified admin-role users */
 export function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin, isArtisan, loading, user } = useAuth();
+  const location = useLocation();
   const role = normalizeRole(user?.role);
 
   if (loading) return <PageLoader />;
-  if (!isAuthenticated || !user) return <NavRedirect to="/login" replace />;
+  if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
   if (role !== 'admin') {
     return (
@@ -58,10 +59,11 @@ export function AdminRoute({ children }) {
 /** Only allows verified artisan-role (and admin) users */
 export function ArtisanRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth();
+  const location = useLocation();
   const role = normalizeRole(user?.role);
 
   if (loading) return <PageLoader />;
-  if (!isAuthenticated || !user) return <NavRedirect to="/login" replace />;
+  if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
   const artisanAllowed = role === 'artisan' || role === 'admin';
   if (!artisanAllowed) return <NavRedirect to="/" replace />;

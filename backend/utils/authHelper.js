@@ -73,6 +73,54 @@ const generateOtp = () => {
   return String(num).padStart(OTP_LENGTH, '0');
 };
 
+/**
+ * Resolves the canonical landing route for an authenticated user role.
+ */
+const getRoleHome = (role) => {
+  const norm = normalizeRole(role);
+  if (norm === 'admin') return '/admin';
+  if (norm === 'artisan') return '/artisan';
+  return '/';
+};
+
+/**
+ * Safely resolves post-login redirect URL.
+ */
+const resolveSafeRedirect = (role, returnUrl) => {
+  const normRole = normalizeRole(role);
+  const home = getRoleHome(normRole);
+
+  if (!returnUrl || typeof returnUrl !== 'string') {
+    return home;
+  }
+
+  const clean = returnUrl.trim();
+
+  if (!clean.startsWith('/') || clean.startsWith('//') || clean.includes('://') || clean.startsWith('/\\')) {
+    return home;
+  }
+
+  if (clean === '/login' || clean === '/signup') {
+    return home;
+  }
+
+  // If target is root '/' or generic, redirect to canonical role home
+  // (artisan -> /artisan, admin -> /admin, user -> /)
+  if (clean === '/') {
+    return home;
+  }
+
+  if (clean.startsWith('/admin') && normRole !== 'admin') {
+    return normRole === 'artisan' ? '/artisan' : '/';
+  }
+
+  if (clean.startsWith('/artisan') && normRole !== 'artisan' && normRole !== 'admin') {
+    return '/';
+  }
+
+  return clean;
+};
+
 module.exports = {
   OTP_LENGTH,
   OTP_REGEX,
@@ -82,4 +130,6 @@ module.exports = {
   normalizePhone,
   normalizeRole,
   sanitizeUser,
+  getRoleHome,
+  resolveSafeRedirect,
 };

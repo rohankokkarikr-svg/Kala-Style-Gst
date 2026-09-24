@@ -19,7 +19,7 @@ const QUICK_LINKS = [
   { label: 'My Wishlist', href: '/wishlist' },
   { label: 'My Orders', href: '/orders' },
   { label: 'AI Artisan Studio', href: '/artisan/ai-studio' },
-  { label: 'Artisan Login', href: '/login' },
+  { label: 'Artisan Login', href: '/login?from=/artisan' },
 ];
 
 export default function Footer() {

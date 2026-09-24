@@ -55,6 +55,26 @@ export const AuthProvider = ({ children }) => {
   const syncOtpSessionSingleFlight = syncSupabaseSessionSingleFlight;
 
   const refreshUser = useCallback(async () => {
+    // Check if OAuth is in-flight or URL contains OAuth tokens/parameters
+    const hasOAuthParams = typeof window !== 'undefined' && (
+      sessionStorage.getItem('oauth_in_flight') === 'true' ||
+      Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+      Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+    );
+
+    if (hasOAuthParams) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const synced = await syncSupabaseSessionSingleFlight(session);
+          if (synced) {
+            sessionStorage.removeItem('oauth_in_flight');
+            return synced;
+          }
+        }
+      } catch (e) {}
+    }
+
     const token = localStorage.getItem('sh_token');
     if (!token) {
       // Check if active Supabase session exists and exchange via single-flight lock
@@ -118,6 +138,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('sh_token');
         localStorage.removeItem('sh_user');
         sessionStorage.removeItem('auth_return_url');
+        sessionStorage.removeItem('oauth_in_flight');
         setUser(null);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         // If a signup flow is actively underway, do not trigger background session sync
@@ -134,6 +155,7 @@ export const AuthProvider = ({ children }) => {
         } catch (_) {}
 
         const hasOAuthParams = typeof window !== 'undefined' && (
+          sessionStorage.getItem('oauth_in_flight') === 'true' ||
           Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
           Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
@@ -141,9 +163,10 @@ export const AuthProvider = ({ children }) => {
         // Sync session if:
         // 1. No backend token exists yet, OR
         // 2. The active Supabase session user id differs from cached user (e.g. user switched Google accounts), OR
-        // 3. Google OAuth returned callback parameters in URL
+        // 3. Google OAuth returned callback parameters in URL or in flight
         if (session && (!currentToken || (session.user?.id && session.user.id !== storedSbUid) || hasOAuthParams)) {
           const syncedUser = await syncSupabaseSessionSingleFlight(session);
+          sessionStorage.removeItem('oauth_in_flight');
           if (syncedUser && typeof window !== 'undefined') {
             if (window.location.hash || window.location.search) {
               window.history.replaceState(null, '', window.location.pathname);
@@ -358,6 +381,12 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.setItem('auth_return_url', returnUrl);
       }
 
+      // Requirement 8: Mark OAuth in-flight and clear previous application session so stale identity never persists
+      sessionStorage.setItem('oauth_in_flight', 'true');
+      localStorage.removeItem('sh_token');
+      localStorage.removeItem('sh_user');
+      setUser(null);
+
       const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
 
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -372,6 +401,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (error) {
+        sessionStorage.removeItem('oauth_in_flight');
         console.error('Supabase signInWithOAuth error:', error);
         const msg = (error.message || '').toLowerCase();
         if (msg.includes('provider is not enabled')) {
@@ -384,6 +414,7 @@ export const AuthProvider = ({ children }) => {
 
       return data;
     } catch (err) {
+      sessionStorage.removeItem('oauth_in_flight');
       throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
     }
   };
@@ -396,6 +427,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('sh_token');
     localStorage.removeItem('sh_user');
     sessionStorage.removeItem('auth_return_url');
+    sessionStorage.removeItem('oauth_in_flight');
     setUser(null);
     toast.success('Signed out successfully');
   };

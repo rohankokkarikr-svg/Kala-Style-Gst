@@ -32,43 +32,14 @@ const fs = require('fs');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-const { OTP_LENGTH, isValidOtp, normalizeRole, normalizeEmail } = require('../utils/authHelper');
-
-const getRoleHome = (role) => {
-  const norm = normalizeRole(role);
-  if (norm === 'admin') return '/admin';
-  if (norm === 'artisan') return '/artisan';
-  return '/';
-};
-
-const resolveSafeRedirect = (role, returnUrl) => {
-  const normRole = normalizeRole(role);
-  const home = getRoleHome(normRole);
-
-  if (!returnUrl || typeof returnUrl !== 'string') {
-    return home;
-  }
-
-  const clean = returnUrl.trim();
-
-  if (!clean.startsWith('/') || clean.startsWith('//') || clean.includes('://') || clean.startsWith('/\\')) {
-    return home;
-  }
-
-  if (clean === '/login' || clean === '/signup') {
-    return home;
-  }
-
-  if (clean.startsWith('/admin') && normRole !== 'admin') {
-    return normRole === 'artisan' ? '/artisan' : '/';
-  }
-
-  if (clean.startsWith('/artisan') && normRole !== 'artisan' && normRole !== 'admin') {
-    return '/';
-  }
-
-  return clean;
-};
+const {
+  OTP_LENGTH,
+  isValidOtp,
+  normalizeRole,
+  normalizeEmail,
+  getRoleHome,
+  resolveSafeRedirect
+} = require('../utils/authHelper');
 
 let passed = 0;
 let failed = 0;
@@ -263,6 +234,90 @@ async function runGoogleOAuthAudit() {
     getRoleHome('admin') === '/admin' &&
     getRoleHome('artisan') === '/artisan' &&
     getRoleHome('user') === '/'
+  );
+
+  // T21: Artisan Google login redirect: resolveSafeRedirect('artisan', '/') maps to '/artisan'
+  assert(
+    'T21',
+    'resolveSafeRedirect maps artisan with returnUrl="/" to "/artisan" (fixes artisan Google redirect)',
+    resolveSafeRedirect('artisan', '/') === '/artisan' &&
+    resolveSafeRedirect('artisan', '') === '/artisan' &&
+    resolveSafeRedirect('artisan', null) === '/artisan'
+  );
+
+  // T22: Admin Google login redirect: resolveSafeRedirect('admin', '/') maps to '/admin'
+  assert(
+    'T22',
+    'resolveSafeRedirect maps admin with returnUrl="/" to "/admin"',
+    resolveSafeRedirect('admin', '/') === '/admin' &&
+    resolveSafeRedirect('admin', '') === '/admin'
+  );
+
+  // T23: User Google login redirect: resolveSafeRedirect('user', '/') maps to '/'
+  assert(
+    'T23',
+    'resolveSafeRedirect maps user with returnUrl="/" to "/"',
+    resolveSafeRedirect('user', '/') === '/'
+  );
+
+  // T24: syncSupabaseSession checks artisan_profiles and reinforces role='artisan'
+  assert(
+    'T24',
+    'syncSupabaseSession queries artisan_profiles and preserves artisan role in DB',
+    authCtrlCode.includes('artisan_profiles') &&
+    authCtrlCode.includes("role: 'artisan'") &&
+    authCtrlCode.includes("from('artisan_profiles')")
+  );
+
+  // T25: Safe structured audit log in syncSupabaseSession
+  assert(
+    'T25',
+    'syncSupabaseSession logs safe structured audit entry [AUTH_AUDIT] without credentials',
+    authCtrlCode.includes('[AUTH_AUDIT]') &&
+    authCtrlCode.includes('provider=google_oauth') &&
+    !authCtrlCode.includes('[AUTH_AUDIT] token=')
+  );
+
+  // T26: AuthContext resets application session in signInWithGoogle to prevent stale session override
+  assert(
+    'T26',
+    'AuthContext.js clears sh_token, sh_user and sets oauth_in_flight in signInWithGoogle',
+    authContextContent.includes("sessionStorage.setItem('oauth_in_flight', 'true')") &&
+    authContextContent.includes("localStorage.removeItem('sh_token')") &&
+    authContextContent.includes("localStorage.removeItem('sh_user')")
+  );
+
+  // T27: AuthContext refreshUser handles in-flight OAuth
+  assert(
+    'T27',
+    'AuthContext.js refreshUser detects in-flight OAuth and prioritizes Supabase session exchange',
+    authContextContent.includes("sessionStorage.getItem('oauth_in_flight') === 'true'") &&
+    authContextContent.includes('syncSupabaseSessionSingleFlight(session)')
+  );
+
+  // T28: Login.js waits for in-flight OAuth before auto-redirecting
+  assert(
+    'T28',
+    'Login.js waits for in-flight OAuth synchronization before redirecting',
+    loginPageContent.includes('isOAuthInProgress') &&
+    loginPageContent.includes('!isOAuthInProgress') &&
+    loginPageContent.includes('Verifying Google Account')
+  );
+
+  // T29: Migration 008 enforces partial unique index on users(supabase_uid)
+  const migration008Content = fs.readFileSync(path.join(__dirname, '../migrations/008_artisan_google_auth_and_unique_constraint.sql'), 'utf8');
+  assert(
+    'T29',
+    'Migration 008 establishes partial unique index on users(supabase_uid)',
+    migration008Content.includes('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_uid_unique') &&
+    migration008Content.includes('WHERE supabase_uid IS NOT NULL')
+  );
+
+  // T30: Backend /api/auth/session route alias registered
+  assert(
+    'T30',
+    'Backend /api/auth/session generic route registered',
+    authRoutesContent.includes("router.post('/session'")
   );
 
   console.log('\n────────────────────────────────────────────────────────────────');

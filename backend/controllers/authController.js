@@ -603,6 +603,26 @@ exports.syncSupabaseSession = async (req, res) => {
       // Section 12, 13, 14, 20: Preserve existing role strictly! Never overwrite or downgrade existing role
       user.role = normalizeRole(user.role);
 
+      // Section 7 & 19: Check for existing artisan profile linked to this user.
+      // If an artisan profile exists and user is not admin, guarantee role is preserved as 'artisan'.
+      let existingArtisanProfile = null;
+      try {
+        const { data: profile } = await supabase
+          .from('artisan_profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (profile) {
+          existingArtisanProfile = parseArtisanUpi(profile);
+          if (user.role !== 'admin') {
+            user.role = 'artisan';
+            await supabase.from('users').update({ role: 'artisan' }).eq('id', user.id);
+          }
+        }
+      } catch (profErr) {
+        console.warn('[syncSupabaseSession] Error checking artisan profile:', profErr?.message || profErr);
+      }
+
       // Section 11 & 19: Link supabase_uid if present and not yet linked, preventing duplicate ownership
       if (!user.supabase_uid && verifiedUid) {
         try {
@@ -674,9 +694,9 @@ exports.syncSupabaseSession = async (req, res) => {
       user.role = 'user';
     }
 
-    // Load artisan profile if artisan or admin
-    let artisanProfile = null;
-    if (user.role === 'artisan' || user.role === 'admin') {
+    // Load artisan profile if role is artisan or admin
+    let artisanProfile = existingArtisanProfile;
+    if (!artisanProfile && (user.role === 'artisan' || user.role === 'admin')) {
       const { data: profile } = await supabase
         .from('artisan_profiles')
         .select('*')
@@ -688,6 +708,9 @@ exports.syncSupabaseSession = async (req, res) => {
     delete user.password;
     delete user.password_hash;
     const backendToken = generateToken(user.id);
+
+    // Section 24: Safe structured audit log (no credentials, secret keys, or tokens)
+    console.log(`[AUTH_AUDIT] syncSupabaseSession: operation=sync, provider=google_oauth, uid=${verifiedUid}, userId=${user.id}, role=${user.role}`);
 
     res.json({
       user: { ...user, artisan_profile: artisanProfile },

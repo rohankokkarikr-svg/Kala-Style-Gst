@@ -8,6 +8,7 @@ router.post('/signup', authLimiter, register);
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
 router.post('/supabase-session', authLimiter, syncSupabaseSession);
+router.post('/session', authLimiter, syncSupabaseSession);
 router.post('/otp-session', authLimiter, syncOtpSession);
 router.get('/me', protect, getMe);
 router.get('/rewards', protect, getRewards);

@@ -31,25 +31,36 @@ export default function Login() {
 
   const otpInputsRef = useRef([]);
 
+  // Check if OAuth is in-flight or actively returning from Google
+  const isOAuthInProgress = typeof window !== 'undefined' && (
+    sessionStorage.getItem('oauth_in_flight') === 'true' ||
+    Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+    Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+  );
+
   // Auto-redirect if user is already authenticated (e.g. via confirmation / magic link click / Google OAuth)
+  // Ensure we wait for in-flight OAuth sync before redirecting
   useEffect(() => {
-    if (user) {
+    if (user && !isOAuthInProgress) {
       handleRedirectAfterAuth(user);
     }
-  }, [user]);
+  }, [user, isOAuthInProgress]);
 
   // Cleanly handle Google OAuth callback errors (e.g. user cancelled Google login)
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const errorDesc = hashParams.get('error_description') || hashParams.get('error');
-      if (errorDesc) {
-        if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
-          toast.error('Google sign-in was cancelled.');
-        } else {
-          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+    if (typeof window !== 'undefined') {
+      if (window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const errorDesc = hashParams.get('error_description') || hashParams.get('error');
+        if (errorDesc) {
+          sessionStorage.removeItem('oauth_in_flight');
+          if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
+            toast.error('Google sign-in was cancelled.');
+          } else {
+            toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+          }
+          window.history.replaceState(null, '', window.location.pathname);
         }
-        window.history.replaceState(null, '', window.location.pathname);
       }
     }
   }, []);
@@ -91,7 +102,12 @@ export default function Login() {
     const role = normalizeRole(user?.role);
     const storedReturnUrl = sessionStorage.getItem('auth_return_url');
     sessionStorage.removeItem('auth_return_url');
-    const returnUrl = storedReturnUrl || location.state?.from?.pathname;
+    sessionStorage.removeItem('oauth_in_flight');
+
+    const searchParams = new URLSearchParams(location.search);
+    const queryFrom = searchParams.get('from');
+    const returnUrl = storedReturnUrl || location.state?.from?.pathname || queryFrom;
+
     const destination = resolveSafeRedirect(role, returnUrl);
     navigate(destination, { replace: true });
   };
@@ -101,7 +117,9 @@ export default function Login() {
     if (googleLoading) return;
     setGoogleLoading(true);
     try {
-      const returnUrl = location.state?.from?.pathname;
+      const searchParams = new URLSearchParams(location.search);
+      const queryFrom = searchParams.get('from');
+      const returnUrl = location.state?.from?.pathname || queryFrom;
       await signInWithGoogle(returnUrl);
     } catch (err) {
       toast.error(err.message || 'Unable to sign in with Google. Please try again.');
@@ -282,6 +300,20 @@ export default function Login() {
       setPassLoading(false);
     }
   };
+
+  if (isOAuthInProgress && !user) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full card p-8 sm:p-10 border border-dark-500 shadow-2xl text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-dark-600 border-t-gold-500 rounded-full animate-spin mx-auto mb-2" />
+          <h3 className="text-xl font-serif font-bold text-white">Verifying Google Account</h3>
+          <p className="text-sm text-gray-400">
+            Authenticating your credentials and preparing your workspace...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">

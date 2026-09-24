@@ -58,6 +58,12 @@ export const resolveSafeRedirect = (role, returnUrl) => {
     return home;
   }
 
+  // If target is root '/' or generic, redirect to canonical role home
+  // (artisan -> /artisan, admin -> /admin, user -> /)
+  if (clean === '/') {
+    return home;
+  }
+
   // Enforce role authorization on target path
   if (clean.startsWith('/admin') && normRole !== 'admin') {
     return normRole === 'artisan' ? '/artisan' : '/';
