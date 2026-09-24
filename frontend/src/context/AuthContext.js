@@ -21,6 +21,11 @@ export const AuthProvider = ({ children }) => {
   });
   const [loading, setLoading] = useState(true);
   const isSyncingRef = useRef(false);
+  const isSigningUpRef = useRef(false);
+
+  const cancelSignup = useCallback(() => {
+    isSigningUpRef.current = false;
+  }, []);
 
   const syncOtpSessionSingleFlight = useCallback(async (session) => {
     if (isSyncingRef.current || !session?.access_token) return null;
@@ -111,6 +116,12 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('sh_user');
         setUser(null);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        // If a signup flow is actively underway, do not trigger background /otp-session
+        // because signup() will atomically create the full user/artisan profile with role and credentials
+        if (isSigningUpRef.current) {
+          return;
+        }
+
         const currentToken = localStorage.getItem('sh_token');
         if (session && !currentToken) {
           const syncedUser = await syncOtpSessionSingleFlight(session);
@@ -222,8 +233,9 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      // If called during Signup flow, do not sync session yet; signup() will register full profile
+      // If called during Signup flow, mark signup in flight and return data (signup() will register full profile)
       if (!syncSession) {
+        isSigningUpRef.current = true;
         return { success: true, data };
       }
 
@@ -282,7 +294,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Signup ──────────────────────────────────────────────────
-  const signup = async (name, phone, password, role = 'user', store_name, artisan_type, email) => {
+  const signup = async (name, phone, password, role = 'user', store_name, artisan_type, email, supabase_uid = null) => {
+    isSigningUpRef.current = true;
     try {
       const normalizedTargetRole = normalizeRole(role) === 'artisan' ? 'artisan' : 'user';
       const { data } = await authAPI.signup({
@@ -292,7 +305,8 @@ export const AuthProvider = ({ children }) => {
         role: normalizedTargetRole,
         store_name,
         artisan_type,
-        email
+        email,
+        supabase_uid
       });
       const normalizedRole = normalizeRole(data.user?.role);
       const normalizedUser = {
@@ -307,6 +321,8 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
       throw new Error(errMsg);
+    } finally {
+      isSigningUpRef.current = false;
     }
   };
 
@@ -333,6 +349,7 @@ export const AuthProvider = ({ children }) => {
       loading,
       login,
       signup,
+      cancelSignup,
       logout,
       sendOtp,
       verifyOtp,

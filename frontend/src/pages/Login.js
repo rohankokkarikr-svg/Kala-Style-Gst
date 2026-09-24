@@ -43,14 +43,18 @@ export default function Login() {
     }
   }, [otpStep]);
 
-  // Resend cooldown timer
+  // Resend cooldown timer (aligned with Supabase 60s rate limit)
   useEffect(() => {
-    let timer;
-    if (countdown > 0) {
-      timer = setInterval(() => {
-        setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
-      }, 1000);
-    }
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => clearInterval(timer);
   }, [countdown]);
 
@@ -73,6 +77,7 @@ export default function Login() {
   // ─── Step 1: Send OTP ─────────────────────────────────────────
   const handleSendOtp = async (e) => {
     if (e) e.preventDefault();
+    if (otpLoading) return;
     setOtpError('');
 
     const cleanEmail = email.trim().toLowerCase();
@@ -87,7 +92,7 @@ export default function Login() {
     try {
       await sendOtp(cleanEmail);
       setOtpStep('otp');
-      setCountdown(30);
+      setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('OTP sent successfully to your email! 📩');
     } catch (err) {
@@ -106,7 +111,7 @@ export default function Login() {
 
     try {
       await sendOtp(email.trim().toLowerCase());
-      setCountdown(30);
+      setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('A new OTP has been sent to your email.');
     } catch (err) {
@@ -119,6 +124,7 @@ export default function Login() {
 
   // ─── Step 3: Verify OTP ───────────────────────────────────────
   const handleVerifyOtp = async (codeToVerify) => {
+    if (otpLoading) return;
     const code = (codeToVerify || otp.join('')).trim();
     if (!isValidOtp(code)) {
       setOtpError(`Please enter your ${OTP_LENGTH}-digit OTP verification code.`);
@@ -130,6 +136,7 @@ export default function Login() {
 
     try {
       const verifiedUser = await verifyOtp(email.trim().toLowerCase(), code);
+      setCountdown(0);
       handleRedirectAfterAuth(verifiedUser);
     } catch (err) {
       setOtpError(err.message);
@@ -155,7 +162,7 @@ export default function Login() {
     }
 
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === OTP_LENGTH && cleanDigit) {
+    if (filledDigits.length === OTP_LENGTH && cleanDigit && !otpLoading) {
       handleVerifyOtp(filledDigits);
     }
   };
@@ -189,7 +196,7 @@ export default function Login() {
     }
     setOtp(newOtp);
 
-    if (numericChars.length === OTP_LENGTH) {
+    if (numericChars.length === OTP_LENGTH && !otpLoading) {
       handleVerifyOtp(numericChars);
     } else {
       const nextEmptyIndex = newOtp.findIndex((digit) => digit === '');
@@ -242,8 +249,8 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-6 card p-8 sm:p-10 border border-dark-500 shadow-2xl">
+    <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 card p-5 sm:p-10 border border-dark-500 shadow-2xl">
         {/* KalaStyle AI Branding Header */}
         <div>
           <div className="flex justify-center mb-4">
@@ -379,7 +386,8 @@ export default function Login() {
                         aria-label={`Digit ${index + 1}`}
                         onChange={(e) => handleOtpChange(index, e.target.value)}
                         onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-7 h-11 sm:w-10 sm:h-12 text-center text-base sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all"
+                        onPaste={handleOtpPaste}
+                        className="w-7 sm:w-10 h-10 sm:h-12 text-center text-sm sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all shrink-0 p-0"
                       />
                     ))}
                   </div>

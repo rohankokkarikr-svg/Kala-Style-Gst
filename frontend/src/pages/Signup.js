@@ -20,7 +20,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
 
-  const { signup, sendOtp, verifyOtp } = useAuth();
+  const { signup, cancelSignup, sendOtp, verifyOtp } = useAuth();
   const navigate = useNavigate();
   const otpInputsRef = useRef([]);
 
@@ -33,14 +33,25 @@ export default function Signup() {
     }
   }, [step]);
 
-  // Resend cooldown timer
+  // Clean up signup flag on unmount
   useEffect(() => {
-    let timer;
-    if (countdown > 0) {
-      timer = setInterval(() => {
-        setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
-      }, 1000);
-    }
+    return () => {
+      if (cancelSignup) cancelSignup();
+    };
+  }, [cancelSignup]);
+
+  // Resend cooldown timer (aligned with Supabase 60s rate limit)
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => clearInterval(timer);
   }, [countdown]);
 
@@ -55,6 +66,7 @@ export default function Signup() {
   // ─── Step 1: Validate Details & Send Verification OTP ─────────
   const handleInitiateSignup = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setOtpError('');
 
     if (!name.trim()) {
@@ -90,7 +102,7 @@ export default function Signup() {
       // Send OTP to the provided email address via Supabase Auth
       await sendOtp(cleanEmail);
       setStep('otp');
-      setCountdown(30);
+      setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('Verification OTP sent to your email! 📩');
     } catch (err) {
@@ -108,7 +120,7 @@ export default function Signup() {
 
     try {
       await sendOtp(email.trim().toLowerCase());
-      setCountdown(30);
+      setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('A fresh OTP code has been sent to your email.');
     } catch (err) {
@@ -121,6 +133,7 @@ export default function Signup() {
 
   // ─── Step 2: Verify OTP & Create the User/Artisan Account ──────
   const handleCompleteRegistration = async (codeToVerify) => {
+    if (loading) return;
     const code = (codeToVerify || otp.join('')).trim();
     if (!isValidOtp(code)) {
       setOtpError(`Please enter your ${OTP_LENGTH}-digit OTP verification code.`);
@@ -135,9 +148,11 @@ export default function Signup() {
 
     try {
       // 1. Verify OTP with Supabase Auth (syncSession = false so signup creates the full profile)
-      await verifyOtp(cleanEmail, code, false);
+      const verifyRes = await verifyOtp(cleanEmail, code, false);
+      const sbUid = verifyRes?.data?.user?.id;
+      setCountdown(0);
 
-      // 2. Complete registration in database with role & password
+      // 2. Complete registration in database with role, password & linked supabase_uid
       await signup(
         name.trim(),
         cleanPhone,
@@ -145,7 +160,8 @@ export default function Signup() {
         role,
         storeName.trim() || name.trim(),
         artisanType,
-        cleanEmail
+        cleanEmail,
+        sbUid
       );
 
       toast.success(
@@ -182,7 +198,7 @@ export default function Signup() {
 
     // Auto-verify when all 8 boxes are filled
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === OTP_LENGTH && cleanDigit) {
+    if (filledDigits.length === OTP_LENGTH && cleanDigit && !loading) {
       handleCompleteRegistration(filledDigits);
     }
   };
@@ -216,7 +232,7 @@ export default function Signup() {
     }
     setOtp(newOtp);
 
-    if (numericChars.length === OTP_LENGTH) {
+    if (numericChars.length === OTP_LENGTH && !loading) {
       handleCompleteRegistration(numericChars);
     } else {
       const nextEmptyIndex = newOtp.findIndex((digit) => digit === '');
@@ -229,8 +245,8 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-6 card p-8 sm:p-10 border border-dark-500 shadow-2xl">
+    <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 card p-5 sm:p-10 border border-dark-500 shadow-2xl">
         {/* Brand Header */}
         <div>
           <div className="flex justify-center mb-4">
@@ -428,7 +444,8 @@ export default function Signup() {
                     aria-label={`Digit ${index + 1}`}
                     onChange={(e) => handleOtpChange(index, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                    className="w-7 h-11 sm:w-10 sm:h-12 text-center text-base sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all"
+                    onPaste={handleOtpPaste}
+                    className="w-7 sm:w-10 h-10 sm:h-12 text-center text-sm sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all shrink-0 p-0"
                   />
                 ))}
               </div>
@@ -479,6 +496,7 @@ export default function Signup() {
               <button
                 type="button"
                 onClick={() => {
+                  if (cancelSignup) cancelSignup();
                   setStep('details');
                   setOtpError('');
                 }}

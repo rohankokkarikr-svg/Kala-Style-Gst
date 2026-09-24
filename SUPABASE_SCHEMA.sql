@@ -146,6 +146,10 @@ CREATE TABLE IF NOT EXISTS ai_usage_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS metadata JSONB;
-
-
-
+-- 13. Master Authentication Constraints & Indexes
+ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS supabase_uid UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_uid_unique ON users (supabase_uid) WHERE supabase_uid IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users (LOWER(email));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artisan_profiles_user_id_unique ON artisan_profiles (user_id);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
+CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);

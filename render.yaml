@@ -47,7 +47,7 @@ services:
       - key: REACT_APP_SUPABASE_URL
         value: https://fwuhlhaadhhveuljsqbh.supabase.co
       - key: REACT_APP_SUPABASE_ANON_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdmxuanN3bGVicHZhcG9sZmZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5ODAzMjQsImV4cCI6MjA5MzU1NjMyNH0.TyziKPzjkZzhZK68rNl9Zzj-21uVrIhFSIuKuQdHkHY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3ODkzODYsImV4cCI6MjEwNDM2NTM4Nn0.1sz1xgfYWGv0Ad6kCZ6KgAcYGJZG2eX0sn3o91nNlJ8
       - key: REACT_APP_LOCATIONIQ_API_KEY
         value: pk.f2bad577bd835e11c81ffd571d5c353b
       - key: CI

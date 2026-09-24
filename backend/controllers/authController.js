@@ -65,6 +65,19 @@ exports.register = async (req, res) => {
     const cleanPhone = normalizePhone(phone);
     const userEmail = normalizeEmail(req.body.email || cleanPhone || phone);
 
+    // Resolve Supabase UID from payload or auth token if present
+    let verifiedUid = (typeof req.body.supabase_uid === 'string' && req.body.supabase_uid.trim()) ? req.body.supabase_uid.trim() : null;
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
+    if (token) {
+      try {
+        const { data: { user: sbUser } } = await supabase.auth.getUser(token);
+        if (sbUser?.id) {
+          verifiedUid = sbUser.id;
+        }
+      } catch (_) {}
+    }
+
     // Check if user exists (by email OR phone)
     const { data: existingUsers } = await supabase
       .from('users')
@@ -76,7 +89,7 @@ exports.register = async (req, res) => {
     const existingWithPhone = existingUsers?.find(u => u.phone && u.phone === cleanPhone);
     const existingWithEmail = existingUsers?.find(u => u.email && u.email.toLowerCase() === userEmail);
 
-    if (existingWithPhone) {
+    if (existingWithPhone && (!existingWithEmail || existingWithPhone.id !== existingWithEmail.id)) {
       return res.status(400).json({ error: 'An account with this phone number already exists.' });
     }
 
@@ -94,15 +107,20 @@ exports.register = async (req, res) => {
           preservedRole = userRole;
         }
 
+        const updatePayload = {
+          name: name || existingWithEmail.name,
+          phone: cleanPhone,
+          password: hashedPassword,
+          role: preservedRole,
+          status: existingWithEmail.status || 'active'
+        };
+        if (verifiedUid && !existingWithEmail.supabase_uid) {
+          updatePayload.supabase_uid = verifiedUid;
+        }
+
         const { data: updatedUser, error: updateErr } = await supabase
           .from('users')
-          .update({
-            name: name || existingWithEmail.name,
-            phone: cleanPhone,
-            password: hashedPassword,
-            role: preservedRole,
-            status: existingWithEmail.status || 'active'
-          })
+          .update(updatePayload)
           .eq('id', existingWithEmail.id)
           .select()
           .single();
@@ -114,16 +132,21 @@ exports.register = async (req, res) => {
       }
     } else {
       // Create user
+      const insertPayload = {
+        name,
+        email: userEmail,
+        phone: cleanPhone || phone,
+        password: hashedPassword,
+        role: userRole,
+        status: 'active'
+      };
+      if (verifiedUid) {
+        insertPayload.supabase_uid = verifiedUid;
+      }
+
       const { data: newUser, error } = await supabase
         .from('users')
-        .insert([{
-          name,
-          email: userEmail,
-          phone: cleanPhone || phone,
-          password: hashedPassword,
-          role: userRole,
-          status: 'active'
-        }])
+        .insert([insertPayload])
         .select()
         .single();
 
