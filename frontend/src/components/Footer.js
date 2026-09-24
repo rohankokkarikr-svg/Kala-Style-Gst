@@ -19,7 +19,8 @@ const QUICK_LINKS = [
   { label: 'My Wishlist', href: '/wishlist' },
   { label: 'My Orders', href: '/orders' },
   { label: 'AI Artisan Studio', href: '/artisan/ai-studio' },
-  { label: 'Artisan Login', href: '/login?from=/artisan' },
+  { label: 'Privacy Policy', href: '/privacy-policy' },
+  { label: 'Terms & Conditions', href: '/terms-and-conditions' },
 ];
 
 export default function Footer() {
@@ -158,11 +159,13 @@ export default function Footer() {
         </div>
 
         {/* Bottom Copyright & Notes */}
-        <div className="border-t border-dark-800/80 mt-8 pt-5 flex flex-col sm:flex-row justify-between items-center gap-2 text-[11px] text-gray-500">
+        <div className="border-t border-dark-800/80 mt-8 pt-5 flex flex-col sm:flex-row justify-between items-center gap-3 text-[11px] text-gray-500">
           <p>&copy; {year} {storeName}. Handcrafted with pride in India.</p>
-          <div className="flex items-center gap-4 text-gray-400">
-            <span>Authentic Indian Heritage</span>
-            <span>•</span>
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-gray-400">
+            <Link to="/privacy-policy" className="hover:text-gold-400 transition-colors">Privacy Policy</Link>
+            <span className="text-dark-600">•</span>
+            <Link to="/terms-and-conditions" className="hover:text-gold-400 transition-colors">Terms & Conditions</Link>
+            <span className="text-dark-600">•</span>
             <span>Master Artisans Collective</span>
           </div>
         </div>

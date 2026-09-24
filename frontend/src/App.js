@@ -34,6 +34,8 @@ const Leaderboard = lazy(() => import('./pages/Leaderboard'));
 const PaymentGateway = lazy(() => import('./pages/PaymentGateway'));
 const OrderTracking = lazy(() => import('./pages/OrderTracking'));
 const ArtisanStore = lazy(() => import('./pages/ArtisanStore'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsAndConditions = lazy(() => import('./pages/TermsAndConditions'));
 
 // Lazy-loaded Artisan Pages
 const ArtisanLayout = lazy(() => import('./pages/artisan/ArtisanLayout'));
@@ -174,6 +176,10 @@ function App() {
                                 <Route path="/cart" element={<Cart />} />
                                 <Route path="/wishlist" element={<Wishlist />} />
                                 <Route path="/artisans/:id" element={<ArtisanStore />} />
+                                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                                <Route path="/privacy" element={<PrivacyPolicy />} />
+                                <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
+                                <Route path="/terms" element={<TermsAndConditions />} />
                                 
                                 {/* Protected User Routes */}
                                 <Route path="/checkout" element={<PrivateRoute><Checkout /></PrivateRoute>} />
