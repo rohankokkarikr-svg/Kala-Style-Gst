@@ -20,6 +20,8 @@ export const AuthProvider = ({ children }) => {
     return null;
   });
   const [loading, setLoading] = useState(true);
+  const [oauthProcessing, setOauthProcessing] = useState(false);
+  const [oauthError, setOauthError] = useState(null);
   const syncPromiseRef = useRef(null);
   const isSigningUpRef = useRef(false);
 
@@ -33,6 +35,8 @@ export const AuthProvider = ({ children }) => {
 
     syncPromiseRef.current = (async () => {
       try {
+        setOauthError(null);
+        // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
           accessToken: session.access_token,
           email: session.user?.email,
@@ -46,9 +50,13 @@ export const AuthProvider = ({ children }) => {
           return normalized;
         }
       } catch (e) {
-        console.warn('Single-flight session sync error:', e?.message || e);
+        const errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
+        console.error('[syncSupabaseSessionSingleFlight] Sync error:', errMsg);
+        setOauthError(errMsg);
+        toast.error(errMsg);
       } finally {
         syncPromiseRef.current = null;
+        setOauthProcessing(false);
       }
       return null;
     })();
@@ -60,90 +68,37 @@ export const AuthProvider = ({ children }) => {
   const syncOtpSessionSingleFlight = syncSupabaseSessionSingleFlight;
 
   const refreshUser = useCallback(async () => {
-    // Check if OAuth is in-flight or URL contains OAuth tokens/parameters
-    const hasOAuthParams = typeof window !== 'undefined' && (
-      sessionStorage.getItem('oauth_in_flight') === 'true' ||
-      Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
-      Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
-    );
-
-    if (hasOAuthParams) {
-      try {
-        // 1. PKCE Flow: If code is present in query parameters, exchange it for session
-        if (typeof window !== 'undefined' && window.location.search && window.location.search.includes('code=')) {
-          const searchParams = new URLSearchParams(window.location.search);
-          const code = searchParams.get('code');
-          if (code) {
-            try {
-              const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
-              if (codeData?.session?.access_token) {
-                const synced = await syncSupabaseSessionSingleFlight(codeData.session);
-                if (synced) {
-                  sessionStorage.removeItem('oauth_in_flight');
-                  return synced;
-                }
-              }
-            } catch (pkceErr) {
-              console.warn('[refreshUser] exchangeCodeForSession notice:', pkceErr?.message || pkceErr);
-            }
-          }
-        }
-
-        // 2. Implicit Flow: Fast-path extract access_token directly from hash without waiting
-        if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('access_token=')) {
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const tokenFromHash = hashParams.get('access_token');
-          if (tokenFromHash) {
-            const synced = await syncSupabaseSessionSingleFlight({ access_token: tokenFromHash });
-            if (synced) {
-              sessionStorage.removeItem('oauth_in_flight');
-              return synced;
-            }
-          }
-        }
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const synced = await syncSupabaseSessionSingleFlight(session);
-          if (synced) {
-            sessionStorage.removeItem('oauth_in_flight');
-            return synced;
-          }
-        }
-      } catch (e) {
-        console.warn('[refreshUser] OAuth error:', e?.message || e);
-      }
-    }
-
     const token = localStorage.getItem('sh_token');
-    if (!token) {
-      // Check if active Supabase session exists and exchange via single-flight lock
+    if (token) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          return await syncSupabaseSessionSingleFlight(session);
+        const { data } = await authAPI.me();
+        if (data) {
+          const normalized = { ...data, role: normalizeRole(data.role) };
+          setUser(normalized);
+          localStorage.setItem('sh_user', JSON.stringify(normalized));
+          return normalized;
         }
-      } catch (e) {}
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          localStorage.removeItem('sh_token');
+          localStorage.removeItem('sh_user');
+          setUser(null);
+          if (err.response?.status === 403) {
+            toast.error(err.response?.data?.error || 'Your account has been deactivated or suspended.');
+          }
+        }
+      }
       return null;
     }
 
+    // If no backend token exists, check if active Supabase session is present in storage
     try {
-      const { data } = await authAPI.me();
-      if (data) {
-        const normalized = { ...data, role: normalizeRole(data.role) };
-        setUser(normalized);
-        localStorage.setItem('sh_user', JSON.stringify(normalized));
-        return normalized;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        return await syncSupabaseSessionSingleFlight(session);
       }
-    } catch (err) {
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('sh_token');
-        localStorage.removeItem('sh_user');
-        setUser(null);
-        if (err.response?.status === 403) {
-          toast.error(err.response?.data?.error || 'Your account has been deactivated or suspended.');
-        }
-      }
+    } catch (e) {
+      console.warn('[refreshUser] Supabase getSession error:', e?.message || e);
     }
     return null;
   }, [syncSupabaseSessionSingleFlight]);
@@ -180,10 +135,16 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('auth_return_url');
         sessionStorage.removeItem('oauth_in_flight');
         setUser(null);
+        setOauthProcessing(false);
+        setOauthError(null);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         // If a signup flow is actively underway, do not trigger background session sync
         // because signup() will atomically create the full user/artisan profile with role and credentials
         if (isSigningUpRef.current) {
+          return;
+        }
+
+        if (!session?.access_token) {
           return;
         }
 
@@ -194,23 +155,33 @@ export const AuthProvider = ({ children }) => {
           if (storedUserRaw) storedSbUid = JSON.parse(storedUserRaw)?.supabase_uid;
         } catch (_) {}
 
-        const hasOAuthParams = typeof window !== 'undefined' && (
+        const isOAuthInFlight = typeof window !== 'undefined' && (
           sessionStorage.getItem('oauth_in_flight') === 'true' ||
           Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
           Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
 
+        // Section 6: Current Supabase identity must win!
         // Sync session if:
         // 1. No backend token exists yet, OR
         // 2. The active Supabase session user id differs from cached user (e.g. user switched Google accounts), OR
-        // 3. Google OAuth returned callback parameters in URL or in flight
-        if (session && (!currentToken || (session.user?.id && session.user.id !== storedSbUid) || hasOAuthParams)) {
-          const syncedUser = await syncSupabaseSessionSingleFlight(session);
-          sessionStorage.removeItem('oauth_in_flight');
-          if (syncedUser && typeof window !== 'undefined') {
-            if (window.location.hash || window.location.search) {
-              window.history.replaceState(null, '', window.location.pathname);
+        // 3. Google OAuth returned callback parameters in URL or marked in-flight
+        if (!currentToken || (session.user?.id && session.user.id !== storedSbUid) || isOAuthInFlight) {
+          setOauthProcessing(true);
+          try {
+            const syncedUser = await syncSupabaseSessionSingleFlight(session);
+            sessionStorage.removeItem('oauth_in_flight');
+
+            // Section 20: Clean URL ONLY AFTER session has successfully been established
+            if (syncedUser && typeof window !== 'undefined') {
+              if (window.location.hash || window.location.search) {
+                window.history.replaceState(null, '', window.location.pathname);
+              }
             }
+          } catch (err) {
+            console.error('[onAuthStateChange] Session sync failed:', err);
+          } finally {
+            setOauthProcessing(false);
           }
         }
       }
@@ -426,6 +397,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('sh_token');
       localStorage.removeItem('sh_user');
       setUser(null);
+      setOauthError(null);
+      setOauthProcessing(true);
 
       const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
 
@@ -442,6 +415,7 @@ export const AuthProvider = ({ children }) => {
 
       if (error) {
         sessionStorage.removeItem('oauth_in_flight');
+        setOauthProcessing(false);
         console.error('Supabase signInWithOAuth error:', error);
         const msg = (error.message || '').toLowerCase();
         if (msg.includes('provider is not enabled')) {
@@ -455,6 +429,7 @@ export const AuthProvider = ({ children }) => {
       return data;
     } catch (err) {
       sessionStorage.removeItem('oauth_in_flight');
+      setOauthProcessing(false);
       throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
     }
   };
@@ -469,6 +444,8 @@ export const AuthProvider = ({ children }) => {
     sessionStorage.removeItem('auth_return_url');
     sessionStorage.removeItem('oauth_in_flight');
     setUser(null);
+    setOauthProcessing(false);
+    setOauthError(null);
     toast.success('Signed out successfully');
   };
 
@@ -482,6 +459,8 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{
       user: currentUser,
       loading,
+      oauthProcessing,
+      oauthError,
       login,
       signup,
       signInWithGoogle,

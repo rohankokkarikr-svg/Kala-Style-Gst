@@ -8,6 +8,12 @@ if (supabaseUrl === 'https://mock.supabase.co') {
   console.warn('⚠️  Supabase environment variables not set. Check your .env file.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
 export default supabase;

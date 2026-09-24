@@ -295,13 +295,13 @@ async function runGoogleOAuthAudit() {
     authContextContent.includes('syncSupabaseSessionSingleFlight(session)')
   );
 
-  // T28: Login.js handles OAuth callback with fast direct exchange and timeout protection
+  // T28: Login.js state-driven OAuth verification UI without competing manual exchange or 7s false timeout
   assert(
     'T28',
-    'Login.js handles OAuth callback with fast direct exchange and timeout protection',
-    loginPageContent.includes('hasOAuthCallback') &&
-    loginPageContent.includes('oauthTimedOut') &&
-    loginPageContent.includes('Verifying Google Account')
+    'Login.js handles OAuth verification using state-driven isVerifyingGoogle without competing manual exchange',
+    loginPageContent.includes('isVerifyingGoogle') &&
+    loginPageContent.includes('Verifying Google Account') &&
+    !loginPageContent.includes('exchangeCodeForSession')
   );
 
   // T29: Migration 008 enforces partial unique index on users(supabase_uid)

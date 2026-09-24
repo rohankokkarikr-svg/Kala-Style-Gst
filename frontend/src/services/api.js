@@ -5,7 +5,12 @@ import apiCache from '../utils/apiCache';
 const api = axios.create({
   baseURL: (() => {
     const envUrl = process.env.REACT_APP_API_URL;
-    if (!envUrl) return 'http://localhost:5000/api';
+    if (!envUrl) {
+      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return 'https://style-heaven-backend.onrender.com/api';
+      }
+      return 'http://localhost:5000/api';
+    }
     return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
   })(),
   timeout: 15000,
