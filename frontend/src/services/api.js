@@ -41,7 +41,8 @@ api.interceptors.response.use(
       const isAuthEndpoint = reqUrl.includes('/auth/login') ||
                              reqUrl.includes('/auth/signup') ||
                              reqUrl.includes('/auth/register') ||
-                             reqUrl.includes('/auth/otp-session');
+                             reqUrl.includes('/auth/otp-session') ||
+                             reqUrl.includes('/auth/supabase-session');
 
       // Do NOT trigger global redirect on login/signup failure so error toast can render cleanly
       if (!isAuthEndpoint) {
@@ -69,12 +70,13 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────
 export const authAPI = {
-  login:          (data) => api.post('/auth/login', data),
-  signup:         (data) => api.post('/auth/signup', data),
-  otpSession:     (data) => api.post('/auth/otp-session', data),
-  me:             ()     => api.get('/auth/me'),
-  getRewards:     ()     => api.get('/auth/rewards'),
-  getLeaderboard: ()     => api.get('/auth/leaderboard'),
+  login:           (data) => api.post('/auth/login', data),
+  signup:          (data) => api.post('/auth/signup', data),
+  supabaseSession: (data) => api.post('/auth/supabase-session', data),
+  otpSession:      (data) => api.post('/auth/supabase-session', data),
+  me:              ()     => api.get('/auth/me'),
+  getRewards:      ()     => api.get('/auth/rewards'),
+  getLeaderboard:  ()     => api.get('/auth/leaderboard'),
 };
 
 // Ultra-fast cached GET with instant SWR revalidation

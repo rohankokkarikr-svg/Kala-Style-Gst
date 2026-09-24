@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
 import { normalizeRole, getRoleHome, resolveSafeRedirect, OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
@@ -7,6 +8,9 @@ import toast from 'react-hot-toast';
 export default function Login() {
   // Auth mode: 'password' (default: email/phone + password for returning users) vs 'otp' (passwordless email OTP)
   const [authMode, setAuthMode] = useState('password');
+
+  // Google OAuth flow state
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   // OTP flow state: 'email' (input screen) vs 'otp' (verify screen)
   const [otpStep, setOtpStep] = useState('email');
@@ -21,18 +25,34 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [passLoading, setPassLoading] = useState(false);
 
-  const { user, login, sendOtp, verifyOtp } = useAuth();
+  const { user, login, sendOtp, verifyOtp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const otpInputsRef = useRef([]);
 
-  // Auto-redirect if user is already authenticated (e.g. via confirmation / magic link click)
+  // Auto-redirect if user is already authenticated (e.g. via confirmation / magic link click / Google OAuth)
   useEffect(() => {
     if (user) {
       handleRedirectAfterAuth(user);
     }
   }, [user]);
+
+  // Cleanly handle Google OAuth callback errors (e.g. user cancelled Google login)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const errorDesc = hashParams.get('error_description') || hashParams.get('error');
+      if (errorDesc) {
+        if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
+          toast.error('Google sign-in was cancelled.');
+        } else {
+          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, []);
 
   // Auto-focus first input when entering OTP step
   useEffect(() => {
@@ -69,9 +89,24 @@ export default function Login() {
   // Safe redirect helper after login based on role and return URL
   const handleRedirectAfterAuth = (user) => {
     const role = normalizeRole(user?.role);
-    const returnUrl = location.state?.from?.pathname;
+    const storedReturnUrl = sessionStorage.getItem('auth_return_url');
+    sessionStorage.removeItem('auth_return_url');
+    const returnUrl = storedReturnUrl || location.state?.from?.pathname;
     const destination = resolveSafeRedirect(role, returnUrl);
     navigate(destination, { replace: true });
+  };
+
+  // ─── Google Sign-In Action ────────────────────────────────────
+  const handleGoogleSignIn = async () => {
+    if (googleLoading) return;
+    setGoogleLoading(true);
+    try {
+      const returnUrl = location.state?.from?.pathname;
+      await signInWithGoogle(returnUrl);
+    } catch (err) {
+      toast.error(err.message || 'Unable to sign in with Google. Please try again.');
+      setGoogleLoading(false);
+    }
   };
 
   // ─── Step 1: Send OTP ─────────────────────────────────────────
@@ -276,6 +311,40 @@ export default function Login() {
             )}
           </p>
         </div>
+
+        {/* ─── Google OAuth Quick Sign In ─────────────────────── */}
+        {!(authMode === 'otp' && otpStep === 'otp') && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
+            >
+              {googleLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gold-400 font-semibold">Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
+                  <span>Continue with Google</span>
+                </>
+              )}
+            </button>
+
+            {/* Divider */}
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-dark-500/80" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-wider">
+                <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or continue with</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Auth Method Selector Toggle */}
         <div className="flex rounded-lg overflow-hidden border border-dark-500 bg-dark-800 p-1">

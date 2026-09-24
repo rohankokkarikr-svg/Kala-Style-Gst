@@ -27,11 +27,11 @@ export const AuthProvider = ({ children }) => {
     isSigningUpRef.current = false;
   }, []);
 
-  const syncOtpSessionSingleFlight = useCallback(async (session) => {
+  const syncSupabaseSessionSingleFlight = useCallback(async (session) => {
     if (isSyncingRef.current || !session?.access_token) return null;
     isSyncingRef.current = true;
     try {
-      const { data } = await authAPI.otpSession({
+      const { data } = await authAPI.supabaseSession({
         accessToken: session.access_token,
         email: session.user?.email,
         supabase_uid: session.user?.id
@@ -44,12 +44,15 @@ export const AuthProvider = ({ children }) => {
         return normalized;
       }
     } catch (e) {
-      console.warn('Single-flight OTP session sync error:', e?.message || e);
+      console.warn('Single-flight session sync error:', e?.message || e);
     } finally {
       isSyncingRef.current = false;
     }
     return null;
   }, []);
+
+  // Backward compatible alias
+  const syncOtpSessionSingleFlight = syncSupabaseSessionSingleFlight;
 
   const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('sh_token');
@@ -58,7 +61,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          return await syncOtpSessionSingleFlight(session);
+          return await syncSupabaseSessionSingleFlight(session);
         }
       } catch (e) {}
       return null;
@@ -83,7 +86,7 @@ export const AuthProvider = ({ children }) => {
       }
     }
     return null;
-  }, [syncOtpSessionSingleFlight]);
+  }, [syncSupabaseSessionSingleFlight]);
 
   // Auto-sync session on mount with database
   useEffect(() => {
@@ -108,26 +111,43 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Single global Supabase auth state listener (no duplicate session creations)
+  // Single global Supabase auth state listener (handles OTP confirmations and Google OAuth sign-in)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         localStorage.removeItem('sh_token');
         localStorage.removeItem('sh_user');
+        sessionStorage.removeItem('auth_return_url');
         setUser(null);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        // If a signup flow is actively underway, do not trigger background /otp-session
+        // If a signup flow is actively underway, do not trigger background session sync
         // because signup() will atomically create the full user/artisan profile with role and credentials
         if (isSigningUpRef.current) {
           return;
         }
 
         const currentToken = localStorage.getItem('sh_token');
-        if (session && !currentToken) {
-          const syncedUser = await syncOtpSessionSingleFlight(session);
-          if (syncedUser && typeof window !== 'undefined' && window.location.hash) {
-            // Clean up the hash fragment from the URL after confirmation / magic link login
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        const storedUserRaw = localStorage.getItem('sh_user');
+        let storedSbUid = null;
+        try {
+          if (storedUserRaw) storedSbUid = JSON.parse(storedUserRaw)?.supabase_uid;
+        } catch (_) {}
+
+        const hasOAuthParams = typeof window !== 'undefined' && (
+          Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+          Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+        );
+
+        // Sync session if:
+        // 1. No backend token exists yet, OR
+        // 2. The active Supabase session user id differs from cached user (e.g. user switched Google accounts), OR
+        // 3. Google OAuth returned callback parameters in URL
+        if (session && (!currentToken || (session.user?.id && session.user.id !== storedSbUid) || hasOAuthParams)) {
+          const syncedUser = await syncSupabaseSessionSingleFlight(session);
+          if (syncedUser && typeof window !== 'undefined') {
+            if (window.location.hash || window.location.search) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
           }
         }
       }
@@ -136,7 +156,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       subscription?.unsubscribe();
     };
-  }, [syncOtpSessionSingleFlight]);
+  }, [syncSupabaseSessionSingleFlight]);
 
   // Real-time listener: immediately sync artisan verification across all devices
   useEffect(() => {
@@ -326,6 +346,48 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ─── Google OAuth via Supabase ───────────────────────────────
+  const signInWithGoogle = async (returnUrl) => {
+    try {
+      if (!supabase?.auth) {
+        throw new Error('Supabase client is not available. Please verify your connection.');
+      }
+
+      // Preserve returnUrl in sessionStorage for clean role/destination navigation upon OAuth return
+      if (returnUrl && typeof returnUrl === 'string') {
+        sessionStorage.setItem('auth_return_url', returnUrl);
+      }
+
+      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+
+      if (error) {
+        console.error('Supabase signInWithOAuth error:', error);
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('provider is not enabled')) {
+          throw new Error('Google sign-in is not enabled in Supabase Dashboard. Please enable the Google provider in Authentication → Providers.');
+        } else if (msg.includes('network') || msg.includes('fetch')) {
+          throw new Error('Unable to connect to Google authentication. Please check your internet connection.');
+        }
+        throw new Error(error.message || 'Failed to initialize Google Sign-In');
+      }
+
+      return data;
+    } catch (err) {
+      throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
+    }
+  };
+
   // ─── Logout ──────────────────────────────────────────────────
   const logout = async () => {
     try {
@@ -333,6 +395,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {}
     localStorage.removeItem('sh_token');
     localStorage.removeItem('sh_user');
+    sessionStorage.removeItem('auth_return_url');
     setUser(null);
     toast.success('Signed out successfully');
   };
@@ -349,6 +412,7 @@ export const AuthProvider = ({ children }) => {
       loading,
       login,
       signup,
+      signInWithGoogle,
       cancelSignup,
       logout,
       sendOtp,

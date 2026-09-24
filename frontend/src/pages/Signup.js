@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
@@ -14,13 +15,16 @@ export default function Signup() {
   const [storeName, setStoreName] = useState('');
   const [artisanType, setArtisanType] = useState('Weaver');
 
+  // Google OAuth flow state
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   // OTP state (Strict canonical 8-digit OTP)
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
 
-  const { signup, cancelSignup, sendOtp, verifyOtp } = useAuth();
+  const { signup, cancelSignup, sendOtp, verifyOtp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const otpInputsRef = useRef([]);
 
@@ -61,6 +65,18 @@ export default function Signup() {
     const [name, domain] = str.split('@');
     if (name.length <= 2) return `${name[0]}***@${domain}`;
     return `${name[0]}***@${domain}`;
+  };
+
+  // ─── Google OAuth Quick Sign-Up ──────────────────────────────
+  const handleGoogleSignUp = async () => {
+    if (googleLoading) return;
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle('/');
+    } catch (err) {
+      toast.error(err.message || 'Unable to sign in with Google. Please try again.');
+      setGoogleLoading(false);
+    }
   };
 
   // ─── Step 1: Validate Details & Send Verification OTP ─────────
@@ -272,6 +288,40 @@ export default function Signup() {
             )}
           </p>
         </div>
+
+        {/* ─── Google OAuth Quick Registration ─────────────────── */}
+        {step === 'details' && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogleSignUp}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
+            >
+              {googleLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gold-400 font-semibold">Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
+                  <span>Continue with Google</span>
+                </>
+              )}
+            </button>
+
+            {/* Divider */}
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-dark-500/80" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-wider">
+                <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or register with email OTP</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ─── STEP 1: REGISTRATION DETAILS FORM ──────────────── */}
         {step === 'details' && (

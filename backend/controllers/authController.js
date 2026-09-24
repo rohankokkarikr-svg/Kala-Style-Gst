@@ -68,10 +68,10 @@ exports.register = async (req, res) => {
     // Resolve Supabase UID from payload or auth token if present
     let verifiedUid = (typeof req.body.supabase_uid === 'string' && req.body.supabase_uid.trim()) ? req.body.supabase_uid.trim() : null;
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
-    if (token) {
+    const incomingToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
+    if (incomingToken) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser(token);
+        const { data: { user: sbUser } } = await supabase.auth.getUser(incomingToken);
         if (sbUser?.id) {
           verifiedUid = sbUser.id;
         }
@@ -533,18 +533,20 @@ exports.getLeaderboard = async (req, res) => {
   }
 };
 
-exports.syncOtpSession = async (req, res) => {
+exports.syncSupabaseSession = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
 
     if (!token) {
-      return res.status(401).json({ error: 'Valid Supabase session token is required to sync OTP session' });
+      return res.status(401).json({ error: 'Valid Supabase session token is required to sync session' });
     }
 
     // Verify token using official Supabase auth.getUser(token)
     let verifiedEmail = null;
     let verifiedUid = null;
+    let googleName = null;
+    let avatarUrl = null;
 
     try {
       const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
@@ -553,16 +555,21 @@ exports.syncOtpSession = async (req, res) => {
       }
       verifiedEmail = normalizeEmail(sbUser.email);
       verifiedUid = sbUser.id;
+
+      // Extract user metadata provided by Supabase / Google OAuth
+      const meta = sbUser.user_metadata || {};
+      googleName = (meta.full_name || meta.name || meta.display_name || '').trim();
+      avatarUrl = meta.avatar_url || meta.picture || null;
     } catch (tokenErr) {
-      console.error('[syncOtpSession] Token verification error:', tokenErr.message);
+      console.error('[syncSupabaseSession] Token verification error:', tokenErr.message);
       return res.status(401).json({ error: 'Failed to verify Supabase session token' });
     }
 
     if (!verifiedEmail) {
-      return res.status(400).json({ error: 'Verified email is required from OTP session' });
+      return res.status(400).json({ error: 'Verified email is required from Supabase session' });
     }
 
-    // Canonical identity resolution priority (Section 5):
+    // Canonical identity resolution priority:
     // 1. Resolve by verified supabase_uid if present
     // 2. Resolve by normalized verified email
     // 3. Create new public.users record
@@ -593,10 +600,10 @@ exports.syncOtpSession = async (req, res) => {
       if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
         return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
       }
-      // Preserve existing role strictly! Never overwrite or downgrade existing role
+      // Section 12, 13, 14, 20: Preserve existing role strictly! Never overwrite or downgrade existing role
       user.role = normalizeRole(user.role);
 
-      // Section 6: Link supabase_uid if present and not yet linked, preventing duplicate ownership
+      // Section 11 & 19: Link supabase_uid if present and not yet linked, preventing duplicate ownership
       if (!user.supabase_uid && verifiedUid) {
         try {
           const { data: conflictUser } = await supabase
@@ -614,9 +621,17 @@ exports.syncOtpSession = async (req, res) => {
           user.supabase_uid = verifiedUid;
         } catch (_) {}
       }
+
+      // If user has a placeholder email name and Google provides full name, enhance profile name
+      if (googleName && (!user.name || user.name === verifiedEmail.split('@')[0])) {
+        try {
+          await supabase.from('users').update({ name: googleName }).eq('id', user.id);
+          user.name = googleName;
+        } catch (_) {}
+      }
     } else {
-      // Create user profile with default role 'user' (never admin or artisan)
-      const defaultName = verifiedEmail.split('@')[0];
+      // Section 15: Create user profile with role 'user' ONLY (never admin or artisan from OAuth)
+      const defaultName = googleName || verifiedEmail.split('@')[0] || 'User';
       const crypto = require('crypto');
       const salt = await bcrypt.genSalt(10);
       const randomSecret = crypto.randomBytes(16).toString('hex');
@@ -626,7 +641,7 @@ exports.syncOtpSession = async (req, res) => {
         name: defaultName,
         email: verifiedEmail,
         password: placeholderHash,
-        role: 'user',
+        role: 'user', // STRICT: Normal user by default
         status: 'active',
       };
 
@@ -650,7 +665,7 @@ exports.syncOtpSession = async (req, res) => {
           .single();
 
         if (createErr) {
-          console.error('Error creating user profile after OTP:', createErr);
+          console.error('Error creating user profile after OAuth:', createErr);
           throw createErr;
         }
         newUser = data;
@@ -679,10 +694,13 @@ exports.syncOtpSession = async (req, res) => {
       token: backendToken
     });
   } catch (error) {
-    console.error('OTP session sync error:', error);
-    res.status(500).json({ error: 'Server error during OTP session synchronization' });
+    console.error('Session sync error:', error);
+    res.status(500).json({ error: 'Server error during session synchronization' });
   }
 };
+
+// Backward-compatible alias for existing OTP flow
+exports.syncOtpSession = exports.syncSupabaseSession;
 
 
 
