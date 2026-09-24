@@ -8,8 +8,9 @@ import { normalizeRole } from '../utils/authHelper';
 export function PrivateRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
+  const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading) return <PageLoader />;
+  if (loading || (!user && hasToken)) return <PageLoader />;
   return (isAuthenticated && user) ? children : <NavRedirect to="/login" state={{ from: location }} replace />;
 }
 
@@ -17,10 +18,12 @@ export function PrivateRoute({ children }) {
 export function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin, isArtisan, loading, user } = useAuth();
   const location = useLocation();
-  const role = normalizeRole(user?.role);
+  const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading) return <PageLoader />;
+  if (loading || (!user && hasToken)) return <PageLoader />;
   if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
+
+  const role = normalizeRole(user?.role);
 
   if (role !== 'admin') {
     return (
@@ -60,11 +63,12 @@ export function AdminRoute({ children }) {
 export function ArtisanRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
-  const role = normalizeRole(user?.role);
+  const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading) return <PageLoader />;
+  if (loading || (!user && hasToken)) return <PageLoader />;
   if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
+  const role = normalizeRole(user?.role);
   const artisanAllowed = role === 'artisan' || role === 'admin';
   if (!artisanAllowed) return <NavRedirect to="/" replace />;
   return children;

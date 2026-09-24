@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
+import { supabase } from '../lib/supabase';
 import { normalizeRole, getRoleHome, resolveSafeRedirect, OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
 
@@ -32,6 +33,7 @@ export default function Login() {
   const location = useLocation();
 
   const otpInputsRef = useRef([]);
+  const isExchangingRef = useRef(false);
 
   // Check if OAuth callback is actively in the URL (hash token or query code)
   const hasOAuthCallback = typeof window !== 'undefined' && (
@@ -41,47 +43,81 @@ export default function Login() {
 
   // Auto-redirect immediately when authenticated
   useEffect(() => {
-    if (user) {
+    if (user && !hasOAuthCallback) {
       handleRedirectAfterAuth(user);
     }
-  }, [user]);
+  }, [user, hasOAuthCallback]);
 
-  // Fast direct OAuth exchange when returning with access_token in hash
+  // Fast direct OAuth exchange when returning with access_token or PKCE code
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('access_token=')) {
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      if (accessToken && !user) {
-        authAPI.supabaseSession({ accessToken })
-          .then((res) => {
-            if (res.data?.user && res.data?.token) {
-              const normalized = { ...res.data.user, role: normalizeRole(res.data.user.role) };
-              localStorage.setItem('sh_token', res.data.token);
-              localStorage.setItem('sh_user', JSON.stringify(normalized));
-              if (setUser) setUser(normalized);
-              sessionStorage.removeItem('oauth_in_flight');
-              window.history.replaceState(null, '', window.location.pathname);
-              handleRedirectAfterAuth(normalized);
-            }
-          })
-          .catch((err) => {
-            console.error('Direct OAuth exchange error:', err);
+    if (typeof window === 'undefined' || user || isExchangingRef.current) return;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = hashParams.get('access_token');
+
+    if (!code && !accessToken) return;
+
+    isExchangingRef.current = true;
+
+    const exchangeAndSync = async () => {
+      try {
+        let tokenToSync = accessToken;
+
+        // PKCE Flow: exchange code for session if no token yet
+        if (code && !tokenToSync) {
+          try {
+            const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (codeErr) throw codeErr;
+            tokenToSync = codeData?.session?.access_token;
+          } catch (e) {
+            // Check if client auto-exchanged
+            const { data: { session } } = await supabase.auth.getSession();
+            tokenToSync = session?.access_token;
+          }
+        }
+
+        if (!tokenToSync) {
+          const { data: { session } } = await supabase.auth.getSession();
+          tokenToSync = session?.access_token;
+        }
+
+        if (tokenToSync) {
+          const res = await authAPI.supabaseSession({ accessToken: tokenToSync });
+          if (res.data?.user && res.data?.token) {
+            const normalized = { ...res.data.user, role: normalizeRole(res.data.user.role) };
+            localStorage.setItem('sh_token', res.data.token);
+            localStorage.setItem('sh_user', JSON.stringify(normalized));
             sessionStorage.removeItem('oauth_in_flight');
+            if (setUser) setUser(normalized);
             window.history.replaceState(null, '', window.location.pathname);
-            setOauthTimedOut(true);
-            toast.error(err.response?.data?.error || 'Authentication error. Please try again.');
-          });
+            handleRedirectAfterAuth(normalized);
+            return;
+          }
+        }
+        throw new Error('Unable to obtain session token from Google Sign-In');
+      } catch (err) {
+        console.error('Direct OAuth exchange error:', err);
+        sessionStorage.removeItem('oauth_in_flight');
+        window.history.replaceState(null, '', window.location.pathname);
+        setOauthTimedOut(true);
+        toast.error(err.response?.data?.error || err.message || 'Authentication error. Please try again.');
+      } finally {
+        isExchangingRef.current = false;
       }
-    }
+    };
+
+    exchangeAndSync();
   }, [user, setUser]);
 
-  // Safety timer: Never allow loading screen to hang for more than 3 seconds
+  // Safety timer: Never allow loading screen to hang for more than 7 seconds
   useEffect(() => {
     if (hasOAuthCallback && !user) {
       const timer = setTimeout(() => {
         setOauthTimedOut(true);
         sessionStorage.removeItem('oauth_in_flight');
-      }, 3000);
+      }, 7000);
       return () => clearTimeout(timer);
     } else if (!hasOAuthCallback) {
       sessionStorage.removeItem('oauth_in_flight');
@@ -91,18 +127,18 @@ export default function Login() {
   // Cleanly handle Google OAuth callback errors (e.g. user cancelled Google login)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const errorDesc = hashParams.get('error_description') || hashParams.get('error');
-        if (errorDesc) {
-          sessionStorage.removeItem('oauth_in_flight');
-          if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
-            toast.error('Google sign-in was cancelled.');
-          } else {
-            toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
-          }
-          window.history.replaceState(null, '', window.location.pathname);
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const errorDesc = searchParams.get('error_description') || searchParams.get('error') ||
+                        hashParams.get('error_description') || hashParams.get('error');
+      if (errorDesc) {
+        sessionStorage.removeItem('oauth_in_flight');
+        if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
+          toast.error('Google sign-in was cancelled.');
+        } else {
+          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
         }
+        window.history.replaceState(null, '', window.location.pathname);
       }
     }
   }, []);

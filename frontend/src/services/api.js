@@ -72,8 +72,12 @@ api.interceptors.response.use(
 export const authAPI = {
   login:           (data) => api.post('/auth/login', data),
   signup:          (data) => api.post('/auth/signup', data),
-  supabaseSession: (data) => api.post('/auth/supabase-session', data),
-  otpSession:      (data) => api.post('/auth/supabase-session', data),
+  supabaseSession: (data) => api.post('/auth/supabase-session', data, {
+    headers: { Authorization: '' },
+  }),
+  otpSession:      (data) => api.post('/auth/supabase-session', data, {
+    headers: { Authorization: '' },
+  }),
   me:              ()     => api.get('/auth/me'),
   getRewards:      ()     => api.get('/auth/rewards'),
   getLeaderboard:  ()     => api.get('/auth/leaderboard'),

@@ -536,7 +536,9 @@ exports.getLeaderboard = async (req, res) => {
 exports.syncSupabaseSession = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.body.accessToken;
+    const bodyToken = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : null;
+    const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
+    const token = bodyToken || headerToken;
 
     if (!token) {
       return res.status(401).json({ error: 'Valid Supabase session token is required to sync session' });

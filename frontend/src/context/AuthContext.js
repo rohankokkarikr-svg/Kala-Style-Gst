@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
     return null;
   });
   const [loading, setLoading] = useState(true);
-  const isSyncingRef = useRef(false);
+  const syncPromiseRef = useRef(null);
   const isSigningUpRef = useRef(false);
 
   const cancelSignup = useCallback(() => {
@@ -28,27 +28,32 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const syncSupabaseSessionSingleFlight = useCallback(async (session) => {
-    if (isSyncingRef.current || !session?.access_token) return null;
-    isSyncingRef.current = true;
-    try {
-      const { data } = await authAPI.supabaseSession({
-        accessToken: session.access_token,
-        email: session.user?.email,
-        supabase_uid: session.user?.id
-      });
-      if (data?.user && data?.token) {
-        const normalized = { ...data.user, role: normalizeRole(data.user.role) };
-        setUser(normalized);
-        localStorage.setItem('sh_token', data.token);
-        localStorage.setItem('sh_user', JSON.stringify(normalized));
-        return normalized;
+    if (!session?.access_token) return null;
+    if (syncPromiseRef.current) return syncPromiseRef.current;
+
+    syncPromiseRef.current = (async () => {
+      try {
+        const { data } = await authAPI.supabaseSession({
+          accessToken: session.access_token,
+          email: session.user?.email,
+          supabase_uid: session.user?.id
+        });
+        if (data?.user && data?.token) {
+          const normalized = { ...data.user, role: normalizeRole(data.user.role) };
+          setUser(normalized);
+          localStorage.setItem('sh_token', data.token);
+          localStorage.setItem('sh_user', JSON.stringify(normalized));
+          return normalized;
+        }
+      } catch (e) {
+        console.warn('Single-flight session sync error:', e?.message || e);
+      } finally {
+        syncPromiseRef.current = null;
       }
-    } catch (e) {
-      console.warn('Single-flight session sync error:', e?.message || e);
-    } finally {
-      isSyncingRef.current = false;
-    }
-    return null;
+      return null;
+    })();
+
+    return syncPromiseRef.current;
   }, []);
 
   // Backward compatible alias
@@ -64,7 +69,27 @@ export const AuthProvider = ({ children }) => {
 
     if (hasOAuthParams) {
       try {
-        // Fast-path: Extract access_token directly from hash without waiting
+        // 1. PKCE Flow: If code is present in query parameters, exchange it for session
+        if (typeof window !== 'undefined' && window.location.search && window.location.search.includes('code=')) {
+          const searchParams = new URLSearchParams(window.location.search);
+          const code = searchParams.get('code');
+          if (code) {
+            try {
+              const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
+              if (codeData?.session?.access_token) {
+                const synced = await syncSupabaseSessionSingleFlight(codeData.session);
+                if (synced) {
+                  sessionStorage.removeItem('oauth_in_flight');
+                  return synced;
+                }
+              }
+            } catch (pkceErr) {
+              console.warn('[refreshUser] exchangeCodeForSession notice:', pkceErr?.message || pkceErr);
+            }
+          }
+        }
+
+        // 2. Implicit Flow: Fast-path extract access_token directly from hash without waiting
         if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('access_token=')) {
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           const tokenFromHash = hashParams.get('access_token');
@@ -85,7 +110,9 @@ export const AuthProvider = ({ children }) => {
             return synced;
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[refreshUser] OAuth error:', e?.message || e);
+      }
     }
 
     const token = localStorage.getItem('sh_token');
