@@ -306,6 +306,7 @@ export const shippingAPI = {
   schedulePickup:       (id, data)     => api.post(`/shipping/${id}/pickup`, data),
   generateLabel:        (id)           => api.post(`/shipping/${id}/label`),
   generateInvoice:      (id)           => api.post(`/shipping/${id}/invoice`),
+  generateManifest:     (id)           => api.post(`/shipping/${id}/manifest`),
   trackShipment:        (id)           => api.get(`/shipping/${id}/tracking`),
   getStatistics:        ()             => api.get('/shipping/statistics'),
   getDelayed:           ()             => api.get('/shipping/delayed'),

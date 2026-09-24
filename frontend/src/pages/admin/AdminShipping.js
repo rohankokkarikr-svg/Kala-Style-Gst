@@ -164,6 +164,25 @@ export default function AdminShipping() {
     }
   };
 
+  // Generate Manifest
+  const handleGenerateManifest = async (shipmentId) => {
+    setActionLoadingId(shipmentId);
+    try {
+      const res = await shippingAPI.generateManifest(shipmentId);
+      if (res.data?.manifest_url) {
+        window.open(res.data.manifest_url, '_blank');
+        toast.success('Courier manifest generated!');
+      } else {
+        toast.error('No manifest URL returned by provider');
+      }
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Manifest generation failed');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // Retry Shipment
   const handleRetry = async (shipmentId) => {
     setActionLoadingId(shipmentId);
@@ -419,7 +438,7 @@ export default function AdminShipping() {
                     {/* Customer & Destination */}
                     <td className="py-3.5 px-4">
                       <div className="font-medium text-gray-200">
-                        {s.orders?.shipping_full_name || 'Customer'}
+                        {s.orders?.shipping_name || s.orders?.shipping_full_name || 'Customer'}
                       </div>
                       <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
                         <HiLocationMarker className="w-3.5 h-3.5 text-gold-400/80 flex-shrink-0" />
@@ -509,6 +528,26 @@ export default function AdminShipping() {
                           title="Print Shipping Label"
                         >
                           <HiDocumentDownload className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleGenerateInvoice(s.id)}
+                        disabled={actionLoadingId === s.id}
+                        className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-600 rounded-lg text-xs font-medium transition-colors"
+                        title="Print Tax Invoice"
+                      >
+                        Invoice
+                      </button>
+
+                      {s.awb_code && (
+                        <button
+                          onClick={() => handleGenerateManifest(s.id)}
+                          disabled={actionLoadingId === s.id}
+                          className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-purple-300 border border-dark-600 rounded-lg text-xs font-medium transition-colors"
+                          title="Print Courier Manifest"
+                        >
+                          Manifest
                         </button>
                       )}
 
@@ -650,7 +689,7 @@ export default function AdminShipping() {
                   >
                     {eligibleOrders.map((o) => (
                       <option key={o.id} value={o.id}>
-                        {o.order_number || o.id.slice(0, 8)} — {o.shipping_full_name || 'Customer'} (₹{o.total_amount}, {o.payment_method?.toUpperCase()})
+                        {o.order_number || o.id.slice(0, 8)} — {o.shipping_name || o.shipping_full_name || 'Customer'} (₹{o.total_amount}, {o.payment_method?.toUpperCase()})
                       </option>
                     ))}
                   </select>

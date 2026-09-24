@@ -186,6 +186,15 @@ class MockShippingProvider {
       is_mock: true,
     };
   }
+
+  async generateManifest(providerShipmentId) {
+    const id = Array.isArray(providerShipmentId) ? providerShipmentId[0] : providerShipmentId;
+    return {
+      success: true,
+      manifest_url: `https://shiprocket.co/manifest/DEMO-MANIFEST-${id}.pdf`,
+      is_mock: true,
+    };
+  }
 }
 
 module.exports = new MockShippingProvider();

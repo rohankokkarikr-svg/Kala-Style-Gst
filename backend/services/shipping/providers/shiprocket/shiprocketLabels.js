@@ -78,7 +78,43 @@ async function generateInvoice(providerOrderId) {
   };
 }
 
+/**
+ * Generate and print courier manifest PDF URL for assigned shipments.
+ *
+ * @param {string|Array<string>} providerShipmentId
+ * @returns {Promise<object>} Generated manifest URL
+ */
+async function generateManifest(providerShipmentId) {
+  if (!providerShipmentId) {
+    throw new Error('provider_shipment_id is required to generate a manifest.');
+  }
+
+  const shipmentIds = Array.isArray(providerShipmentId)
+    ? providerShipmentId.map(String)
+    : [String(providerShipmentId)];
+
+  const response = await request({
+    method: 'POST',
+    path: '/manifests/generate',
+    data: {
+      shipment_id: shipmentIds,
+    },
+  });
+
+  const manifestUrl = response?.manifest_url || response?.response?.manifest_url;
+  if (!manifestUrl) {
+    throw new Error(response?.message || 'Failed to generate manifest URL from Shiprocket.');
+  }
+
+  return {
+    success: true,
+    manifest_url: manifestUrl,
+    raw_response: response,
+  };
+}
+
 module.exports = {
   generateLabel,
   generateInvoice,
+  generateManifest,
 };

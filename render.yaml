@@ -24,10 +24,23 @@ services:
         value: rzp_live_TamouXgJy9WoAl
       - key: RAZORPAY_KEY_SECRET
         value: 6UYg42iNEWzF2u0ViKHoBnNc
+      # Shiprocket Production Logistics Configuration
+      - key: SHIPPING_PROVIDER
+        value: shiprocket
+      - key: SHIPROCKET_API_URL
+        value: https://apiv2.shiprocket.in/v1/external
+      - key: SHIPROCKET_DEFAULT_PICKUP_LOCATION
+        value: Home
       # Secure and sensitive variables. sync: false means you manage them in Render Dashboard
       - key: JWT_SECRET
         generateValue: true
       - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SHIPROCKET_EMAIL
+        sync: false
+      - key: SHIPROCKET_PASSWORD
+        sync: false
+      - key: SHIPROCKET_WEBHOOK_SECRET
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false

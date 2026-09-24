@@ -10,7 +10,7 @@ const { checkServiceability } = require('./shiprocketServiceability');
 const { createOrder } = require('./shiprocketOrders');
 const { assignAwb } = require('./shiprocketAwb');
 const { schedulePickup } = require('./shiprocketPickup');
-const { generateLabel, generateInvoice } = require('./shiprocketLabels');
+const { generateLabel, generateInvoice, generateManifest } = require('./shiprocketLabels');
 const { trackShipment } = require('./shiprocketTracking');
 
 class ShiprocketProvider {
@@ -44,6 +44,10 @@ class ShiprocketProvider {
 
   async trackShipment(params) {
     return trackShipment(params);
+  }
+
+  async generateManifest(providerShipmentId) {
+    return generateManifest(providerShipmentId);
   }
 }
 

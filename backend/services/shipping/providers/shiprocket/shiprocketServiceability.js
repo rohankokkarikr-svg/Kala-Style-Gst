@@ -5,7 +5,7 @@
  */
 
 const { request } = require('./shiprocketClient');
-const { getDefaultWeight } = require('../../shippingConfig');
+const { getDefaultWeight, getDefaultPickupPin } = require('../../shippingConfig');
 
 /**
  * Check delivery serviceability and fetch available courier rates between pincodes.
@@ -30,7 +30,7 @@ async function checkServiceability({
   }
 
   const queryParams = {
-    pickup_postcode: String(pickup_postcode || '560001').trim(),
+    pickup_postcode: String(pickup_postcode || getDefaultPickupPin()).trim(),
     delivery_postcode: String(delivery_postcode).trim(),
     weight: String(weight || getDefaultWeight()),
     cod: cod ? 1 : 0,

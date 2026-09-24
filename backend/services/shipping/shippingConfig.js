@@ -87,10 +87,11 @@ module.exports = {
 
   // Config getters
   getApiUrl: () => process.env.SHIPROCKET_API_URL || 'https://apiv2.shiprocket.in/v1/external',
-  getEmail: () => process.env.SHIPROCKET_EMAIL || '',
-  getPassword: () => process.env.SHIPROCKET_PASSWORD || '',
-  getDefaultPickupLocation: () => process.env.SHIPROCKET_DEFAULT_PICKUP_LOCATION || 'Primary',
-  getWebhookSecret: () => process.env.SHIPROCKET_WEBHOOK_SECRET || '',
+  getEmail: () => (process.env.SHIPROCKET_EMAIL || '').trim().replace(/^["']|["']$/g, ''),
+  getPassword: () => (process.env.SHIPROCKET_PASSWORD || '').trim().replace(/^['"]|['"]$/g, ''),
+  getDefaultPickupLocation: () => process.env.SHIPROCKET_DEFAULT_PICKUP_LOCATION || 'Home',
+  getDefaultPickupPin: () => process.env.SHIPROCKET_DEFAULT_PICKUP_PIN || '591307',
+  getWebhookSecret: () => (process.env.SHIPROCKET_WEBHOOK_SECRET || '').trim(),
 
   // Package fallbacks
   getDefaultWeight: () => parseFloat(process.env.SHIPMENT_DEFAULT_WEIGHT) || 0.5,
@@ -98,15 +99,20 @@ module.exports = {
   getDefaultBreadth: () => parseFloat(process.env.SHIPMENT_DEFAULT_BREADTH) || 20.0,
   getDefaultHeight: () => parseFloat(process.env.SHIPMENT_DEFAULT_HEIGHT) || 10.0,
 
-  // Active provider selector
+  // Active provider selector (Strict fail-fast in production)
   getActiveProviderType: () => {
     const forced = (process.env.SHIPPING_PROVIDER || '').toLowerCase().trim();
     if (forced === 'mock') return 'mock';
     if (forced === 'shiprocket') return 'shiprocket';
 
-    // Auto-detect based on valid credentials
-    const email = process.env.SHIPROCKET_EMAIL;
-    const pass = process.env.SHIPROCKET_PASSWORD;
+    // In production, Shiprocket is mandatory: never silently fall back to mock
+    if (process.env.NODE_ENV === 'production') {
+      return 'shiprocket';
+    }
+
+    // Auto-detect based on valid credentials in development
+    const email = (process.env.SHIPROCKET_EMAIL || '').trim();
+    const pass = (process.env.SHIPROCKET_PASSWORD || '').trim();
     if (email && !email.startsWith('your_') && pass && !pass.startsWith('your_')) {
       return 'shiprocket';
     }
