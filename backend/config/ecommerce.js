@@ -96,15 +96,19 @@ function deriveMasterStatus(artisanStatuses) {
 
 /**
  * Allowed artisan order status transitions.
- * Artisans can only move forward — never skip steps or go backward.
+ * Artisans can move forward through the pipeline.
+ * We also allow some direct jumps (e.g., pending → preparing) since
+ * artisans often compress steps (no dedicated "accepted" step in UI).
  */
 const ARTISAN_STATUS_TRANSITIONS = {
-  pending:           ['accepted', 'rejected'],
-  accepted:          ['preparing'],
-  preparing:         ['ready_for_pickup'],
-  ready_for_pickup:  ['dispatched'],
-  dispatched:        ['out_for_delivery'],
-  out_for_delivery:  ['delivered'],
+  pending:           ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
+  accepted:          ['preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+  preparing:         ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+  processing:        ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+  ready_for_pickup:  ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+  dispatched:        ['out_for_delivery', 'delivered', 'cancelled'],
+  shipped:           ['out_for_delivery', 'delivered', 'cancelled'],
+  out_for_delivery:  ['delivered', 'cancelled'],
   delivered:         [],   // terminal
   rejected:          [],   // terminal
   cancelled:         [],   // terminal

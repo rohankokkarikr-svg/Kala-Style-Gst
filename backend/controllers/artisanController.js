@@ -408,7 +408,8 @@ exports.getMyArtisanOrders = async (req, res) => {
 
     if (!profile) return res.status(404).json({ error: 'Artisan profile not found' });
 
-    const { data: artisanOrders, error } = await supabase
+    // Fetch artisan_orders assigned to this artisan
+    const { data: myOrders, error: myErr } = await supabase
       .from('artisan_orders')
       .select(`
         *,
@@ -427,12 +428,39 @@ exports.getMyArtisanOrders = async (req, res) => {
       .eq('artisan_id', profile.id)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (myErr) throw myErr;
+
+    // Also fetch fallback artisan_orders (artisan_id = null) where this artisan has items
+    const { data: fallbackOrders } = await supabase
+      .from('artisan_orders')
+      .select(`
+        *,
+        order:orders (
+          id, order_number, total_amount, total_price, payment_method, payment_status,
+          shipping_address, shipping_name, shipping_city, shipping_state, shipping_pincode,
+          phone, created_at, order_status, status, coupon_code,
+          user:users (id, name, email, phone)
+        ),
+        items:order_items (
+          id, quantity, price_at_time, unit_price_snapshot, total_price, size,
+          product_name_snapshot, product_image_snapshot, artisan_id,
+          product:products (id, name, image_url, price, category)
+        )
+      `)
+      .is('artisan_id', null)
+      .order('created_at', { ascending: false });
+
+    // Only include fallback orders that have at least one item for this artisan
+    const filteredFallbacks = (fallbackOrders || []).filter(ao =>
+      (ao.items || []).some(item => item.artisan_id === profile.id)
+    );
+
+    const allOrders = [...(myOrders || []), ...filteredFallbacks];
 
     // Filter order_items to only this artisan's items
-    const result = (artisanOrders || []).map(ao => ({
+    const result = allOrders.map(ao => ({
       ...ao,
-      items: (ao.items || []).filter(item => item.artisan_id === profile.id),
+      items: (ao.items || []).filter(item => item.artisan_id === profile.id || !item.artisan_id),
     }));
 
     res.json(result);
@@ -450,9 +478,25 @@ exports.getMyArtisanOrders = async (req, res) => {
 exports.updateArtisanOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, rejection_reason } = req.body;
+    let { status, rejection_reason } = req.body;
 
     if (!status) return res.status(400).json({ error: 'Status is required' });
+
+    // Map simplified frontend status names to backend status machine values
+    const STATUS_ALIAS_MAP = {
+      processing:    'preparing',     // frontend "In Preparation" → backend "preparing"
+      shipped:       'dispatched',    // frontend "Out for Delivery" → backend "dispatched"
+      confirmed:     'accepted',      // confirmed → accepted
+      in_preparation:'preparing',
+      packed:        'ready_for_pickup',
+      on_the_way:    'out_for_delivery',
+      completed:     'delivered',
+    };
+    // Only remap if not already a valid backend status
+    const VALID_STATUSES = ['pending','accepted','preparing','ready_for_pickup','dispatched','out_for_delivery','delivered','rejected','cancelled'];
+    if (!VALID_STATUSES.includes(status) && STATUS_ALIAS_MAP[status]) {
+      status = STATUS_ALIAS_MAP[status];
+    }
 
     // Get artisan profile
     const { data: profile } = await supabase
