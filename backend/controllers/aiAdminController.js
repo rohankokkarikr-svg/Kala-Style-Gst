@@ -232,25 +232,8 @@ exports.processEvents = async (req, res) => {
   }
 };
 
-/**
- * Overall AI Operations Manager System Health & Connectivity.
- */
-exports.getStatus = async (req, res) => {
-  try {
-    const connection = await testConnection();
-    res.json({
-      configured: isConfigured(),
-      model: getModel(),
-      autonomousMode: process.env.AI_AUTONOMOUS_MODE !== 'false',
-      connection,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
 // ─── New Controllers ──────────────────────────────────────────────────────────
+
 
 /**
  * Real-time system health check across all platform services.
@@ -344,7 +327,7 @@ exports.getAgentMemory = async (req, res) => {
 };
 
 /**
- * Return real AI operational status, configured model, and control settings.
+ * Return real AI operational status, configured model, queue metrics, and control settings.
  * NEVER fabricates status or model name.
  */
 exports.getStatus = async (req, res) => {
@@ -356,22 +339,62 @@ exports.getStatus = async (req, res) => {
     const configured = isConfigured();
     const model = configured ? getModel() : 'Unavailable (API key missing)';
 
+    // Queue count & pending approvals count for live operational state
+    const { count: pendingQueueCount } = await safeQuery(() =>
+      supabase.from('ai_action_queue').select('id', { count: 'exact', head: true }).in('status', ['pending', 'retrying'])
+    );
+    const { count: pendingApprovalsCount } = await safeQuery(() =>
+      supabase.from('ai_agent_approvals').select('id', { count: 'exact', head: true }).eq('status', 'PENDING')
+    );
+
+    // Compute accurate operational status without false claims:
+    let operationalStatus = 'AUTONOMOUS';
+    if (controlSettings.ai_emergency_stop) {
+      operationalStatus = 'EMERGENCY_STOP';
+    } else if (!controlSettings.ai_global_enabled || controlSettings.ai_mode === 'OFF') {
+      operationalStatus = 'OFF';
+    } else if (!configured) {
+      operationalStatus = 'NOT_CONFIGURED';
+    } else if (controlSettings.ai_mode === 'READ_ONLY') {
+      operationalStatus = 'READ_ONLY';
+    } else if (controlSettings.ai_mode === 'ASSISTED') {
+      operationalStatus = 'ASSISTED';
+    } else if (controlSettings.ai_mode === 'FULL_AUTONOMOUS') {
+      operationalStatus = 'FULL_AUTONOMOUS';
+    } else {
+      operationalStatus = 'AUTONOMOUS';
+    }
+
+    const autonomousActive = Boolean(
+      controlSettings.ai_autonomous_enabled &&
+      !controlSettings.ai_emergency_stop &&
+      controlSettings.ai_global_enabled &&
+      controlSettings.ai_mode !== 'OFF' &&
+      controlSettings.ai_mode !== 'READ_ONLY'
+    );
+
     res.json({
+      provider: 'Google Gemini',
       configured,
       model,
-      status: controlSettings.ai_emergency_stop
-        ? 'EMERGENCY_STOP'
-        : configured
-        ? 'HEALTHY'
-        : 'FALLBACK_MODE',
-      autonomous_active: Boolean(controlSettings.ai_autonomous_enabled && !controlSettings.ai_emergency_stop && controlSettings.ai_global_enabled),
+      status: operationalStatus,
+      ai_mode: controlSettings.ai_mode,
+      ai_global_enabled: controlSettings.ai_global_enabled,
+      ai_autonomous_enabled: controlSettings.ai_autonomous_enabled,
+      ai_emergency_stop: controlSettings.ai_emergency_stop,
+      autonomous_active: autonomousActive,
+      queue_count: pendingQueueCount || 0,
+      pending_approvals_count: pendingApprovalsCount || 0,
       control_settings: controlSettings,
+      action_budget: controlSettings.action_budget,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error('❌ [AI Admin Controller] getStatus error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 /**
  * Update autonomous control settings (AI Mode, Emergency Stop, Action Budgets).

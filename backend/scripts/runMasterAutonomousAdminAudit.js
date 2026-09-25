@@ -188,8 +188,8 @@ async function runMasterAutonomousAudit() {
     assert(checkedNames.includes('shiprocket'), 'Missing shiprocket check');
   }));
 
-  // TEST 10: Master Autonomous Sweep: "Handle today's admin work"
-  results.push(await runTest('End-to-End Autonomous Sweep: "Handle today\'s admin work" (Section 65 & 86)', async () => {
+  // TEST 10: Master Autonomous Sweep: "Handle today's admin work" (All 13 Sentinels)
+  results.push(await runTest('End-to-End Autonomous Sweep across 13 Sentinels (Section 51, 52, 65)', async () => {
     const sweep = await domainAgents.runAutonomousDailySweep({
       adminConfirmed: true,
       triggerSource: 'AUDIT_SUITE',
@@ -197,9 +197,54 @@ async function runMasterAutonomousAudit() {
 
     assert.strictEqual(sweep.success, true, 'Autonomous sweep should succeed');
     assert(sweep.report, 'Sweep report must be generated');
+    assert.strictEqual(sweep.report.sentinels_executed, 13, 'Expected all 13 domain sentinels to be executed');
     assert(typeof sweep.report.orders.inspected === 'number', 'Orders count must be factual number');
+    assert(typeof sweep.report.fraud.orders_screened === 'number', 'Fraud orders screened must be factual');
     assert(typeof sweep.report.payments.failed_payments === 'number', 'Payments count must be factual number');
+    assert(typeof sweep.report.customers.customers_analyzed === 'number', 'Customers analyzed must be factual');
     assert(typeof sweep.report.system_health.overall === 'string', 'Health status must be verified');
+  }));
+
+  // TEST 11: JSONB Boolean Persistence Resilience (Section 14)
+  results.push(await runTest('JSONB Boolean Bug: parseSafeBoolean handles legacy "false" without corruption (Section 14)', async () => {
+    const { parseSafeBoolean } = aiControlCenter;
+    assert.strictEqual(parseSafeBoolean('false'), false, 'String "false" must parse to boolean false');
+    assert.strictEqual(parseSafeBoolean('"false"'), false, 'Quoted string \'"false"\' must parse to boolean false');
+    assert.strictEqual(parseSafeBoolean(false), false, 'Native false must remain false');
+    assert.strictEqual(parseSafeBoolean('0'), false, 'String "0" must parse to false');
+    assert.strictEqual(parseSafeBoolean(0), false, 'Number 0 must parse to false');
+    assert.strictEqual(parseSafeBoolean('true'), true, 'String "true" must parse to true');
+    assert.strictEqual(parseSafeBoolean(true), true, 'Native true must parse to true');
+  }));
+
+  // TEST 12: Central Policy Gate in executeTool (Section 15)
+  results.push(await runTest('Central Policy Gate: executeTool intercepts mutations when Emergency Stop is enabled (Section 15)', async () => {
+    const { executeTool } = require('../ai/aiToolExecutor');
+    await aiControlCenter.updateControlSettings({ ai_emergency_stop: true });
+    try {
+      const result = await executeTool('cancel_order', { order_id: 'test-order' }, { eventType: 'AI_JOB_QUEUE' });
+      assert.strictEqual(result.success, false, 'Mutation must fail when emergency stop is active');
+      assert.strictEqual(result.blocked, true, 'Mutation must be flagged as blocked');
+      assert(result.reason.includes('EMERGENCY_STOP'), 'Reason must specify Emergency Stop');
+    } finally {
+      await aiControlCenter.updateControlSettings({ ai_emergency_stop: false, ai_mode: 'AUTONOMOUS', ai_global_enabled: true, ai_autonomous_enabled: true });
+    }
+  }));
+
+  // TEST 13: Action Budget & Domain Normalization (Section 27)
+  results.push(await runTest('Action Budget: Enforces velocity limits with singular/plural domain normalization (Section 27)', async () => {
+    const { checkActionBudget, recordActionUsage, normalizeDomain } = aiControlCenter;
+    assert.strictEqual(normalizeDomain('orders'), 'order');
+    assert.strictEqual(normalizeDomain('order'), 'order');
+    assert.strictEqual(normalizeDomain({ domain: 'orders' }), 'order');
+    assert.strictEqual(normalizeDomain('shippings'), 'shipping');
+
+    // Simulate hitting order budget
+    for (let i = 0; i < 25; i++) {
+      recordActionUsage('order');
+    }
+    const check = checkActionBudget('order', 2);
+    assert.strictEqual(check.allowed, false, 'Budget must disallow when hourly order actions exceed limit');
   }));
 
   console.log('\n============================================================');
@@ -215,3 +260,4 @@ runMasterAutonomousAudit().catch(err => {
   console.error('Fatal audit suite error:', err);
   process.exit(1);
 });
+

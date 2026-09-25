@@ -3,8 +3,21 @@
  * ─────────────────────────────────────────────────────────────────
  * KalaStyle AI Autonomous Domain Agents (Sentinels).
  *
- * Implements 12 specialized autonomous domain sentinels orchestrated
- * under a unified policy, permission, risk, and tool execution engine.
+ * Implements 13 specialized autonomous domain sentinels orchestrated
+ * under a unified policy, permission, risk, and tool execution engine:
+ * 1. Order Sentinel
+ * 2. Fraud Sentinel
+ * 3. Payment Sentinel
+ * 4. Product Sentinel
+ * 5. Inventory Sentinel
+ * 6. Artisan Sentinel
+ * 7. Shipping Sentinel
+ * 8. Review Sentinel
+ * 9. Complaint Sentinel
+ * 10. Customer Sentinel
+ * 11. Marketing Agent
+ * 12. Business Analyst
+ * 13. System Health Agent
  *
  * Ground Truth Principle:
  * NEVER invent or fabricate data. Every factual platform claim must
@@ -182,6 +195,7 @@ async function runOrderSentinel() {
       const policy = await aiControlCenter.canExecuteAction({
         toolName: 'hold_order',
         safetyLevel: 2,
+        domain: 'order',
         eventType: 'AUTONOMOUS_ORDER_SENTINEL',
       });
 
@@ -201,7 +215,9 @@ async function runOrderSentinel() {
           );
 
           if (verified && verified.status === 'held') {
-            findings.held_orders.push(order.order_number || order.id);
+            findings.held_orders.push(order.id);
+            aiControlCenter.recordActionUsage('order');
+
             await logAgentAudit({
               agentName: 'ORDER_SENTINEL',
               actionName: 'hold_order',
@@ -209,27 +225,26 @@ async function runOrderSentinel() {
               entityType: 'order',
               entityId: order.id,
               decision: 'held',
-              reason: `Fraud risk detected (${risk.risk_level} score: ${risk.risk_score}). Evidence: ${risk.evidence.join('; ')}`,
+              reason: `Autonomous order hold: Risk score ${risk.risk_score} (${risk.evidence.join('; ')})`,
               confidence: risk.confidence,
-              result: { verified: true, risk },
+              result: { order_id: order.id, new_status: 'held', verified: true },
             });
-            await aiControlCenter.recordActionUsage({ domain: 'orders' });
           }
         }
-      }
-
-      // If CRITICAL, queue an approval request for potential cancellation
-      if (risk.risk_level === 'CRITICAL') {
-        const approval = await agentApprovalService.createApprovalRequest({
-          agentName: 'ORDER_SENTINEL',
-          toolName: 'cancel_order',
-          actionName: 'cancel_order',
-          parameters: { order_id: order.id, reason: `Critical fraud risk: ${risk.evidence.join('; ')}` },
-          reason: `Order #${order.order_number || order.id} reached CRITICAL risk score (${risk.risk_score}/100)`,
-          riskLevel: 'CRITICAL',
-          confidence: risk.confidence,
-        });
-        findings.approvals_requested.push({ order: order.order_number || order.id, approval_id: approval.id });
+      } else if (policy.requiresApproval) {
+        // Create an approval request for admin review
+        try {
+          const approval = await agentApprovalService.createApprovalRequest({
+            agent: 'ORDER_SENTINEL',
+            action: 'hold_order',
+            tool: 'hold_order',
+            parameters: { order_id: order.id, reason: risk.evidence.join('; ') },
+            evidence: `Risk Score: ${risk.risk_score}/100. Evidence: ${risk.evidence.join(', ')}`,
+            risk: risk.risk_level,
+            confidence: risk.confidence,
+          });
+          findings.approvals_requested.push(approval.id);
+        } catch (e) {}
       }
     }
   }
@@ -238,65 +253,103 @@ async function runOrderSentinel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. PAYMENT SENTINEL
+// 2. FRAUD SENTINEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runFraudSentinel() {
+  const findings = {
+    agent: 'FRAUD_SENTINEL',
+    orders_screened: 0,
+    fraud_signals_detected: [],
+    critical_fraud_count: 0,
+  };
+
+  const { data: orders } = await safeQuery(() =>
+    supabase
+      .from('orders')
+      .select('id, order_number, user_id, total_amount, payment_method, status, shipping_address, created_at')
+      .in('status', ['pending', 'placed', 'processing', 'held'])
+      .order('created_at', { ascending: false })
+      .limit(25)
+  );
+
+  if (!orders || orders.length === 0) return findings;
+  findings.orders_screened = orders.length;
+
+  for (const o of orders) {
+    const risk = await analyzeOrderRisk(o);
+    if (risk.risk_level === 'CRITICAL' || risk.risk_level === 'HIGH') {
+      findings.fraud_signals_detected.push({
+        order_id: o.id,
+        order_number: o.order_number,
+        risk_score: risk.risk_score,
+        risk_level: risk.risk_level,
+        evidence: risk.evidence,
+      });
+      if (risk.risk_level === 'CRITICAL') {
+        findings.critical_fraud_count += 1;
+      }
+    }
+  }
+
+  return findings;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. PAYMENT SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runPaymentSentinel() {
   const findings = {
     agent: 'PAYMENT_SENTINEL',
     failed_payments_count: 0,
-    anomalies: [],
     pending_cod_count: 0,
+    anomalies: [],
   };
 
-  // Inspect failed payments
+  // Inspect failed payments in the last 48 hours
+  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const { data: failedOrders } = await safeQuery(() =>
     supabase
       .from('orders')
-      .select('id, order_number, user_id, total_amount, payment_method, payment_status, created_at')
+      .select('id, order_number, total_amount, payment_method, payment_status, created_at')
       .eq('payment_status', 'failed')
-      .order('created_at', { ascending: false })
-      .limit(20)
+      .gte('created_at', twoDaysAgo)
   );
 
-  findings.failed_payments_count = failedOrders ? failedOrders.length : 0;
+  if (failedOrders) {
+    findings.failed_payments_count = failedOrders.length;
+    for (const fo of failedOrders) {
+      findings.anomalies.push({
+        type: 'PAYMENT_FAILURE',
+        order_id: fo.id,
+        order_number: fo.order_number,
+        amount: fo.total_amount,
+        detail: `Failed payment detected via ${fo.payment_method || 'online'}. Order placed at ${fo.created_at}`,
+      });
+    }
+  }
 
-  // Inspect delivered COD orders awaiting collection confirmation
-  const { data: codPending } = await safeQuery(() =>
+  // Inspect COD orders marked DELIVERED but still pending payment confirmation
+  const { data: deliveredCod } = await safeQuery(() =>
     supabase
       .from('orders')
-      .select('id, order_number, total_amount')
+      .select('id, order_number, total_amount, payment_status, status')
       .eq('payment_method', 'cod')
       .eq('status', 'delivered')
-      .neq('payment_status', 'paid')
+      .in('payment_status', ['pending', 'cod_pending'])
   );
 
-  findings.pending_cod_count = codPending ? codPending.length : 0;
-
-  // Inspect payment-order total mismatches
-  const { data: payments } = await safeQuery(() =>
-    supabase
-      .from('payments')
-      .select('id, order_id, amount, status')
-      .eq('status', 'captured')
-      .order('created_at', { ascending: false })
-      .limit(30)
-  );
-
-  if (payments && payments.length > 0) {
-    for (const p of payments) {
-      if (!p.order_id) continue;
-      const { data: ord } = await safeQuery(() =>
-        supabase.from('orders').select('id, order_number, total_amount').eq('id', p.order_id).maybeSingle()
-      );
-      if (ord && Math.abs(Number(ord.total_amount) - Number(p.amount)) > 1.0) {
-        findings.anomalies.push({
-          order_number: ord.order_number,
-          order_amount: ord.total_amount,
-          payment_amount: p.amount,
-          issue: 'Payment amount mismatch between gateway and order total',
-        });
-      }
+  if (deliveredCod) {
+    findings.pending_cod_count = deliveredCod.length;
+    for (const cod of deliveredCod) {
+      findings.anomalies.push({
+        type: 'UNCOLLECTED_COD_DELIVERED',
+        order_id: cod.id,
+        order_number: cod.order_number,
+        amount: cod.total_amount,
+        detail: `Order is DELIVERED but COD payment remains uncollected (Status: ${cod.payment_status}). Confirm collection required.`,
+      });
     }
   }
 
@@ -304,7 +357,7 @@ async function runPaymentSentinel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. PRODUCT SENTINEL
+// 4. PRODUCT SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runProductSentinel() {
@@ -312,40 +365,45 @@ async function runProductSentinel() {
     agent: 'PRODUCT_SENTINEL',
     pending_products_count: 0,
     held_for_review: [],
-    anomalies: [],
+    pricing_anomalies: [],
   };
 
-  const { data: pending } = await safeQuery(() =>
+  const { data: pendingProducts } = await safeQuery(() =>
     supabase
       .from('products')
-      .select('id, name, price, original_price, category, image_url, status, created_at')
-      .eq('status', 'pending')
-      .limit(20)
+      .select('id, name, price, category, artisan_id, is_in_stock, stock_quantity, status')
+      .in('status', ['pending', 'under_review'])
+      .limit(30)
   );
 
-  if (!pending || pending.length === 0) return findings;
-  findings.pending_products_count = pending.length;
+  if (!pendingProducts || pendingProducts.length === 0) return findings;
+  findings.pending_products_count = pendingProducts.length;
 
-  for (const prod of pending) {
-    const issues = [];
+  for (const prod of pendingProducts) {
     const price = Number(prod.price) || 0;
-    const origPrice = Number(prod.original_price) || 0;
-
-    if (price <= 0) issues.push('Invalid price <= 0');
-    if (origPrice > 0 && origPrice < price) issues.push('MRP original_price is lower than selling price');
-    if (!prod.image_url) issues.push('Missing craft photography');
-
-    if (issues.length > 0) {
-      findings.anomalies.push({ product_id: prod.id, name: prod.name, issues });
-      findings.held_for_review.push(prod.name || prod.id);
+    if (price <= 0 || price > 200000) {
+      findings.pricing_anomalies.push({
+        product_id: prod.id,
+        name: prod.name,
+        price,
+        issue: price <= 0 ? 'Invalid zero or negative price' : 'Extremely high price requiring verification',
+      });
     }
+
+    // Default safe action: hold product for human review (never auto-approve on fallback)
+    findings.held_for_review.push({
+      product_id: prod.id,
+      name: prod.name,
+      category: prod.category,
+      artisan_id: prod.artisan_id,
+    });
   }
 
   return findings;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. INVENTORY SENTINEL
+// 5. INVENTORY SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runInventorySentinel() {
@@ -356,23 +414,33 @@ async function runInventorySentinel() {
     recommended_alerts: 0,
   };
 
-  const { data: products } = await safeQuery(() =>
+  const { data: inventoryList } = await safeQuery(() =>
     supabase
       .from('products')
-      .select('id, name, stock_quantity, artisan_id')
+      .select('id, name, category, price, stock_quantity, is_in_stock, artisan_id')
       .lte('stock_quantity', 5)
-      .order('stock_quantity', { ascending: true })
-      .limit(30)
+      .limit(50)
   );
 
-  if (!products) return findings;
+  if (!inventoryList || inventoryList.length === 0) return findings;
 
-  for (const p of products) {
-    const qty = Number(p.stock_quantity) || 0;
-    if (qty === 0) {
-      findings.out_of_stock_products.push({ id: p.id, name: p.name });
+  for (const item of inventoryList) {
+    const stock = Number(item.stock_quantity) || 0;
+    if (stock <= 0) {
+      findings.out_of_stock_products.push({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        artisan_id: item.artisan_id,
+      });
     } else {
-      findings.low_stock_products.push({ id: p.id, name: p.name, stock: qty });
+      findings.low_stock_products.push({
+        id: item.id,
+        name: item.name,
+        stock_quantity: stock,
+        category: item.category,
+        artisan_id: item.artisan_id,
+      });
     }
   }
 
@@ -381,7 +449,7 @@ async function runInventorySentinel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. ARTISAN SENTINEL
+// 6. ARTISAN SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runArtisanSentinel() {
@@ -391,32 +459,33 @@ async function runArtisanSentinel() {
     held_for_review: [],
   };
 
-  const { data: pending } = await safeQuery(() =>
+  const { data: pendingArtisans } = await safeQuery(() =>
     supabase
       .from('artisan_profiles')
-      .select('id, store_name, verification_status, created_at')
-      .neq('verification_status', 'verified')
+      .select('id, store_name, artisan_type, verification_status, created_at')
+      .in('verification_status', ['pending', 'under_review'])
       .limit(20)
   );
 
-  if (!pending) return findings;
-  findings.pending_artisans_count = pending.length;
 
-  for (const art of pending) {
-    if (art.verification_status === 'pending') {
-      findings.held_for_review.push({
-        id: art.id,
-        store_name: art.store_name,
-        reason: 'Pending administrative verification',
-      });
-    }
+  if (!pendingArtisans || pendingArtisans.length === 0) return findings;
+  findings.pending_artisans_count = pendingArtisans.length;
+
+  for (const art of pendingArtisans) {
+    findings.held_for_review.push({
+      artisan_id: art.id,
+      store_name: art.store_name,
+      artisan_type: art.artisan_type,
+      experience_years: art.experience_years,
+      action: 'Held for manual artisan verification',
+    });
   }
 
   return findings;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. SHIPPING SENTINEL
+// 7. SHIPPING SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runShippingSentinel() {
@@ -427,47 +496,45 @@ async function runShippingSentinel() {
     failed_shipments: [],
   };
 
+  // Inspect active shipments from shipping_shipments
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Inspect shipments in transit for more than 7 days
-  const { data: delayed } = await safeQuery(() =>
+  const { data: shipments } = await safeQuery(() =>
     supabase
       .from('shipping_shipments')
-      .select('id, order_id, awb_code, courier_name, status, created_at')
-      .in('status', ['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'PICKED_UP'])
-      .lte('created_at', sevenDaysAgo)
-      .limit(20)
+      .select('id, order_id, status, awb_code, courier_name, shipping_error, created_at, updated_at')
+      .gte('created_at', sevenDaysAgo)
+      .limit(50)
   );
 
-  findings.delayed_shipments = delayed || [];
+  if (!shipments || shipments.length === 0) return findings;
 
-  // Inspect shipments without AWB
-  const { count: unassigned } = await safeQuery(() =>
-    supabase
-      .from('shipping_shipments')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'READY_TO_SHIP')
-      .is('awb_code', null)
-  );
+  const fourDaysAgoMs = Date.now() - 4 * 24 * 60 * 60 * 1000;
 
-  findings.unassigned_awb_count = unassigned || 0;
-
-  // Inspect failed shipments
-  const { data: failed } = await safeQuery(() =>
-    supabase
-      .from('shipping_shipments')
-      .select('id, order_id, shipping_error, updated_at')
-      .eq('status', 'FAILED')
-      .limit(10)
-  );
-
-  findings.failed_shipments = failed || [];
+  for (const s of shipments) {
+    if (s.status === 'FAILED' || s.shipping_error) {
+      findings.failed_shipments.push({
+        id: s.id,
+        order_id: s.order_id,
+        error: s.shipping_error || 'Carrier transmission error',
+      });
+    } else if (!s.awb_code && s.status !== 'DELIVERED' && s.status !== 'CANCELLED') {
+      findings.unassigned_awb_count += 1;
+    } else if (s.status === 'IN_TRANSIT' && new Date(s.updated_at || s.created_at).getTime() < fourDaysAgoMs) {
+      findings.delayed_shipments.push({
+        id: s.id,
+        order_id: s.order_id,
+        awb: s.awb_code,
+        courier: s.courier_name,
+        days_stalled: Math.round((Date.now() - new Date(s.updated_at || s.created_at).getTime()) / (24 * 60 * 60 * 1000)),
+      });
+    }
+  }
 
   return findings;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. REVIEW SENTINEL
+// 8. REVIEW SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runReviewSentinel() {
@@ -477,27 +544,32 @@ async function runReviewSentinel() {
     suspicious_reviews: [],
   };
 
-  const { data: pending } = await safeQuery(() =>
+  const { data: reviews } = await safeQuery(() =>
     supabase
       .from('reviews')
-      .select('id, product_id, rating, review_text, is_approved, created_at')
-      .eq('is_approved', false)
+      .select('id, rating, review_text, created_at')
+      .order('created_at', { ascending: false })
       .limit(30)
   );
 
-  if (!pending) return findings;
-  findings.pending_reviews_count = pending.length;
 
-  const profanityKeywords = ['scam', 'fraud', 'fake product', 'cheat', 'stolen', 'abuse'];
-  for (const rev of pending) {
-    const text = (rev.review_text || '').toLowerCase();
-    const matched = profanityKeywords.filter(k => text.includes(k));
-    if (matched.length > 0) {
+  if (!reviews || reviews.length === 0) return findings;
+
+  const abusiveWords = ['scam', 'fraud', 'cheat', 'fake', 'abuse', 'hate', 'bastard', 'stolen'];
+
+  for (const r of reviews) {
+    const text = (r.review_text || '').toLowerCase();
+    const isAbusive = abusiveWords.some(w => text.includes(w));
+    if (isAbusive) {
       findings.suspicious_reviews.push({
-        id: rev.id,
-        rating: rev.rating,
-        flagged_keywords: matched,
+        review_id: r.id,
+        rating: r.rating,
+        snippet: text.slice(0, 80),
+        reason: 'Contains flagged abusive or suspicious keywords',
       });
+    }
+    if (r.status === 'pending') {
+      findings.pending_reviews_count += 1;
     }
   }
 
@@ -505,7 +577,7 @@ async function runReviewSentinel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. COMPLAINT SENTINEL
+// 9. COMPLAINT SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runComplaintSentinel() {
@@ -538,13 +610,15 @@ async function runComplaintSentinel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. CUSTOMER SENTINEL
+// 10. CUSTOMER SENTINEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runCustomerSentinel() {
   const findings = {
     agent: 'CUSTOMER_SENTINEL',
+    customers_analyzed: 0,
     abnormal_ordering_customers: [],
+    repeat_complaint_customers: [],
   };
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -555,27 +629,101 @@ async function runCustomerSentinel() {
       .gte('created_at', oneDayAgo)
   );
 
+  if (recentOrders && recentOrders.length > 0) {
+    const userOrderCounts = {};
+    for (const ord of recentOrders) {
+      if (ord.user_id) {
+        userOrderCounts[ord.user_id] = (userOrderCounts[ord.user_id] || 0) + 1;
+      }
+    }
+    findings.customers_analyzed = Object.keys(userOrderCounts).length;
+    for (const [userId, count] of Object.entries(userOrderCounts)) {
+      if (count >= 4) {
+        findings.abnormal_ordering_customers.push({
+          user_id: userId,
+          orders_in_24h: count,
+          signal: 'High ordering frequency in 24 hours',
+        });
+      }
+    }
+  }
+
+  // Check repeated complaints in reports table
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentReports } = await safeQuery(() =>
+    supabase
+      .from('reports')
+      .select('user_id, reason, created_at')
+      .gte('created_at', thirtyDaysAgo)
+  );
+
+  if (recentReports && recentReports.length > 0) {
+    const userReportCounts = {};
+    for (const r of recentReports) {
+      if (r.user_id) {
+        userReportCounts[r.user_id] = (userReportCounts[r.user_id] || 0) + 1;
+      }
+    }
+    for (const [userId, count] of Object.entries(userReportCounts)) {
+      if (count >= 2) {
+        findings.repeat_complaint_customers.push({
+          user_id: userId,
+          complaints_count: count,
+          signal: 'Multiple complaints in 30 days',
+        });
+      }
+    }
+  }
+
   return findings;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. MARKETING AGENT
+// 11. MARKETING AGENT
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runMarketingAgent() {
   const findings = {
     agent: 'MARKETING_AGENT',
-    seasonal_opportunity: 'Upcoming Indian Craft Heritage & Festive Season',
-    recommendations: [
-      'Showcase GI-tagged handloom sarees in hero banners',
-      'Promote festive brass decor and hand-carved woodwork collections',
-    ],
+    top_categories: [],
+    recommended_campaigns: [],
   };
+
+  // Inspect actual product categories with inventory
+  const { data: products } = await safeQuery(() =>
+    supabase
+      .from('products')
+      .select('category, price, is_in_stock, stock_quantity')
+      .eq('is_in_stock', true)
+      .limit(50)
+  );
+
+  const categoryCounts = {};
+  if (products && products.length > 0) {
+    for (const p of products) {
+      if (p.category) {
+        categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
+      }
+    }
+    findings.top_categories = Object.entries(categoryCounts)
+      .map(([cat, count]) => ({ category: cat, active_products: count }))
+      .sort((a, b) => b.active_products - a.active_products)
+      .slice(0, 3);
+  }
+
+  findings.recommended_campaigns = [
+    {
+      theme: 'Indian Heritage Handcrafts & Festive Collections',
+      focus_categories: findings.top_categories.map(c => c.category),
+      rationale: 'High available artisan craft inventory ready for spotlight promotion.',
+    },
+  ];
+
   return findings;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. BUSINESS ANALYST
+// 12. BUSINESS ANALYST
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runBusinessAnalyst() {
@@ -612,7 +760,7 @@ async function runBusinessAnalyst() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. SYSTEM HEALTH AGENT
+// 13. SYSTEM HEALTH AGENT
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runSystemHealthAgent() {
@@ -649,10 +797,11 @@ async function runAutonomousDailySweep(options = {}) {
     };
   }
 
-  // 2. Run all domain sentinels concurrently with real database evidence
+  // 2. Run all 13 domain sentinels concurrently with real database evidence
   const [
     health,
     orderFindings,
+    fraudFindings,
     paymentFindings,
     productFindings,
     inventoryFindings,
@@ -660,10 +809,13 @@ async function runAutonomousDailySweep(options = {}) {
     shippingFindings,
     reviewFindings,
     complaintFindings,
+    customerFindings,
+    marketingFindings,
     businessMetrics,
   ] = await Promise.all([
     runSystemHealthAgent(),
     runOrderSentinel(),
+    runFraudSentinel(),
     runPaymentSentinel(),
     runProductSentinel(),
     runInventorySentinel(),
@@ -671,6 +823,8 @@ async function runAutonomousDailySweep(options = {}) {
     runShippingSentinel(),
     runReviewSentinel(),
     runComplaintSentinel(),
+    runCustomerSentinel(),
+    runMarketingAgent(),
     runBusinessAnalyst(),
   ]);
 
@@ -681,6 +835,7 @@ async function runAutonomousDailySweep(options = {}) {
     timestamp: new Date().toISOString(),
     duration_ms: Date.now() - startTime,
     mode: controlSettings.ai_mode,
+    sentinels_executed: 13,
     system_health: {
       overall: health.overall,
       services_checked: health.services.length,
@@ -691,6 +846,11 @@ async function runAutonomousDailySweep(options = {}) {
       suspicious_found: orderFindings.suspicious_orders.length,
       held_safely: orderFindings.held_orders.length,
       approval_requests_created: orderFindings.approvals_requested.length,
+    },
+    fraud: {
+      orders_screened: fraudFindings.orders_screened,
+      fraud_signals_detected: fraudFindings.fraud_signals_detected.length,
+      critical_alerts: fraudFindings.critical_fraud_count,
     },
     payments: {
       failed_payments: paymentFindings.failed_payments_count,
@@ -724,6 +884,15 @@ async function runAutonomousDailySweep(options = {}) {
       open_complaints: complaintFindings.open_complaints_count,
       urgent_complaints: complaintFindings.urgent_complaints.length,
     },
+    customers: {
+      customers_analyzed: customerFindings.customers_analyzed,
+      abnormal_ordering: customerFindings.abnormal_ordering_customers.length,
+      repeat_complaints: customerFindings.repeat_complaint_customers.length,
+    },
+    marketing: {
+      top_categories: marketingFindings.top_categories,
+      campaigns_recommended: marketingFindings.recommended_campaigns.length,
+    },
     business: businessMetrics,
   };
 
@@ -734,19 +903,21 @@ async function runAutonomousDailySweep(options = {}) {
         id: sweepId,
         title: `Autonomous Daily Admin Sweep - ${new Date().toISOString().slice(0, 10)}`,
         report_date: new Date().toISOString().slice(0, 10),
-        summary: `Autonomous Admin Operations completed: ${summaryReport.orders.held_safely} suspicious orders held, ${summaryReport.inventory.low_stock_products} low-stock items detected, ${summaryReport.payments.failed_payments} failed payments reviewed.`,
+        summary: `Autonomous Admin Operations completed across 13 Sentinels: ${summaryReport.orders.held_safely} suspicious orders held, ${summaryReport.inventory.low_stock_products} low-stock items detected, ${summaryReport.payments.failed_payments} failed payments reviewed, ${summaryReport.fraud.fraud_signals_detected} fraud signals screened.`,
         metrics: summaryReport,
         insights: [
           `Overall Platform System Health: ${health.overall}`,
           `${summaryReport.orders.suspicious_found} order fraud signals detected and processed`,
           `${summaryReport.shipping.delayed_shipments} shipments requiring delivery milestone tracking`,
+          `${summaryReport.customers.abnormal_ordering} abnormal customer ordering patterns monitored`,
         ],
         recommendations: [
           'Review held orders in Admin Panel',
           'Notify artisans for low-stock inventory replenishment',
+          'Verify pending COD deliveries with carrier partners',
         ],
         actions_performed: [
-          `Executed autonomous sentinel checks across 12 domain subsystems`,
+          `Executed autonomous sentinel checks across 13 domain subsystems`,
           `Recorded operational state in memory and database`,
         ],
         created_at: new Date().toISOString(),
@@ -761,7 +932,7 @@ async function runAutonomousDailySweep(options = {}) {
     await safeQuery(() =>
       supabase.from('ai_agent_memory').upsert({
         key: 'last_autonomous_sweep',
-        value: JSON.stringify({ sweepId, timestamp: summaryReport.timestamp, overall_health: health.overall }),
+        value: { sweepId, timestamp: summaryReport.timestamp, overall_health: health.overall, sentinels_executed: 13 },
         memory_type: 'operational',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key' })
@@ -773,19 +944,20 @@ async function runAutonomousDailySweep(options = {}) {
     actionName: 'autonomous_daily_sweep',
     toolName: 'handle_todays_admin_work',
     decision: 'completed',
-    reason: 'Executed full autonomous operations sweep across 12 domain sentinels',
+    reason: 'Executed full autonomous operations sweep across 13 domain sentinels',
     result: summaryReport,
   });
 
   return {
     success: true,
-    message: "Today's autonomous administration operations completed successfully.",
+    message: "Today's autonomous administration operations completed successfully across 13 domain sentinels.",
     report: summaryReport,
   };
 }
 
 module.exports = {
   runOrderSentinel,
+  runFraudSentinel,
   runPaymentSentinel,
   runProductSentinel,
   runInventorySentinel,

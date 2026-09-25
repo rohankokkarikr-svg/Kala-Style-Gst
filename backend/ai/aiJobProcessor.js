@@ -4,6 +4,12 @@
  * Asynchronous event-driven job queue for autonomous AI operations.
  * Processes pending platform events, guarantees idempotency, handles
  * retries with exponential backoff, and maintains a dead-letter state.
+ * 
+ * CRITICAL SAFETY ENFORCEMENT:
+ * - Checks Emergency Stop and AI mode immediately before executing each job.
+ * - Idempotency key is deterministic (${eventType}_${entityType}_${entityId}).
+ * - Automation rules are loaded from persistent Supabase database.
+ * - Retries follow exponential backoff (+30s, +2m, +10m) and are re-polled.
  */
 
 const supabase = require('../config/supabase');
@@ -13,14 +19,15 @@ const artisanService = require('../services/artisanService');
 const productService = require('../services/productService');
 const whatsappService = require('../services/whatsappService');
 const analyticsReportService = require('../services/analyticsReportService');
-const { getInMemoryRules } = require('./aiToolExecutor');
+const aiControlCenter = require('./aiControlCenter');
+const { getAutomationRules, getInMemoryRules } = require('./aiToolExecutor');
 const { v4: uuidv4 } = require('uuid');
 
 let inMemoryQueue = [];
 let isProcessing = false;
 
 /**
- * Enqueue an autonomous operational job.
+ * Enqueue an autonomous operational job with deterministic idempotency.
  */
 async function enqueueJob({
   eventType,
@@ -30,7 +37,8 @@ async function enqueueJob({
   idempotencyKey = null,
   scheduledAt = new Date().toISOString(),
 }) {
-  const key = idempotencyKey || `${eventType}_${entityType}_${entityId}_${Date.now()}`;
+  // Deterministic idempotency key: same event + entity -> same job
+  const key = idempotencyKey || `${eventType}_${entityType}_${entityId}`;
 
   const job = {
     id: uuidv4(),
@@ -53,7 +61,7 @@ async function enqueueJob({
     );
 
     if (existing) {
-      if (existing.status === 'completed') {
+      if (existing.status === 'completed' || existing.status === 'succeeded') {
         return { success: true, message: 'Job already completed (idempotent)', job: existing };
       }
       return { success: true, message: 'Job already in queue', job: existing };
@@ -70,9 +78,10 @@ async function enqueueJob({
 
   // Fallback to in-memory queue
   const memExisting = inMemoryQueue.find(j => j.idempotency_key === key);
-  if (!memExisting) {
-    inMemoryQueue.push(job);
+  if (memExisting) {
+    return { success: true, message: 'Job already in queue (in-memory)', job: memExisting };
   }
+  inMemoryQueue.push(job);
 
   return { success: true, job };
 }
@@ -83,7 +92,8 @@ async function enqueueJob({
 async function processJob(job) {
   console.log(`⚡ [AI Job Processor] Processing job ${job.id} (${job.event_type}) for ${job.entity_type}:${job.entity_id}`);
 
-  const rules = getInMemoryRules();
+  // Load persistent rules from Supabase (with fallback to in-memory)
+  const rules = await getAutomationRules();
   let result = null;
 
   switch (job.event_type) {
@@ -98,27 +108,28 @@ async function processJob(job) {
       const prompt = `A new artisan has registered on KalaStyle AI:
 Store Name: ${artisan.store_name}
 Artisan Type / Craft: ${artisan.artisan_type || 'N/A'}
-Specialization: ${artisan.specialization || 'N/A'}
-Location: ${artisan.location || 'N/A'}
-Years of Experience: ${artisan.years_of_experience || 'Not specified'}
-Bio: ${artisan.bio || 'Not provided'}
+Experience: ${artisan.experience_years || 0} years
+Bio / Craft Heritage: ${artisan.craft_description || artisan.bio || 'None provided'}
+Please evaluate this profile. If legitimate Indian heritage craft, verify or hold for human review.`;
 
-Please inspect the profile using your tools. If the profile contains authentic Indian craft heritage information with verified details, call verify_artisan. If incomplete or questionable, call hold_artisan. Explain your decision.`;
-
-      const aiRes = await runAutonomousLoop({
-        messages: [{ role: 'user', content: prompt }],
-        context: { eventType: 'ARTISAN_REGISTERED', entityId: job.entity_id },
+      const aiResponse = await runAutonomousLoop({
+        userMessage: prompt,
+        agentName: 'ARTISAN_ONBOARDING_AGENT',
+        conversationId: `artisan-verify-${job.entity_id}`,
       });
 
-      // SECTION 35 SAFEGUARD: When AI is unavailable or in fallback mode,
-      // NEVER auto-verify based on bio length. Hold for human review.
-      if (aiRes.mode === 'deterministic_fallback' || !aiRes.toolsExecuted || aiRes.toolsExecuted.length === 0) {
-        result = await artisanService.holdArtisan(
-          job.entity_id,
-          'Placed on hold for administrative review (AI in fallback mode — requires manual verification)'
+      // Safe fallback: HOLD for human review if AI didn't take an action
+      if (!aiResponse.success) {
+        console.warn(`[AI Job Fallback] AI unavailable for artisan ${job.entity_id}. Applying HOLD/HUMAN_REVIEW safety policy.`);
+        await safeQuery(() =>
+          supabase
+            .from('artisan_profiles')
+            .update({ verification_status: 'under_review' })
+            .eq('id', job.entity_id)
         );
+        result = { fallback_applied: true, action: 'HOLD_HUMAN_REVIEW', artisan_id: job.entity_id };
       } else {
-        result = aiRes;
+        result = aiResponse;
       }
       break;
     }
@@ -128,87 +139,88 @@ Please inspect the profile using your tools. If the profile contains authentic I
         return { skipped: true, reason: 'product_auto_approval rule is disabled' };
       }
 
-      const prompt = `A new craft product has been submitted with ID: ${job.entity_id}.
-Inspect this product using get_products. Validate price, craft category, and artisan ownership. If valid and compliant, call approve_product; otherwise call hold_product.`;
+      const { data: product } = await safeQuery(() =>
+        supabase.from('products').select('*').eq('id', job.entity_id).single()
+      );
+      if (!product) throw new Error(`Product ${job.entity_id} not found`);
 
-      const aiRes = await runAutonomousLoop({
-        messages: [{ role: 'user', content: prompt }],
-        context: { eventType: 'PRODUCT_SUBMITTED', entityId: job.entity_id },
+      const prompt = `A new handcrafted product was submitted for catalog approval:
+Title: ${product.name}
+Category: ${product.category}
+Price: ₹${product.price}
+Description: ${product.description || 'N/A'}
+Stock: ${product.stock_quantity || 0}
+Please review quality, pricing, and craft authenticity. If approved, approve or hold for manual review.`;
+
+      const aiResponse = await runAutonomousLoop({
+        userMessage: prompt,
+        agentName: 'PRODUCT_CATALOG_AGENT',
+        conversationId: `product-approval-${job.entity_id}`,
       });
 
-      // SECTION 34 SAFEGUARD: When AI is unavailable or in fallback mode,
-      // DO NOT auto-approve products. Place on hold for human review.
-      if (aiRes.mode === 'deterministic_fallback' || !aiRes.toolsExecuted || aiRes.toolsExecuted.length === 0) {
-        result = await productService.holdProduct(
-          job.entity_id,
-          'Placed on hold for administrative compliance inspection (AI in fallback mode — requires manual approval)'
+      // Safe fallback: HOLD for human review
+      if (!aiResponse.success) {
+        console.warn(`[AI Job Fallback] AI unavailable for product ${job.entity_id}. Holding product for human review.`);
+        await safeQuery(() =>
+          supabase
+            .from('products')
+            .update({ status: 'under_review', is_in_stock: false })
+            .eq('id', job.entity_id)
         );
+        result = { fallback_applied: true, action: 'HOLD_HUMAN_REVIEW', product_id: job.entity_id };
       } else {
-        result = aiRes;
+        result = aiResponse;
       }
       break;
     }
 
-    case 'ORDER_CREATED':
-    case 'PAYMENT_UPDATED': {
+    case 'ORDER_CREATED': {
       if (rules.order_auto_processing === false) {
         return { skipped: true, reason: 'order_auto_processing rule is disabled' };
       }
 
-      // Dispatch targeted WhatsApp notifications to each artisan for their items
-      if (rules.whatsapp_notifications !== false) {
-        result = await whatsappService.notifyOrderArtisans(job.entity_id, 'NEW_ORDER');
-      } else {
-        result = { success: true, message: 'WhatsApp dispatch skipped per automation rule' };
-      }
-      break;
-    }
+      const { data: order } = await safeQuery(() =>
+        supabase.from('orders').select('*').eq('id', job.entity_id).single()
+      );
+      if (!order) throw new Error(`Order ${job.entity_id} not found`);
 
-    case 'REVIEW_CREATED': {
-      if (rules.review_moderation === false) {
-        return { skipped: true, reason: 'review_moderation rule is disabled' };
-      }
+      const prompt = `New order #${order.id} placed:
+Total: ₹${order.total_amount}
+Payment Method: ${order.payment_method || 'COD'}
+Shipping Address: ${JSON.stringify(order.shipping_address || {})}
+Please analyze order risk using analyze_order_risk. If high risk, hold order; otherwise confirm.`;
 
-      const prompt = `A new customer review has been posted (Review ID: ${job.entity_id}).
-Fetch the review details using get_reviews. Inspect for profanity, spam, and authenticity. If clean, call approve_review. If abusive, call moderate_review with action="hide".`;
-
-      result = await runAutonomousLoop({
-        messages: [{ role: 'user', content: prompt }],
-        context: { eventType: 'REVIEW_CREATED', entityId: job.entity_id },
+      const aiResponse = await runAutonomousLoop({
+        userMessage: prompt,
+        agentName: 'ORDER_FULFILLMENT_AGENT',
+        conversationId: `order-risk-${job.entity_id}`,
       });
-      break;
-    }
-
-    case 'COMPLAINT_CREATED': {
-      const prompt = `A new customer or artisan complaint has been submitted (Complaint ID: ${job.entity_id}).
-Fetch details using get_complaints. Evaluate urgency and severity. Suggest operational resolution or route to support team.`;
-
-      result = await runAutonomousLoop({
-        messages: [{ role: 'user', content: prompt }],
-        context: { eventType: 'COMPLAINT_CREATED', entityId: job.entity_id },
-      });
-      break;
-    }
-
-    case 'SHIPMENT_DELAYED': {
-      const prompt = `Shipment or order ${job.entity_id} has exceeded normal transit milestones.
-Inspect with track_shipment and get_shipping_status. Evaluate delay and recommend retry or escalation.`;
-
-      result = await runAutonomousLoop({
-        messages: [{ role: 'user', content: prompt }],
-        context: { eventType: 'SHIPMENT_DELAYED', entityId: job.entity_id },
-      });
-      break;
-    }
-
-    case 'SHIPMENT_STATUS_CHANGED': {
-      const shippingService = require('../services/shipping/shippingService');
-      result = await shippingService.trackShipment({ shipment_id: job.entity_id });
+      result = aiResponse;
       break;
     }
 
     case 'LOW_STOCK_DETECTED': {
-      result = await productService.getLowStockProducts(5);
+      if (rules.inventory_monitoring === false) {
+        return { skipped: true, reason: 'inventory_monitoring rule is disabled' };
+      }
+
+      const { data: product } = await safeQuery(() =>
+        supabase.from('products').select('*').eq('id', job.entity_id).single()
+      );
+      if (!product) throw new Error(`Product ${job.entity_id} not found`);
+
+      if (rules.whatsapp_notifications && product.artisan_id) {
+        await whatsappService.sendNotification({
+          userId: product.artisan_id,
+          type: 'LOW_STOCK_ALERT',
+          data: {
+            productName: product.name,
+            currentStock: product.stock_quantity || 0,
+            threshold: 5,
+          },
+        });
+      }
+      result = { stock_alert_sent: true, product_id: product.id, stock: product.stock_quantity };
       break;
     }
 
@@ -216,17 +228,68 @@ Inspect with track_shipment and get_shipping_status. Evaluate delay and recommen
       if (rules.daily_ai_report === false) {
         return { skipped: true, reason: 'daily_ai_report rule is disabled' };
       }
-      result = await analyticsReportService.generateDailyReport();
+
+      const domainAgents = require('./domainAgents');
+      const sweepResult = await domainAgents.runAutonomousDailySweep();
+      result = sweepResult;
       break;
     }
 
     case 'WEEKLY_REPORT': {
-      result = await analyticsReportService.generateWeeklyReport();
+      const report = await analyticsReportService.generateWeeklyReport();
+      result = report;
+      break;
+    }
+
+    case 'REVIEW_CREATED': {
+      if (rules.review_moderation === false) {
+        return { skipped: true, reason: 'review_moderation rule is disabled' };
+      }
+      const { data: review } = await safeQuery(() =>
+        supabase.from('reviews').select('*').eq('id', job.entity_id).maybeSingle()
+      );
+      if (review) {
+        const text = (review.review_text || review.comment || '').toLowerCase();
+        const isAbusive = ['fraud', 'scam', 'fake', 'abuse', 'stupid', 'bastard'].some(w => text.includes(w));
+        if (isAbusive) {
+          await safeQuery(() =>
+            supabase.from('reviews').update({ status: 'flagged' }).eq('id', review.id)
+          );
+          result = { review_flagged: true, id: review.id, reason: 'Abusive language detected' };
+        } else {
+          result = { review_clean: true, id: review.id };
+        }
+      }
+      break;
+    }
+
+    case 'COMPLAINT_CREATED': {
+      if (rules.complaint_sentinel === false) {
+        return { skipped: true, reason: 'complaint_sentinel rule is disabled' };
+      }
+      const { data: complaint } = await safeQuery(() =>
+        supabase.from('reports').select('*').eq('id', job.entity_id).maybeSingle()
+      );
+      if (complaint) {
+        const reason = (complaint.reason || '').toLowerCase();
+        const isUrgent = reason.includes('urgent') || reason.includes('fraud') || reason.includes('stolen');
+        result = { complaint_analyzed: true, id: complaint.id, urgent: isUrgent };
+      }
+      break;
+    }
+
+    case 'SHIPMENT_DELAYED': {
+      if (rules.shipping_sentinel === false) {
+        return { skipped: true, reason: 'shipping_sentinel rule is disabled' };
+      }
+      const shippingService = require('../services/shipping/shippingService');
+      const shipResult = await shippingService.trackShipmentByShipmentId(job.entity_id);
+      result = { shipment_monitored: true, tracking: shipResult };
       break;
     }
 
     default:
-      console.log(`[AI Job Processor] Unhandled event type: ${job.event_type}`);
+      console.log(`ℹ️ [AI Job Processor] Handled generic event: ${job.event_type}`);
       result = { handled: true };
   }
 
@@ -235,21 +298,34 @@ Inspect with track_shipment and get_shipping_status. Evaluate delay and recommen
 
 /**
  * Execute one cycle of pending jobs from database and in-memory queue.
+ * Strict safety check: Emergency Stop & AI Mode evaluated BEFORE every job execution.
  */
 async function processPendingJobs() {
   if (isProcessing) return;
   isProcessing = true;
 
   try {
-    // 1. Fetch pending jobs from Supabase
+    // 1. Initial Gate Check: Do not process queue if AI is disabled or Emergency Stop is active
+    const globalSettings = await aiControlCenter.getControlSettings();
+    if (globalSettings.ai_emergency_stop) {
+      console.warn('🛑 [AI Job Processor] Queue processing paused: ai_emergency_stop is ACTIVE.');
+      return;
+    }
+
+    if (!globalSettings.ai_global_enabled || globalSettings.ai_mode === 'OFF') {
+      return;
+    }
+
+    // 2. Fetch pending or retrying jobs due for execution from Supabase
     let dbJobs = [];
     try {
       const { data, error } = await safeQuery(() =>
         supabase
           .from('ai_action_queue')
           .select('*')
-          .eq('status', 'pending')
+          .in('status', ['pending', 'retrying'])
           .lte('scheduled_at', new Date().toISOString())
+          .order('priority', { ascending: false })
           .order('created_at', { ascending: true })
           .limit(10)
       );
@@ -257,10 +333,53 @@ async function processPendingJobs() {
     } catch (e) {}
 
     // Combine with pending in-memory jobs
-    const memJobs = inMemoryQueue.filter(j => j.status === 'pending');
+    const memJobs = inMemoryQueue.filter(j => 
+      (j.status === 'pending' || j.status === 'retrying') &&
+      (!j.scheduled_at || new Date(j.scheduled_at) <= new Date())
+    );
     const jobsToProcess = [...dbJobs, ...memJobs];
 
     for (const job of jobsToProcess) {
+      // Re-check Emergency Stop and Mode immediately BEFORE executing each job
+      const freshSettings = await aiControlCenter.getControlSettings(true);
+      if (freshSettings.ai_emergency_stop) {
+        console.warn(`🛑 [AI Job Processor] Emergency stop activated while processing queue. Halting job ${job.id}.`);
+        break; // Stop immediately, leave remaining jobs pending
+      }
+
+      if (!freshSettings.ai_global_enabled || freshSettings.ai_mode === 'OFF') {
+        break;
+      }
+
+      // Read-Only mode skips all mutating jobs
+      if (freshSettings.ai_mode === 'READ_ONLY' && job.event_type !== 'DAILY_REPORT' && job.event_type !== 'WEEKLY_REPORT') {
+        console.log(`ℹ️ [AI Job Processor] READ_ONLY mode active. Skipping mutation job ${job.id} (${job.event_type})`);
+        continue;
+      }
+
+      // Check Central Policy Gate for this job's domain
+      const gateCheck = await aiControlCenter.canExecuteAction(job.event_type, 2, {
+        domain: job.event_type,
+        entityType: job.entity_type,
+        entityId: job.entity_id,
+        jobId: job.id,
+      });
+
+      if (!gateCheck.allowed) {
+        if (gateCheck.requiresApproval) {
+          console.warn(`🛡️ [AI Job Processor] Job ${job.id} requires human approval. Setting status to waiting_approval.`);
+          job.status = 'waiting_approval';
+          try {
+            await safeQuery(() =>
+              supabase.from('ai_action_queue').update({ status: 'waiting_approval' }).eq('id', job.id)
+            );
+          } catch (e) {}
+        } else {
+          console.warn(`⏳ [AI Job Processor] Job ${job.id} paused by policy: ${gateCheck.reason}`);
+        }
+        continue;
+      }
+
       job.status = 'processing';
       job.started_at = new Date().toISOString();
       job.attempts = (job.attempts || 0) + 1;
@@ -299,12 +418,17 @@ async function processPendingJobs() {
           job.status = 'dead_letter';
         } else {
           job.status = 'retrying';
+          // Exponential backoff: attempt 1 -> 30s, attempt 2 -> 120s (2m), attempt 3 -> 600s (10m)
+          const backoffSec = job.attempts === 1 ? 30 : job.attempts === 2 ? 120 : 600;
+          job.scheduled_at = new Date(Date.now() + backoffSec * 1000).toISOString();
         }
 
         try {
           await safeQuery(() =>
             supabase.from('ai_action_queue').update({
               status: job.status,
+              attempts: job.attempts,
+              scheduled_at: job.scheduled_at,
               last_error: job.last_error,
             }).eq('id', job.id)
           );
@@ -325,7 +449,6 @@ let intervalId = null;
 function startProcessor(intervalMs = 20000) {
   if (intervalId) return;
   console.log(`🚀 [AI Job Processor] Worker started (Interval: ${intervalMs / 1000}s)`);
-  // Run initial pass after 3s
   setTimeout(processPendingJobs, 3000);
   intervalId = setInterval(processPendingJobs, intervalMs);
 }

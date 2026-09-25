@@ -34,6 +34,87 @@ let inMemoryRules = {
 };
 
 /**
+ * Fetch automation rules from Supabase (source of truth) with in-memory caching.
+ * Ensures rules persist across server restarts.
+ */
+async function getAutomationRules() {
+  try {
+    const { data, error } = await safeQuery(() =>
+      supabase.from('ai_automation_rules').select('id, is_enabled')
+    );
+    if (!error && Array.isArray(data) && data.length > 0) {
+      for (const row of data) {
+        if (row.id) {
+          inMemoryRules[row.id] = row.is_enabled === true || row.is_enabled === 'true';
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[AI Rules] Fallback to in-memory rules:', err.message);
+  }
+  return inMemoryRules;
+}
+
+const TOOL_DOMAINS = {
+  // Orders & Fraud
+  confirm_order: 'order',
+  hold_order: 'order',
+  cancel_order: 'order',
+  analyze_order_risk: 'order',
+  get_orders: 'order',
+  get_order_details: 'order',
+  get_failed_payments: 'order',
+  get_suspicious_orders: 'order',
+
+  // Shipping
+  create_shiprocket_order: 'shipping',
+  assign_awb: 'shipping',
+  schedule_pickup: 'shipping',
+  retry_failed_shipment: 'shipping',
+  check_shipping_serviceability: 'shipping',
+  get_shipping_rates: 'shipping',
+  get_shipping_status: 'shipping',
+  detect_delayed_shipments: 'shipping',
+
+  // Payments
+  confirm_cod_collection: 'payment',
+
+  // Products
+  approve_product: 'product',
+  batch_approve_products: 'product',
+  reject_product: 'product',
+  hold_product: 'product',
+  update_product_details: 'product',
+  update_product_inventory: 'product',
+
+  // Artisans
+  verify_artisan: 'artisan',
+  batch_verify_artisans: 'artisan',
+  reject_artisan: 'artisan',
+  hold_artisan: 'artisan',
+
+  // Reviews
+  moderate_review: 'review',
+  approve_review: 'review',
+  batch_approve_reviews: 'review',
+
+  // Complaints
+  resolve_complaint: 'complaint',
+
+  // Notifications
+  send_artisan_whatsapp: 'notification',
+
+  // Marketing & Campaigns
+  generate_marketing_campaign: 'campaign',
+  launch_festival_campaign: 'campaign',
+  add_hero_banner: 'campaign',
+  update_hero_banners: 'campaign',
+  remove_hero_banner: 'campaign',
+  update_discount_banner: 'campaign',
+};
+
+
+/**
  * Persist an immutable record in ai_admin_actions.
  */
 async function recordAuditAction({
@@ -186,38 +267,91 @@ async function executeTool(toolName, args = {}, context = {}) {
     let confidence = args.confidence || 1.0;
 
     const safetyLevel = SAFETY_LEVELS[toolName] || 1;
+    const aiControlCenter = require('./aiControlCenter');
+    const toolDomain = TOOL_DOMAINS[toolName] || 'general';
 
-    // Safety Level 3 Guard: Require explicit confirmation only for background autonomous jobs,
-    // NEVER block direct directives explicitly issued by the authenticated administrator in chat.
-    if (safetyLevel === 3 && !args.admin_confirmed && eventType !== 'ADMIN_CHAT_DIRECTIVE') {
-      const confirmationToken = uuidv4();
-      const warningSummary = `High-risk action [${toolName}] requires explicit administrative authorization.`;
-      console.warn(`🛡️ [AI Safety Guard] Intercepted Level 3 High-Risk action: ${toolName}.`);
+    // 1. Authoritative Policy & Permission Gate: Single Source of Control
+    const gateCheck = await aiControlCenter.canExecuteAction(toolName, safetyLevel, {
+      ...context,
+      toolName,
+      domain: toolDomain,
+      safetyLevel,
+      riskLevel: safetyLevel,
+      args,
+    });
 
-      const audit = await recordAuditAction({
+    if (!gateCheck.allowed) {
+      if (gateCheck.requiresApproval && !args.admin_confirmed && eventType !== 'ADMIN_CHAT_DIRECTIVE') {
+        const confirmationToken = uuidv4();
+        console.warn(`🛡️ [AI Policy Gate] Action ${toolName} requires human approval. Queuing approval request.`);
+
+        const approvalService = require('../services/agentApprovalService');
+        let approvalRecord = null;
+        try {
+          approvalRecord = await approvalService.createApprovalRequest({
+            agent: context.agent || 'SYSTEM',
+            action: toolName,
+            tool: toolName,
+            parameters: args,
+            evidence: args.evidence || args.reason || `Action ${toolName} requires administrative approval under current policy.`,
+            risk: safetyLevel >= 3 ? 'HIGH' : 'MEDIUM',
+            confidence: Number(confidence) || 0.9,
+            jobId: context.jobId || null,
+          });
+        } catch (e) {
+          console.warn('[AI Policy Gate] Approval queue notice:', e.message);
+        }
+
+        const audit = await recordAuditAction({
+          conversationId,
+          eventType,
+          actionName: toolName,
+          toolName,
+          inputSummary: args,
+          decision: 'requires_admin_confirmation',
+          reason: gateCheck.reason || 'Human approval required by policy',
+          status: 'pending_confirmation',
+          confidence,
+          result: { requires_admin_confirmation: true, confirmation_token: confirmationToken, approval_id: approvalRecord?.id },
+        });
+
+        return {
+          requires_admin_confirmation: true,
+          safety_level: safetyLevel,
+          tool_name: toolName,
+          action_summary: `Action [${toolName}] requires administrative authorization.`,
+          confirmation_token: confirmationToken,
+          approval_id: approvalRecord?.id || confirmationToken,
+          parameters: args,
+          audit_id: audit.id,
+          message: gateCheck.reason || `Action '${toolName}' is classified as Risk Level ${safetyLevel}. Operation paused pending human admin approval.`,
+        };
+      }
+
+      // Blocked by Emergency Stop, Global AI switch, AI Mode, or Action Budget
+      console.warn(`🛑 [AI Policy Gate] Action ${toolName} BLOCKED: ${gateCheck.reason}`);
+      await recordAuditAction({
         conversationId,
         eventType,
         actionName: toolName,
         toolName,
         inputSummary: args,
-        decision: 'requires_admin_confirmation',
-        reason: args.reason || 'Level 3 High-Risk action requiring admin review',
-        status: 'pending_confirmation',
+        decision: 'blocked',
+        reason: gateCheck.reason || 'Blocked by AI Control Policy',
+        status: 'blocked',
         confidence,
-        result: { requires_admin_confirmation: true, confirmation_token: confirmationToken },
+        error: gateCheck.reason,
       });
 
       return {
-        requires_admin_confirmation: true,
-        safety_level: 3,
-        tool_name: toolName,
-        action_summary: warningSummary,
-        confirmation_token: confirmationToken,
-        parameters: args,
-        audit_id: audit.id,
-        message: `Action '${toolName}' is classified as Level 3 (High-Risk). Operation paused pending human admin confirmation.`,
+        success: false,
+        blocked: true,
+        tool: toolName,
+        reason: gateCheck.reason,
+        error: gateCheck.reason,
       };
     }
+
 
     switch (toolName) {
       // ─── SYSTEM HEALTH TOOLS ────────────────────────────────────────
@@ -1426,6 +1560,10 @@ async function executeTool(toolName, args = {}, context = {}) {
       });
     }
 
+    if (safetyLevel >= 2) {
+      aiControlCenter.recordActionUsage(toolDomain);
+    }
+
     return {
       success: true,
       data: result,
@@ -1459,6 +1597,9 @@ module.exports = {
   executeTool,
   executeAITool: executeTool, // Alias for backward-compatibility
   recordAuditAction,
+  getAutomationRules,
   getInMemoryAuditLogs: () => inMemoryAuditLogs,
   getInMemoryRules: () => inMemoryRules,
+  TOOL_DOMAINS,
 };
+
