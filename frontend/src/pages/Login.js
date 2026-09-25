@@ -29,6 +29,29 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Inspect entry points: determine whether user arrived at artisan login portal
+  const searchParams = new URLSearchParams(location.search);
+  const queryFrom = searchParams.get('from');
+  const queryPortal = searchParams.get('portal');
+  const queryIntent = searchParams.get('intent');
+  const rawFrom = location.state?.from;
+  const stateFrom = typeof rawFrom === 'string' ? rawFrom : rawFrom?.pathname;
+
+  const isArtisanEntry = Boolean(
+    queryPortal === 'artisan' ||
+    queryIntent === 'artisan' ||
+    (queryFrom && queryFrom.startsWith('/artisan')) ||
+    (stateFrom && stateFrom.startsWith('/artisan'))
+  );
+
+  const [portalMode, setPortalMode] = useState(() => isArtisanEntry ? 'artisan' : 'customer');
+
+  useEffect(() => {
+    if (isArtisanEntry) {
+      setPortalMode('artisan');
+    }
+  }, [isArtisanEntry]);
+
   const otpInputsRef = useRef([]);
 
   // Check if OAuth callback is actively in-flight or in URL
@@ -102,14 +125,27 @@ export default function Login() {
   const handleRedirectAfterAuth = (user) => {
     const role = normalizeRole(user?.role);
     const storedReturnUrl = sessionStorage.getItem('auth_return_url');
+    const authIntent = sessionStorage.getItem('auth_intent');
+    const portalNotice = sessionStorage.getItem('portal_notice');
+
+    // Section 18: After successful authentication and redirect, clean from sessionStorage
     sessionStorage.removeItem('auth_return_url');
     sessionStorage.removeItem('oauth_in_flight');
+    sessionStorage.removeItem('auth_intent');
+    sessionStorage.removeItem('portal_notice');
 
-    const searchParams = new URLSearchParams(location.search);
-    const queryFrom = searchParams.get('from');
-    const rawFrom = location.state?.from;
-    const stateFrom = typeof rawFrom === 'string' ? rawFrom : rawFrom?.pathname;
-    const returnUrl = storedReturnUrl || stateFrom || queryFrom;
+    // Section 6 & 15 Case 5: Notice for existing customer logging into artisan portal
+    if (portalNotice) {
+      toast(portalNotice, { icon: 'ℹ️', duration: 6000 });
+    } else if (authIntent === 'artisan' && role === 'user') {
+      toast('Your Google account is registered as a customer. Please complete artisan registration to create an artisan account.', { icon: 'ℹ️', duration: 6000 });
+    }
+
+    const currentSearchParams = new URLSearchParams(location.search);
+    const qFrom = currentSearchParams.get('from');
+    const rFrom = location.state?.from;
+    const sFrom = typeof rFrom === 'string' ? rFrom : rFrom?.pathname;
+    const returnUrl = storedReturnUrl || sFrom || qFrom;
 
     const destination = resolveSafeRedirect(role, returnUrl);
     navigate(destination, { replace: true });
@@ -120,10 +156,11 @@ export default function Login() {
     if (googleLoading) return;
     setGoogleLoading(true);
     try {
-      const searchParams = new URLSearchParams(location.search);
-      const queryFrom = searchParams.get('from');
-      const returnUrl = location.state?.from?.pathname || queryFrom;
-      await signInWithGoogle(returnUrl);
+      const isArtisanPortal = portalMode === 'artisan';
+      const authIntent = isArtisanPortal ? 'artisan' : 'user';
+      const defaultReturn = isArtisanPortal ? '/artisan' : '/';
+      const returnUrl = stateFrom || queryFrom || defaultReturn;
+      await signInWithGoogle(returnUrl, { authIntent });
     } catch (err) {
       toast.error(err.message || 'Unable to sign in with Google. Please try again.');
       setGoogleLoading(false);
@@ -339,6 +376,10 @@ export default function Login() {
                 We sent an {OTP_LENGTH}-digit verification code to{' '}
                 <span className="text-gold-400 font-semibold">{maskEmail(email)}</span>
               </span>
+            ) : portalMode === 'artisan' ? (
+              <span>
+                Sign in to your <span className="gold-text font-medium">Artisan Studio</span> portal
+              </span>
             ) : (
               <span>
                 Sign in to your <span className="gold-text font-medium">KalaStyle AI</span> account
@@ -346,6 +387,36 @@ export default function Login() {
             )}
           </p>
         </div>
+
+        {/* ─── Portal Selector Toggle (Customer vs Artisan) ─── */}
+        {!(authMode === 'otp' && otpStep === 'otp') && (
+          <div className="flex rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1">
+            <button
+              type="button"
+              id="portal-customer-btn"
+              onClick={() => setPortalMode('customer')}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                portalMode === 'customer'
+                  ? 'bg-gold-500 text-dark-950 shadow-gold font-bold'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              🛍️ Customer Login
+            </button>
+            <button
+              type="button"
+              id="portal-artisan-btn"
+              onClick={() => setPortalMode('artisan')}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                portalMode === 'artisan'
+                  ? 'bg-gold-500 text-dark-950 shadow-gold font-bold'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              🎨 Artisan Login
+            </button>
+          </div>
+        )}
 
         {/* ─── Google OAuth Quick Sign In ─────────────────────── */}
         {!(authMode === 'otp' && otpStep === 'otp') && (
@@ -364,7 +435,9 @@ export default function Login() {
               ) : (
                 <>
                   <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
-                  <span>Continue with Google</span>
+                  <span>
+                    {portalMode === 'artisan' ? 'Continue with Google (Artisan)' : 'Continue with Google'}
+                  </span>
                 </>
               )}
             </button>

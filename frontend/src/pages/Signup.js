@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
@@ -7,7 +7,12 @@ import toast from 'react-hot-toast';
 
 export default function Signup() {
   const [step, setStep] = useState('details'); // 'details' | 'otp'
-  const [role, setRole] = useState('user');
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isArtisanInit = searchParams.get('role') === 'artisan' ||
+                        searchParams.get('portal') === 'artisan' ||
+                        searchParams.get('from')?.startsWith('/artisan');
+  const [role, setRole] = useState(() => isArtisanInit ? 'artisan' : 'user');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -72,7 +77,9 @@ export default function Signup() {
     if (googleLoading) return;
     setGoogleLoading(true);
     try {
-      await signInWithGoogle('/');
+      const authIntent = role === 'artisan' ? 'artisan' : 'user';
+      const returnUrl = role === 'artisan' ? '/artisan' : '/';
+      await signInWithGoogle(returnUrl, { authIntent });
     } catch (err) {
       toast.error(err.message || 'Unable to sign in with Google. Please try again.');
       setGoogleLoading(false);
@@ -289,44 +296,9 @@ export default function Signup() {
           </p>
         </div>
 
-        {/* ─── Google OAuth Quick Registration ─────────────────── */}
+        {/* ─── Role Toggle: Customer vs Artisan ──────────────── */}
         {step === 'details' && (
           <div className="space-y-4">
-            <button
-              type="button"
-              onClick={handleGoogleSignUp}
-              disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
-            >
-              {googleLoading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-gold-400 font-semibold">Connecting to Google...</span>
-                </>
-              ) : (
-                <>
-                  <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
-                  <span>Continue with Google</span>
-                </>
-              )}
-            </button>
-
-            {/* Divider */}
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-dark-500/80" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase tracking-wider">
-                <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or register with email OTP</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ─── STEP 1: REGISTRATION DETAILS FORM ──────────────── */}
-        {step === 'details' && (
-          <form className="space-y-4" onSubmit={handleInitiateSignup}>
-            {/* Role Toggle: Customer vs Artisan */}
             <div className="flex rounded-lg overflow-hidden border border-dark-500 bg-dark-800 p-1">
               <button
                 type="button"
@@ -357,6 +329,44 @@ export default function Signup() {
                 🌟 <strong>Artisan Benefits:</strong> AI Product Studio, direct craft listing, and access to customers across India!
               </div>
             )}
+
+            {/* Google OAuth Quick Registration */}
+            <button
+              type="button"
+              onClick={handleGoogleSignUp}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
+            >
+              {googleLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gold-400 font-semibold">Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
+                  <span>
+                    {role === 'artisan' ? 'Continue with Google (Artisan)' : 'Continue with Google'}
+                  </span>
+                </>
+              )}
+            </button>
+
+            {/* Divider */}
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-dark-500/80" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-wider">
+                <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or register with email OTP</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── STEP 1: REGISTRATION DETAILS FORM ──────────────── */}
+        {step === 'details' && (
+          <form className="space-y-4" onSubmit={handleInitiateSignup}>
 
             <div className="space-y-3.5 pt-1">
               <div>

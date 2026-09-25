@@ -36,17 +36,27 @@ export const AuthProvider = ({ children }) => {
     syncPromiseRef.current = (async () => {
       try {
         setOauthError(null);
+        // Step 2 & 13: Recover auth_intent from sessionStorage (default: 'user')
+        const storedIntent = sessionStorage.getItem('auth_intent');
+        const authIntent = storedIntent === 'artisan' ? 'artisan' : 'user';
+
         // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
           accessToken: session.access_token,
           email: session.user?.email,
-          supabase_uid: session.user?.id
+          supabase_uid: session.user?.id,
+          auth_intent: authIntent
         });
         if (data?.user && data?.token) {
           const normalized = { ...data.user, role: normalizeRole(data.user.role) };
           setUser(normalized);
           localStorage.setItem('sh_token', data.token);
           localStorage.setItem('sh_user', JSON.stringify(normalized));
+
+          if (data.portal_notice) {
+            sessionStorage.setItem('portal_notice', data.portal_notice);
+          }
+
           return normalized;
         }
       } catch (e) {
@@ -134,6 +144,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('sh_user');
         sessionStorage.removeItem('auth_return_url');
         sessionStorage.removeItem('oauth_in_flight');
+        sessionStorage.removeItem('auth_intent');
+        sessionStorage.removeItem('portal_notice');
         setUser(null);
         setOauthProcessing(false);
         setOauthError(null);
@@ -389,18 +401,44 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Google OAuth via Supabase ───────────────────────────────
-  const signInWithGoogle = async (returnUrl) => {
+  const signInWithGoogle = async (returnUrlOrOptions, maybeOptions) => {
     try {
       if (!supabase?.auth) {
         throw new Error('Supabase client is not available. Please verify your connection.');
       }
 
-      // Preserve returnUrl in sessionStorage for clean role/destination navigation upon OAuth return
-      if (returnUrl && typeof returnUrl === 'string') {
-        sessionStorage.setItem('auth_return_url', returnUrl);
+      // Section 2: Parse flexible returnUrl and explicit authIntent
+      let targetReturnUrl = null;
+      let targetAuthIntent = 'user';
+
+      if (typeof returnUrlOrOptions === 'string') {
+        targetReturnUrl = returnUrlOrOptions;
+        if (maybeOptions && typeof maybeOptions === 'object') {
+          if (maybeOptions.authIntent) targetAuthIntent = maybeOptions.authIntent;
+          else if (maybeOptions.auth_intent) targetAuthIntent = maybeOptions.auth_intent;
+        }
+      } else if (returnUrlOrOptions && typeof returnUrlOrOptions === 'object') {
+        targetReturnUrl = returnUrlOrOptions.returnUrl || returnUrlOrOptions.redirectTo || null;
+        targetAuthIntent = returnUrlOrOptions.authIntent || returnUrlOrOptions.auth_intent || 'user';
       }
 
-      // Requirement 8: Mark OAuth in-flight and clear previous application session so stale identity never persists
+      // Normalize auth_intent
+      targetAuthIntent = String(targetAuthIntent).toLowerCase().trim() === 'artisan' ? 'artisan' : 'user';
+
+      // Fallback intent inference: if returnUrl points to artisan route, ensure intent is artisan
+      if (targetAuthIntent !== 'artisan' && targetReturnUrl && targetReturnUrl.startsWith('/artisan')) {
+        targetAuthIntent = 'artisan';
+      }
+
+      // Section 3: Store explicit login portal intent in sessionStorage so it survives the OAuth redirect loop
+      sessionStorage.setItem('auth_intent', targetAuthIntent);
+
+      // Preserve returnUrl in sessionStorage for clean role/destination navigation upon OAuth return
+      if (targetReturnUrl && typeof targetReturnUrl === 'string') {
+        sessionStorage.setItem('auth_return_url', targetReturnUrl);
+      }
+
+      // Requirement 8 & Section 19: Clear stale application credentials while strictly preserving auth_intent
       sessionStorage.setItem('oauth_in_flight', 'true');
       localStorage.removeItem('sh_token');
       localStorage.removeItem('sh_user');
@@ -423,6 +461,7 @@ export const AuthProvider = ({ children }) => {
 
       if (error) {
         sessionStorage.removeItem('oauth_in_flight');
+        sessionStorage.removeItem('auth_intent');
         setOauthProcessing(false);
         console.error('Supabase signInWithOAuth error:', error);
         const msg = (error.message || '').toLowerCase();
@@ -437,6 +476,7 @@ export const AuthProvider = ({ children }) => {
       return data;
     } catch (err) {
       sessionStorage.removeItem('oauth_in_flight');
+      sessionStorage.removeItem('auth_intent');
       setOauthProcessing(false);
       throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
     }
@@ -451,6 +491,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('sh_user');
     sessionStorage.removeItem('auth_return_url');
     sessionStorage.removeItem('oauth_in_flight');
+    sessionStorage.removeItem('auth_intent');
+    sessionStorage.removeItem('portal_notice');
     setUser(null);
     setOauthProcessing(false);
     setOauthError(null);

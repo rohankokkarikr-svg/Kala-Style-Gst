@@ -561,6 +561,10 @@ exports.syncSupabaseSession = async (req, res) => {
     const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
     const token = bodyToken || headerToken;
 
+    // Login portal intent: 'user' (customer) vs 'artisan'
+    const rawIntent = (req.body?.auth_intent || req.query?.auth_intent || req.headers['x-auth-intent'] || '').toString().toLowerCase().trim();
+    const authIntent = rawIntent === 'artisan' ? 'artisan' : 'user';
+
     if (!token) {
       return res.status(401).json({ error: 'Valid Supabase session token is required to sync session' });
     }
@@ -598,6 +602,8 @@ exports.syncSupabaseSession = async (req, res) => {
     // 3. Create new public.users record
     let user = null;
     let existingArtisanProfile = null;
+    let portalNotice = null;
+
     if (verifiedUid) {
       try {
         const { data: userByUid } = await supabase
@@ -646,6 +652,11 @@ exports.syncSupabaseSession = async (req, res) => {
         console.warn('[syncSupabaseSession] Error checking artisan profile:', profErr?.message || profErr);
       }
 
+      // Section 6: Existing normal user logging in via Artisan portal must NOT be silently promoted
+      if (user.role === 'user' && authIntent === 'artisan') {
+        portalNotice = 'Your Google account is registered as a customer. Please complete artisan registration to create an artisan account.';
+      }
+
       // Section 11 & 19: Link supabase_uid if present and not yet linked, preventing duplicate ownership
       if (!user.supabase_uid && verifiedUid) {
         try {
@@ -673,8 +684,9 @@ exports.syncSupabaseSession = async (req, res) => {
         } catch (_) {}
       }
     } else {
-      // Section 15: Create user profile with role 'user' ONLY (never admin or artisan from OAuth)
-      const defaultName = googleName || verifiedEmail.split('@')[0] || 'User';
+      // Section 11 & 15: New account creation: Role determined strictly by verified login portal intent
+      const targetRole = authIntent === 'artisan' ? 'artisan' : 'user';
+      const defaultName = googleName || verifiedEmail.split('@')[0] || (targetRole === 'artisan' ? 'Artisan' : 'User');
       const crypto = require('crypto');
       const salt = await bcrypt.genSalt(10);
       const randomSecret = crypto.randomBytes(16).toString('hex');
@@ -684,9 +696,12 @@ exports.syncSupabaseSession = async (req, res) => {
         name: defaultName,
         email: verifiedEmail,
         password: placeholderHash,
-        role: 'user', // STRICT: Normal user by default
+        role: 'user', // STRICT: Default role is 'user' for customer portal
         status: 'active',
       };
+      if (targetRole === 'artisan') {
+        newUserData.role = 'artisan';
+      }
 
       let newUser = null;
       if (verifiedUid) {
@@ -714,7 +729,38 @@ exports.syncSupabaseSession = async (req, res) => {
         newUser = data;
       }
       user = newUser;
-      user.role = 'user';
+      user.role = targetRole;
+
+      // Section 12: If new account was created via Artisan portal, provision matching artisan_profiles record
+      if (targetRole === 'artisan') {
+        const defaultStoreName = `${defaultName}'s Crafts`;
+        const { data: newProfile, error: profileErr } = await supabase
+          .from('artisan_profiles')
+          .insert([{
+            user_id: user.id,
+            store_name: defaultStoreName,
+            artisan_type: 'General',
+            bio: 'Traditional handcrafted items and heritage arts on KalaStyle AI.',
+            verification_status: 'pending'
+          }])
+          .select()
+          .single();
+
+        if (profileErr) {
+          console.error('[syncSupabaseSession] Error creating artisan profile for new OAuth artisan:', profileErr);
+        } else if (newProfile) {
+          existingArtisanProfile = parseArtisanUpi(newProfile);
+          try {
+            const { emitEvent } = require('../ai/aiEventBus');
+            emitEvent('ARTISAN_REGISTERED', 'artisan', newProfile.id, {
+              store_name: newProfile.store_name,
+              user_id: user.id,
+              bio: newProfile.bio,
+              artisan_type: newProfile.artisan_type
+            });
+          } catch (_) {}
+        }
+      }
     }
 
     // Load artisan profile if role is artisan or admin
@@ -733,11 +779,13 @@ exports.syncSupabaseSession = async (req, res) => {
     const backendToken = generateToken(user.id);
 
     // Section 24: Safe structured audit log (no credentials, secret keys, or tokens)
-    console.log(`[AUTH_AUDIT] syncSupabaseSession: operation=sync, provider=google_oauth, uid=${verifiedUid}, userId=${user.id}, role=${user.role}`);
+    console.log(`[AUTH_AUDIT] syncSupabaseSession: operation=sync, provider=google_oauth, uid=${verifiedUid}, userId=${user.id}, role=${user.role}, authIntent=${authIntent}`);
 
     res.json({
       user: { ...user, artisan_profile: artisanProfile },
-      token: backendToken
+      token: backendToken,
+      auth_intent: authIntent,
+      portal_notice: portalNotice || null
     });
   } catch (error) {
     console.error('Session sync error:', error?.message || error);
