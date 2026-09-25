@@ -161,12 +161,11 @@ export const AuthProvider = ({ children }) => {
           Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
 
-        // Section 6: Current Supabase identity must win!
+        // Section 6: Verified Supabase session identity must win when OAuth is active or no backend session exists
         // Sync session if:
         // 1. No backend token exists yet, OR
-        // 2. The active Supabase session user id differs from cached user (e.g. user switched Google accounts), OR
-        // 3. Google OAuth returned callback parameters in URL or marked in-flight
-        if (!currentToken || (session.user?.id && session.user.id !== storedSbUid) || isOAuthInFlight) {
+        // 2. Google OAuth returned callback parameters in URL or marked in-flight
+        if (!currentToken || isOAuthInFlight) {
           setOauthProcessing(true);
           try {
             const syncedUser = await syncSupabaseSessionSingleFlight(session);
@@ -331,6 +330,15 @@ export const AuthProvider = ({ children }) => {
         email: cleanIdentifier,
         password
       });
+
+      // Clear any stale Supabase session if it belongs to a different identity
+      try {
+        const { data: sbData } = await supabase.auth.getSession();
+        if (sbData?.session?.user?.id && sbData.session.user.id !== data.user?.supabase_uid) {
+          await supabase.auth.signOut();
+        }
+      } catch (_) {}
+
       const normalizedRole = normalizeRole(data.user?.role);
       const normalizedUser = {
         ...data.user,

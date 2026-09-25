@@ -267,15 +267,27 @@ exports.login = async (req, res) => {
     // Normalize role string to canonical user | artisan | admin
     user.role = normalizeRole(user.role);
 
-    // If artisan or admin, fetch artisan profile if one exists
+    // Section 6 & 7: Check for existing artisan profile linked to this user.
+    // If an artisan profile exists and user is not admin, resolve & preserve authoritative role as 'artisan'.
     let artisanProfile = null;
-    if (user.role === 'artisan' || user.role === 'admin') {
+    try {
       const { data: profile } = await supabase
         .from('artisan_profiles')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
-      artisanProfile = profile ? parseArtisanUpi(profile) : null;
+
+      if (profile) {
+        artisanProfile = parseArtisanUpi(profile);
+        if (user.role !== 'admin') {
+          user.role = 'artisan';
+          if (users[0]?.role !== 'artisan') {
+            await supabase.from('users').update({ role: 'artisan' }).eq('id', user.id);
+          }
+        }
+      }
+    } catch (profErr) {
+      console.warn('[authController.login] Error checking artisan profile:', profErr?.message || profErr);
     }
 
     const token = generateToken(user.id);
@@ -296,17 +308,26 @@ exports.getMe = async (req, res) => {
   try {
     // req.user is set by auth middleware
     const user = { ...req.user };
-    user.role = (user.role || 'user').trim().toLowerCase();
     delete user.password;
+    delete user.password_hash;
+    user.role = normalizeRole(user.role);
 
     let artisanProfile = null;
-    if (user.role === 'artisan' || user.role === 'admin') {
+    try {
       const { data: profile } = await supabase
         .from('artisan_profiles')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
-      artisanProfile = profile ? parseArtisanUpi(profile) : null;
+
+      if (profile) {
+        artisanProfile = parseArtisanUpi(profile);
+        if (user.role !== 'admin') {
+          user.role = 'artisan';
+        }
+      }
+    } catch (profErr) {
+      console.warn('[authController.getMe] Error checking artisan profile:', profErr?.message || profErr);
     }
 
     res.json({ ...user, artisan_profile: artisanProfile });

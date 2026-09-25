@@ -107,7 +107,9 @@ export default function Login() {
 
     const searchParams = new URLSearchParams(location.search);
     const queryFrom = searchParams.get('from');
-    const returnUrl = storedReturnUrl || location.state?.from?.pathname || queryFrom;
+    const rawFrom = location.state?.from;
+    const stateFrom = typeof rawFrom === 'string' ? rawFrom : rawFrom?.pathname;
+    const returnUrl = storedReturnUrl || stateFrom || queryFrom;
 
     const destination = resolveSafeRedirect(role, returnUrl);
     navigate(destination, { replace: true });
