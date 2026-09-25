@@ -112,7 +112,6 @@ const SAFETY_LEVELS = {
   detect_delayed_shipments: 1,
   check_shipping_serviceability: 1,
   get_shipping_rates: 1,
-  calculate_shipping_rate: 1,
   get_shipment: 1,
   track_shipment: 1,
   get_shipping_statistics: 1,
@@ -841,7 +840,6 @@ async function executeTool(toolName, args = {}, context = {}) {
         break;
 
       case 'get_shipping_rates':
-      case 'calculate_shipping_rate':
         result = await shippingService.getShippingRates(args);
         break;
 

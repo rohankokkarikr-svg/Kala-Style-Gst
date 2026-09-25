@@ -76,19 +76,112 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
       seenToolNames.add(tool.name);
     }
 
-    // 3. Initialize Gemini multi-turn chat session with tools and system instruction
+    // Extract user prompt (last user message)
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    const userPrompt = lastUserMsg?.content || 'Run operational status check';
+
+    // 3. Master Autonomous Sweep Direct Dispatch
+    const isMasterSweepCommand = /handle (today'?s admin work|everything safe today|all admin work)/i.test(userPrompt) ||
+      /run (autonomous sweep|autopilot sweep|daily admin operations)/i.test(userPrompt);
+
+    if (isMasterSweepCommand) {
+      console.log('⚡ [AI Orchestrator] Triggering Autonomous Daily Admin Operations Sweep...');
+      const domainAgents = require('./domainAgents');
+      const sweepResult = await domainAgents.runAutonomousDailySweep({
+        adminConfirmed: true,
+        triggerSource: 'ADMIN_CHAT_DIRECTIVE',
+      });
+
+      if (!sweepResult.success && sweepResult.blocked) {
+        return {
+          success: false,
+          blocked: true,
+          message: sweepResult.reason,
+          toolCallsExecuted: [],
+          actionsCount: 0,
+          conversationId,
+        };
+      }
+
+      const rep = sweepResult.report;
+      const formattedResponse = `### 🌟 TODAY'S AUTONOMOUS ADMIN OPERATIONS REPORT
+
+**Status:** Completed successfully • **Mode:** ${rep.mode} • **Duration:** ${rep.duration_ms}ms
+**System Health:** Overall **${rep.system_health.overall}** (${rep.system_health.services_checked} services verified)
+
+---
+
+#### 📦 Orders & Fraud Sentinel
+- **Orders Inspected:** ${rep.orders.inspected}
+- **Suspicious Orders Detected:** ${rep.orders.suspicious_found}
+- **Safely Held (Low/Med Risk):** ${rep.orders.held_safely}
+- **Approval Requests Queued (Critical):** ${rep.orders.approval_requests_created}
+
+#### 💳 Payments Sentinel
+- **Failed Payments Detected:** ${rep.payments.failed_payments}
+- **Pending COD Collections:** ${rep.payments.pending_cod_collections}
+- **Payment Gateway Anomalies:** ${rep.payments.anomalies_detected}
+
+#### 🎨 Products & Artisans
+- **Pending Products Inspected:** ${rep.products.pending_review}
+- **Products Held for Review:** ${rep.products.held_for_inspection}
+- **Pending Artisan Registrations:** ${rep.artisans.pending_registrations}
+- **Artisans Held for Verification:** ${rep.artisans.held_for_verification}
+
+#### 📊 Inventory Sentinel
+- **Low Stock Products (<=5):** ${rep.inventory.low_stock_products}
+- **Out of Stock Products:** ${rep.inventory.out_of_stock_products}
+- **Artisan Alerts Recommended:** ${rep.inventory.alerts_recommended}
+
+#### 🚚 Shipping & Logistics Sentinel
+- **Delayed Shipments (>7 days):** ${rep.shipping.delayed_shipments}
+- **Unassigned AWB Shipments:** ${rep.shipping.unassigned_awb_count}
+- **Failed Shipments:** ${rep.shipping.failed_shipments}
+
+#### 💬 Moderation & Support
+- **Pending Customer Reviews:** ${rep.reviews.pending_moderation}
+- **Open Reports/Complaints:** ${rep.complaints.open_complaints}
+- **Urgent Complaints:** ${rep.complaints.urgent_complaints}
+
+---
+*All metrics verified from real database records. Audit trail and report persisted in database.*`;
+
+      return {
+        success: true,
+        message: formattedResponse,
+        report: rep,
+        toolCallsExecuted: [{
+          id: `sweep_${Date.now()}`,
+          tool: 'handle_todays_admin_work',
+          args: { prompt: userPrompt },
+          result: sweepResult,
+        }],
+        actionsCount: 1,
+        conversationId,
+      };
+    }
+
+    // 4. Build Gemini history from prior messages (all messages except the very last one)
+    const history = [];
+    const priorMessages = messages.slice(0, -1);
+    for (const msg of priorMessages) {
+      if (!msg || !msg.content) continue;
+      history.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(msg.content) }],
+      });
+    }
+
+    // 5. Initialize Gemini multi-turn chat session with tools, history, and system instruction
     const chat = ai.chats.create({
       model,
+      history,
       config: {
         systemInstruction: SYSTEM_PROMPT,
         tools: GEMINI_TOOLS,
         temperature: 0.2, // Low temperature for deterministic operational decisions
       },
     });
-
-    // Extract user prompt (last user message)
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-    const userPrompt = lastUserMsg?.content || 'Run operational status check';
 
     let currentStep = 0;
     let finalContent = '';

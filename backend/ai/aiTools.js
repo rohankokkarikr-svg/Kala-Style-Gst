@@ -794,6 +794,18 @@ const FUNCTION_DECLARATIONS = [
     },
   },
   {
+    name: 'approve_review',
+    description: 'Approve a pending customer review and publish it live on the storefront.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        review_id: { type: 'STRING', description: 'UUID of the customer review to approve' },
+        reason: { type: 'STRING', description: 'Administrative reason for approval' },
+      },
+      required: ['review_id'],
+    },
+  },
+  {
     name: 'batch_approve_reviews',
     description: 'Approve all pending customer reviews and publish them live across all products.',
     parameters: {

@@ -34,58 +34,59 @@ async function getShiprocketToken() {
   }
 
   authPromise = (async () => {
-    const email = getEmail();
-    const password = getPassword();
+    try {
+      const email = getEmail();
+      const password = getPassword();
 
-    if (!email || email.startsWith('your_') || !password || password.startsWith('your_')) {
-      throw new Error('Shiprocket credentials not configured. Please set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD.');
-    }
+      if (!email || email.startsWith('your_') || !password || password.startsWith('your_')) {
+        throw new Error('Shiprocket credentials not configured. Please set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD.');
+      }
 
-    const apiUrl = getApiUrl();
-    const loginUrl = `${apiUrl}/auth/login`;
+      const apiUrl = getApiUrl();
+      const loginUrl = `${apiUrl}/auth/login`;
 
-    let lastErr;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await axios.post(
-          loginUrl,
-          { email, password },
-          {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 15000,
+      let lastErr;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await axios.post(
+            loginUrl,
+            { email, password },
+            {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: 15000,
+            }
+          );
+
+          const token = response.data?.token;
+          if (!token) {
+            throw new Error('Shiprocket authentication returned no token.');
           }
-        );
 
-        const token = response.data?.token;
-        if (!token) {
-          throw new Error('Shiprocket authentication returned no token.');
-        }
+          cachedToken = token;
+          // Shiprocket tokens are valid for ~10 days. We conservatively cache for 7 days.
+          tokenExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 
-        cachedToken = token;
-        // Shiprocket tokens are valid for ~10 days. We conservatively cache for 7 days.
-        tokenExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-
-        return cachedToken;
-      } catch (err) {
-        lastErr = err;
-        cachedToken = null;
-        tokenExpiresAt = null;
-        // If network glitch or DNS error, wait 1 second and retry once
-        if (attempt === 1 && (!err.response || err.code === 'ENOTFOUND' || err.code === 'ECONNRESET')) {
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
-        }
-        break;
-      } finally {
-        if (attempt === 2 || cachedToken) {
-          authPromise = null;
+          return cachedToken;
+        } catch (err) {
+          lastErr = err;
+          cachedToken = null;
+          tokenExpiresAt = null;
+          // If network glitch or DNS error, wait 1 second and retry once
+          if (attempt === 1 && (!err.response || err.code === 'ENOTFOUND' || err.code === 'ECONNRESET')) {
+            await new Promise((r) => setTimeout(r, 1000));
+            continue;
+          }
+          break;
         }
       }
-    }
 
-    const status = lastErr.response?.status;
-    const msg = lastErr.response?.data?.message || lastErr.message;
-    throw new Error(`Shiprocket authentication failed [${status || 'NET_ERR'}]: ${msg}`);
+      const status = lastErr.response?.status;
+      const msg = lastErr.response?.data?.message || lastErr.message;
+      throw new Error(`Shiprocket authentication failed [${status || 'NET_ERR'}]: ${msg}`);
+    } finally {
+      // Unconditionally reset authPromise so subsequent requests can re-authenticate
+      authPromise = null;
+    }
   })();
 
   return authPromise;

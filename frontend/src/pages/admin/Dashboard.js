@@ -37,6 +37,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchOverview();
+    const interval = setInterval(fetchOverview, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -46,8 +48,9 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl md:text-3xl font-serif font-bold text-white flex items-center gap-3">
             <span>Marketplace Control Center</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-gold-500/20 border border-gold-500/40 text-gold-400 font-sans font-semibold">
-              Live Real-Time
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-sans font-semibold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live Synchronized
             </span>
           </h1>
           <p className="text-gray-400 text-sm mt-1">

@@ -92,11 +92,9 @@ async function processJob(job) {
         return { skipped: true, reason: 'artisan_auto_verification rule is disabled' };
       }
 
-      // Fetch artisan details
       const artisan = await artisanService.getArtisanDetails(job.entity_id);
       if (!artisan) throw new Error(`Artisan ${job.entity_id} not found`);
 
-      // If OpenAI is available, let OpenAI evaluate and decide
       const prompt = `A new artisan has registered on KalaStyle AI:
 Store Name: ${artisan.store_name}
 Artisan Type / Craft: ${artisan.artisan_type || 'N/A'}
@@ -105,22 +103,20 @@ Location: ${artisan.location || 'N/A'}
 Years of Experience: ${artisan.years_of_experience || 'Not specified'}
 Bio: ${artisan.bio || 'Not provided'}
 
-Please inspect the profile using your tools. If the profile contains authentic Indian craft heritage information, call verify_artisan. If it is severely incomplete, call hold_artisan. Explain your decision.`;
+Please inspect the profile using your tools. If the profile contains authentic Indian craft heritage information with verified details, call verify_artisan. If incomplete or questionable, call hold_artisan. Explain your decision.`;
 
       const aiRes = await runAutonomousLoop({
         messages: [{ role: 'user', content: prompt }],
         context: { eventType: 'ARTISAN_REGISTERED', entityId: job.entity_id },
       });
 
-      // If AI did not verify via tool (e.g. fallback mode), apply deterministic rule:
-      // Verify if experience >= 1 and bio is provided
-      if (aiRes.mode === 'deterministic_fallback') {
-        const hasValidBio = Boolean(artisan.bio && artisan.bio.trim().length > 15);
-        if (hasValidBio) {
-          result = await artisanService.verifyArtisan(job.entity_id, 'Verified via Autonomous Operations Sentinel', 0.95);
-        } else {
-          result = await artisanService.holdArtisan(job.entity_id, 'Awaiting detailed heritage bio');
-        }
+      // SECTION 35 SAFEGUARD: When AI is unavailable or in fallback mode,
+      // NEVER auto-verify based on bio length. Hold for human review.
+      if (aiRes.mode === 'deterministic_fallback' || !aiRes.toolsExecuted || aiRes.toolsExecuted.length === 0) {
+        result = await artisanService.holdArtisan(
+          job.entity_id,
+          'Placed on hold for administrative review (AI in fallback mode — requires manual verification)'
+        );
       } else {
         result = aiRes;
       }
@@ -133,15 +129,20 @@ Please inspect the profile using your tools. If the profile contains authentic I
       }
 
       const prompt = `A new craft product has been submitted with ID: ${job.entity_id}.
-Inspect this product using get_products. Validate price, craft category, and artisan ownership. If valid, call approve_product; otherwise reject_product or hold_product.`;
+Inspect this product using get_products. Validate price, craft category, and artisan ownership. If valid and compliant, call approve_product; otherwise call hold_product.`;
 
       const aiRes = await runAutonomousLoop({
         messages: [{ role: 'user', content: prompt }],
         context: { eventType: 'PRODUCT_SUBMITTED', entityId: job.entity_id },
       });
 
-      if (aiRes.mode === 'deterministic_fallback') {
-        result = await productService.approveProduct(job.entity_id, 'Auto-approved by platform compliance checks', 0.9);
+      // SECTION 34 SAFEGUARD: When AI is unavailable or in fallback mode,
+      // DO NOT auto-approve products. Place on hold for human review.
+      if (aiRes.mode === 'deterministic_fallback' || !aiRes.toolsExecuted || aiRes.toolsExecuted.length === 0) {
+        result = await productService.holdProduct(
+          job.entity_id,
+          'Placed on hold for administrative compliance inspection (AI in fallback mode — requires manual approval)'
+        );
       } else {
         result = aiRes;
       }
@@ -163,6 +164,49 @@ Inspect this product using get_products. Validate price, craft category, and art
       break;
     }
 
+    case 'REVIEW_CREATED': {
+      if (rules.review_moderation === false) {
+        return { skipped: true, reason: 'review_moderation rule is disabled' };
+      }
+
+      const prompt = `A new customer review has been posted (Review ID: ${job.entity_id}).
+Fetch the review details using get_reviews. Inspect for profanity, spam, and authenticity. If clean, call approve_review. If abusive, call moderate_review with action="hide".`;
+
+      result = await runAutonomousLoop({
+        messages: [{ role: 'user', content: prompt }],
+        context: { eventType: 'REVIEW_CREATED', entityId: job.entity_id },
+      });
+      break;
+    }
+
+    case 'COMPLAINT_CREATED': {
+      const prompt = `A new customer or artisan complaint has been submitted (Complaint ID: ${job.entity_id}).
+Fetch details using get_complaints. Evaluate urgency and severity. Suggest operational resolution or route to support team.`;
+
+      result = await runAutonomousLoop({
+        messages: [{ role: 'user', content: prompt }],
+        context: { eventType: 'COMPLAINT_CREATED', entityId: job.entity_id },
+      });
+      break;
+    }
+
+    case 'SHIPMENT_DELAYED': {
+      const prompt = `Shipment or order ${job.entity_id} has exceeded normal transit milestones.
+Inspect with track_shipment and get_shipping_status. Evaluate delay and recommend retry or escalation.`;
+
+      result = await runAutonomousLoop({
+        messages: [{ role: 'user', content: prompt }],
+        context: { eventType: 'SHIPMENT_DELAYED', entityId: job.entity_id },
+      });
+      break;
+    }
+
+    case 'SHIPMENT_STATUS_CHANGED': {
+      const shippingService = require('../services/shipping/shippingService');
+      result = await shippingService.trackShipment({ shipment_id: job.entity_id });
+      break;
+    }
+
     case 'LOW_STOCK_DETECTED': {
       result = await productService.getLowStockProducts(5);
       break;
@@ -173,6 +217,11 @@ Inspect this product using get_products. Validate price, craft category, and art
         return { skipped: true, reason: 'daily_ai_report rule is disabled' };
       }
       result = await analyticsReportService.generateDailyReport();
+      break;
+    }
+
+    case 'WEEKLY_REPORT': {
+      result = await analyticsReportService.generateWeeklyReport();
       break;
     }
 

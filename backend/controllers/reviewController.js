@@ -167,6 +167,17 @@ exports.submitReview = async (req, res) => {
       throw error;
     }
 
+    if (data && data.id) {
+      try {
+        const { emitEvent } = require('../ai/aiEventBus');
+        emitEvent('REVIEW_CREATED', 'review', data.id, {
+          rating: data.rating,
+          customer: data.customer_name,
+          product_name: data.product_name,
+        });
+      } catch (e) {}
+    }
+
     res.status(201).json(data);
   } catch (error) {
     console.error('Error submitting review:', error);

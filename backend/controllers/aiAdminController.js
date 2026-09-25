@@ -343,3 +343,62 @@ exports.getAgentMemory = async (req, res) => {
   }
 };
 
+/**
+ * Return real AI operational status, configured model, and control settings.
+ * NEVER fabricates status or model name.
+ */
+exports.getStatus = async (req, res) => {
+  try {
+    const { isConfigured, getModel } = require('../ai/geminiClient');
+    const aiControlCenter = require('../ai/aiControlCenter');
+    const controlSettings = await aiControlCenter.getControlSettings();
+
+    const configured = isConfigured();
+    const model = configured ? getModel() : 'Unavailable (API key missing)';
+
+    res.json({
+      configured,
+      model,
+      status: controlSettings.ai_emergency_stop
+        ? 'EMERGENCY_STOP'
+        : configured
+        ? 'HEALTHY'
+        : 'FALLBACK_MODE',
+      autonomous_active: Boolean(controlSettings.ai_autonomous_enabled && !controlSettings.ai_emergency_stop && controlSettings.ai_global_enabled),
+      control_settings: controlSettings,
+    });
+  } catch (error) {
+    console.error('❌ [AI Admin Controller] getStatus error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Update autonomous control settings (AI Mode, Emergency Stop, Action Budgets).
+ */
+exports.updateControl = async (req, res) => {
+  try {
+    const aiControlCenter = require('../ai/aiControlCenter');
+    const updated = await aiControlCenter.updateControlSettings(req.body);
+    res.json({ success: true, control_settings: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Trigger master autonomous operations sweep ("Handle today's admin work").
+ */
+exports.runAutopilot = async (req, res) => {
+  try {
+    const domainAgents = require('../ai/domainAgents');
+    const result = await domainAgents.runAutonomousDailySweep({
+      adminConfirmed: true,
+      triggerSource: 'ADMIN_PANEL_AUTOPILOT_BUTTON',
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+

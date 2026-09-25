@@ -18,20 +18,20 @@ import { aiManagerAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const QUICK_PROMPTS = [
-  "Add hero section banner on account of the Ganesh Festival.",
-  "Launch complete Ganesh Festival Campaign with 30% discount.",
-  "Update top discount banner: 25% OFF with code KALA25.",
+  "Handle today's admin work.",
+  "Handle everything safe today.",
+  "Check the entire website health.",
+  "Detect suspicious or high-risk orders.",
+  "Find low-stock and out-of-stock products.",
+  "Show delayed shipments.",
   "Approve all pending craft products live to catalog.",
   "Verify all pending artisan profiles & activate storefronts.",
   "Approve all pending customer reviews.",
-  "Find low-stock and out-of-stock products.",
-  "Check the entire website health.",
   "Show today's orders and payment statuses.",
-  "What should we promote this season?",
-  "Detect suspicious or high-risk orders.",
-  "Show delayed shipments.",
   "Generate today's complete business report.",
-  "Analyze artisan performance this month.",
+  "Add hero section banner on account of the Ganesh Festival.",
+  "Launch complete Ganesh Festival Campaign with 30% discount.",
+  "Update top discount banner: 25% OFF with code KALA25.",
   "Show active autonomous operational rules."
 ];
 
@@ -306,6 +306,49 @@ export default function AIManagement() {
     }
   };
 
+  const handleToggleEmergencyStop = async () => {
+    const currentStop = Boolean(statusInfo?.control_settings?.ai_emergency_stop);
+    const newStop = !currentStop;
+    try {
+      await aiManagerAPI.updateControl({ ai_emergency_stop: newStop });
+      toast.success(newStop ? '🛑 EMERGENCY STOP ACTIVATED: All mutations paused!' : '✅ Emergency Stop cleared. Normal operations resumed.');
+      await fetchStatusAndData();
+    } catch (err) {
+      toast.error('Failed to toggle emergency stop');
+    }
+  };
+
+  const handleModeChange = async (newMode) => {
+    try {
+      await aiManagerAPI.updateControl({ ai_mode: newMode });
+      toast.success(`AI Mode changed to ${newMode}`);
+      await fetchStatusAndData();
+    } catch (err) {
+      toast.error('Failed to change AI mode');
+    }
+  };
+
+  const handleRunAutopilot = async () => {
+    const toastId = toast.loading("Executing today's autonomous admin operations sweep...");
+    try {
+      const { data } = await aiManagerAPI.runAutopilot();
+      if (data?.success) {
+        toast.success("Autonomous admin operations completed successfully! 🌟", { id: toastId });
+        await fetchStatusAndData();
+        setMessages(prev => [
+          ...prev,
+          { id: `usr_${Date.now()}`, role: 'user', content: "Handle today's admin work.", timestamp: new Date() },
+          { id: `ai_${Date.now()}`, role: 'assistant', content: data.message || "Daily autonomous operations sweep completed.", timestamp: new Date() }
+        ]);
+        setActiveTab('chat');
+      } else {
+        toast.error(data?.reason || "Autonomous sweep could not execute", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || "Autopilot sweep failed", { id: toastId });
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* ── Header & Status Bar ── */}
@@ -329,16 +372,64 @@ export default function AIManagement() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Autonomous Mode Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>Autonomous Active</span>
-            </div>
+            {/* Run Today's Autopilot Button */}
+            <button
+              onClick={handleRunAutopilot}
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-dark-900 font-bold text-xs shadow-md shadow-gold-500/20 flex items-center gap-1.5 transition-all"
+              title="Run complete autonomous admin sweep across all 12 sentinels"
+            >
+              <HiSparkles className="w-4 h-4" />
+              <span>Run Today's Autopilot</span>
+            </button>
+
+            {/* Emergency Stop Button */}
+            <button
+              onClick={handleToggleEmergencyStop}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                statusInfo?.control_settings?.ai_emergency_stop
+                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                  : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30'
+              }`}
+              title="Emergency Stop: Halt all autonomous mutations instantly"
+            >
+              <span>{statusInfo?.control_settings?.ai_emergency_stop ? 'RESUME AI' : 'STOP AI'}</span>
+            </button>
+
+            {/* AI Mode Selector */}
+            <select
+              value={statusInfo?.control_settings?.ai_mode || 'AUTONOMOUS'}
+              onChange={(e) => handleModeChange(e.target.value)}
+              className="bg-dark-700 border border-dark-600 text-xs rounded-lg px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-gold-500 font-medium"
+            >
+              <option value="OFF">Mode: OFF</option>
+              <option value="READ_ONLY">Mode: READ_ONLY</option>
+              <option value="ASSISTED">Mode: ASSISTED</option>
+              <option value="AUTONOMOUS">Mode: AUTONOMOUS</option>
+              <option value="FULL_AUTONOMOUS">Mode: FULL_AUTONOMOUS</option>
+            </select>
+
+            {/* Autonomous Mode Status Badge */}
+            {statusInfo?.control_settings?.ai_emergency_stop ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                <span>EMERGENCY STOP</span>
+              </div>
+            ) : statusInfo?.autonomous_active ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Autonomous Active</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-500/10 border border-gray-500/30 text-gray-400 text-xs font-medium">
+                <span className="w-2 h-2 rounded-full bg-gray-400" />
+                <span>Autonomous Paused</span>
+              </div>
+            )}
 
             {/* Model Badge */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-700 border border-dark-600 text-gray-300 text-xs">
               <HiServer className="w-4 h-4 text-gold-400" />
-              <span>Model: <strong className="text-white">{statusInfo?.model || 'gpt-4o-mini'}</strong></span>
+              <span>Model: <strong className="text-white">{statusInfo?.model || 'Google Gemini 2.5 Flash'}</strong></span>
             </div>
 
             {/* Queue Counter */}

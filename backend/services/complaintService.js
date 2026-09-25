@@ -58,3 +58,37 @@ exports.resolveComplaint = async (complaintId, newStatus = 'resolved', resolutio
     resolution_notes: resolutionNotes,
   };
 };
+
+/**
+ * File a new customer/artisan complaint or platform report.
+ */
+exports.createComplaint = async ({ userId, reportType = 'general', reason, description, targetId = null } = {}) => {
+  const { data, error } = await safeQuery(() =>
+    supabase
+      .from('reports')
+      .insert([{
+        user_id: userId || null,
+        report_type: reportType,
+        reason: reason || 'Customer dispute or product concern',
+        description: description || null,
+        target_id: targetId,
+        status: 'open',
+        created_at: new Date().toISOString(),
+      }])
+      .select()
+      .single()
+  );
+
+  if (error) throw new Error(`Database error filing complaint: ${error.message}`);
+
+  try {
+    const { emitEvent } = require('../ai/aiEventBus');
+    emitEvent('COMPLAINT_CREATED', 'report', data.id, {
+      report_type: reportType,
+      reason,
+      user_id: userId,
+    });
+  } catch (e) {}
+
+  return data;
+};

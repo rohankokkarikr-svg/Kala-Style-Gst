@@ -146,10 +146,20 @@ async function saveShipment(shipment) {
       supabase.from('shipping_shipments').upsert([shipment], { onConflict: 'id' })
     );
     if (error) {
-      console.warn(`⚠️ [Shipping Store] Supabase shipment upsert notice (${error.message}). Local durable persistence maintained.`);
+      shipment.db_sync_status = 'RECONCILIATION_REQUIRED';
+      shipment.db_sync_error = error.message;
+      console.error(`❌ [Shipping Store] Supabase shipment upsert error (${error.message}). Marked RECONCILIATION_REQUIRED.`);
+      if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_DB_OFFLINE) {
+        throw new Error(`Database persistence failed for shipment ${shipment.id}: ${error.message}`);
+      }
+    } else {
+      shipment.db_sync_status = 'SYNCED';
     }
   } catch (err) {
-    console.warn(`⚠️ [Shipping Store] Supabase shipment write exception: ${err.message}`);
+    console.error(`❌ [Shipping Store] Supabase shipment write exception: ${err.message}`);
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_DB_OFFLINE) {
+      throw err;
+    }
   }
 
   return shipment;

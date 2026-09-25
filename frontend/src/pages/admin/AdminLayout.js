@@ -20,7 +20,9 @@ import {
   HiMenu, 
   HiX,
   HiExternalLink,
-  HiTruck
+  HiTruck,
+  HiPhotograph,
+  HiTag
 } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import NotificationCenter from '../../components/NotificationCenter';
@@ -69,6 +71,8 @@ export default function AdminLayout() {
       items: [
         { name: 'Notifications', path: '/admin/notifications', icon: HiBell },
         { name: 'Content & Banners', path: '/admin/content', icon: HiTemplate },
+        { name: 'Hero Slides', path: '/admin/hero-settings', icon: HiPhotograph },
+        { name: 'Discount Banner', path: '/admin/discount-banner', icon: HiTag },
         { name: 'Activity Logs', path: '/admin/activity', icon: HiClipboardList },
         { name: 'Settings', path: '/admin/settings', icon: HiCog },
       ]

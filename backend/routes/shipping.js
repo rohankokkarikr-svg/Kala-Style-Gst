@@ -371,8 +371,10 @@ router.post('/webhooks/shiprocket', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ [Shipping Webhook] Error:', error.message);
-    // Return 200 with error details to avoid infinite provider retry loops on data format quirks
-    res.status(200).json({ success: false, error: error.message });
+    // Transient or server failures must return HTTP 500 to allow provider retry
+    const isClientError = error.message?.includes('Invalid payload') || error.message?.includes('Missing event');
+    const statusCode = isClientError ? 400 : 500;
+    res.status(statusCode).json({ success: false, error: error.message });
   }
 });
 

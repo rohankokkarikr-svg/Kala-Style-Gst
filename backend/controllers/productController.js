@@ -47,29 +47,15 @@ exports.getCategories = async (req, res) => {
       supabase.from('categories').select('*').order('name')
     );
 
-    if (data && data.length > 0) {
-      return res.json(data);
+    if (error) {
+      console.error('getCategories database error:', error.message);
+      return res.status(500).json({ error: 'Database unavailable: Could not fetch categories from database.' });
     }
-    return res.json(HANDICRAFT_CATEGORIES.map((c, i) => ({
-      id: String(i + 1),
-      name: c.name,
-      slug: c.id,
-      description: c.description,
-      image_url: c.image,
-      subcategories: c.subcategories || [],
-      is_active: true
-    })));
+
+    return res.json(data || []);
   } catch (err) {
-    console.error('getCategories error, returning static fallback:', err.message);
-    res.json(HANDICRAFT_CATEGORIES.map((c, i) => ({
-      id: String(i + 1),
-      name: c.name,
-      slug: c.id,
-      description: c.description,
-      image_url: c.image,
-      subcategories: c.subcategories || [],
-      is_active: true
-    })));
+    console.error('getCategories error:', err.message);
+    res.status(500).json({ error: 'Database unavailable or categories query failed' });
   }
 };
 

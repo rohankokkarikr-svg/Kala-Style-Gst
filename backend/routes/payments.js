@@ -238,6 +238,15 @@ router.post('/verify', protect, async (req, res) => {
 
     console.log(`[verify] ✅ Payment successfully verified for order ${order.id}`);
 
+    try {
+      const { emitEvent } = require('../ai/aiEventBus');
+      emitEvent('PAYMENT_UPDATED', 'payment', order.id, {
+        status: 'paid',
+        payment_id: razorpay_payment_id,
+        order_number: order.order_number,
+      });
+    } catch (e) {}
+
     // Auto-create Shiprocket logistics shipment (non-blocking)
     try {
       const shippingService = require('../services/shipping/shippingService');
@@ -360,6 +369,14 @@ router.post('/webhook', async (req, res) => {
           broadcastSync('ORDERS_UPDATED', { orderId: order.id, order_status: 'confirmed' });
           console.log(`[webhook] ✅ Processed payment.captured for order ${order.id}`);
 
+          try {
+            const { emitEvent } = require('../ai/aiEventBus');
+            emitEvent('PAYMENT_UPDATED', 'payment', order.id, {
+              status: 'paid',
+              payment_id: razorpayPaymentId,
+            });
+          } catch (e) {}
+
           // Auto-create Shiprocket logistics shipment (non-blocking)
           try {
             const shippingService = require('../services/shipping/shippingService');
@@ -422,6 +439,14 @@ router.post('/webhook', async (req, res) => {
 
           broadcastSync('PAYMENTS_UPDATED', { orderId: order.id, status: 'failed' });
           console.log(`[webhook] Processed payment.failed and released stock for order ${order.id}`);
+
+          try {
+            const { emitEvent } = require('../ai/aiEventBus');
+            emitEvent('PAYMENT_UPDATED', 'payment', order.id, {
+              status: 'failed',
+              error: payment.error_description || 'Payment failed',
+            });
+          } catch (e) {}
         }
       } catch (err) {
         console.error('[webhook] Error handling payment.failed:', err.message);

@@ -34,6 +34,10 @@ router.get('/approvals',                    aiAdminController.getApprovals);
 router.post('/approvals/:id/approve',       aiAdminController.approveAction);
 router.post('/approvals/:id/reject',        aiAdminController.rejectAction);
 
+// ── Control Center & Autopilot ──────────────────────────────────
+router.put('/control',          aiAdminController.updateControl);
+router.post('/autopilot',        aiAdminController.runAutopilot);
+
 // ── New: Agent Memory ────────────────────────────────────────────
 router.get('/memory',          aiAdminController.getAgentMemory);
 

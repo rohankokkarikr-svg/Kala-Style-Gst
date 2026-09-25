@@ -17,9 +17,16 @@ const { enqueueJob, processPendingJobs } = require('./aiJobProcessor');
  */
 async function emitEvent(eventType, entityType, entityId, payload = {}) {
   try {
-    const isAutonomous = process.env.AI_AUTONOMOUS_MODE !== 'false';
-    if (!isAutonomous) {
-      console.log(`[AI EventBus] Autonomous mode disabled; skipping event ${eventType}`);
+    const aiControlCenter = require('./aiControlCenter');
+    const settings = await aiControlCenter.getControlSettings();
+
+    if (settings.ai_emergency_stop) {
+      console.warn(`🛑 [AI EventBus] Blocked event ${eventType}: Emergency stop is active.`);
+      return;
+    }
+
+    if (!settings.ai_global_enabled) {
+      console.log(`[AI EventBus] AI global operations disabled; skipping event ${eventType}`);
       return;
     }
 

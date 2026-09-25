@@ -752,6 +752,21 @@ async function handleWebhook(payload) {
           awb,
           status: normalized,
         });
+        try {
+          const { emitEvent } = require('../../ai/aiEventBus');
+          emitEvent('SHIPMENT_STATUS_CHANGED', 'shipment', targetShipment.id, {
+            status: normalized,
+            awb,
+            order_id: targetShipment.order_id,
+          });
+          if (normalized === 'DELAYED' || normalized === 'RTO_INITIATED' || normalized === 'FAILED') {
+            emitEvent('SHIPMENT_DELAYED', 'shipment', targetShipment.id, {
+              status: normalized,
+              awb,
+              order_id: targetShipment.order_id,
+            });
+          }
+        } catch (evErr) {}
       } catch (bErr) {
         console.debug('Realtime broadcast notice:', bErr.message);
       }

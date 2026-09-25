@@ -120,9 +120,6 @@ export default function HeroSettings() {
     setLoading(true);
     try {
       await updateSettings({ heroSlides: updatedSlides });
-      try {
-        await settingsAPI.update({ heroSlides: updatedSlides });
-      } catch {}
       setSlides(updatedSlides);
       toast.success('Hero slides updated & synced to all devices!');
     } catch (err) {

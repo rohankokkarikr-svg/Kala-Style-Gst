@@ -162,17 +162,24 @@ async function getApprovalById(approvalId) {
  * Create a new approval request for a HIGH/CRITICAL action.
  * The action does NOT execute — it waits for admin approval.
  */
-async function createApproval({ toolName, toolArgs, description, riskLevel = 'HIGH', adminId, conversationId }) {
+async function createApproval(params = {}) {
+  const toolName = params.toolName || params.actionName || params.tool_name;
+  const toolArgs = params.toolArgs || params.parameters || params.tool_args || {};
+  const description = params.description || params.reason || `Approval required for ${toolName}`;
+  const riskLevel = params.riskLevel || params.risk_level || 'HIGH';
+  const adminId = params.adminId || params.admin_id;
+  const conversationId = params.conversationId || params.conversation_id;
+
   const approval = {
     id: uuidv4(),
     action_type: toolName,
     description,
     risk_level: riskLevel,
-    requested_by: typeof adminId === 'string' && adminId.trim() ? adminId : 'ai_agent',
+    requested_by: typeof adminId === 'string' && adminId.trim() ? adminId : (params.agentName || 'ai_agent'),
     admin_id: safeUuid(adminId), // Safe UUID or null
     conversation_id: conversationId || null,
     tool_name: toolName,
-    tool_args: toolArgs || {},
+    tool_args: toolArgs,
     status: 'PENDING',
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24h
@@ -199,53 +206,87 @@ async function createApproval({ toolName, toolArgs, description, riskLevel = 'HI
   return approval;
 }
 
+const createApprovalRequest = createApproval;
+
 /**
- * Admin approves a pending action — executes the tool and marks EXECUTED.
+ * Admin approves a pending action — atomically claims PENDING state, executes the tool, and marks EXECUTED.
  */
 async function approveAction(approvalId, approvedById) {
-  const approval = await getApprovalById(approvalId);
-  if (!approval) throw new Error(`Approval record ${approvalId} not found`);
-
-  let executionResult = null;
-  let executionError = null;
-
-  try {
-    executionResult = await executeApprovedAction(approval, approvedById);
-  } catch (err) {
-    console.error(`❌ [AI Approval Service] Action execution failed:`, err);
-    executionError = err.message;
-  }
-
-  const newStatus = executionError ? 'EXECUTION_FAILED' : 'EXECUTED';
-  const updatePayload = {
-    status: newStatus,
-    approved_by: safeUuid(approvedById),
-    approved_at: new Date().toISOString(),
-    execution_result: executionResult || { error: executionError },
-  };
+  // 1. Atomic claim: update status from PENDING to PROCESSING
+  // Ensures only one admin/worker can execute this approval (Prevents race conditions)
+  let claimed = null;
 
   try {
     const { data, error } = await safeQuery(() =>
       supabase
         .from('ai_agent_approvals')
-        .update(updatePayload)
+        .update({
+          status: 'PROCESSING',
+          approved_by: safeUuid(approvedById),
+          approved_at: new Date().toISOString(),
+        })
         .eq('id', approvalId)
+        .eq('status', 'PENDING')
         .select()
         .single()
     );
     if (!error && data) {
-      return { ...data, executionResult, executionMessage: executionResult?.message };
+      claimed = data;
     }
   } catch (e) {}
 
-  // Fallback in-memory
-  const idx = inMemoryApprovals.findIndex(a => a.id === approvalId);
-  if (idx !== -1) {
-    inMemoryApprovals[idx] = { ...inMemoryApprovals[idx], ...updatePayload };
-    return { ...inMemoryApprovals[idx], executionResult, executionMessage: executionResult?.message };
+  // In-memory fallback atomic claim
+  if (!claimed) {
+    const idx = inMemoryApprovals.findIndex(a => a.id === approvalId && a.status === 'PENDING');
+    if (idx !== -1) {
+      inMemoryApprovals[idx].status = 'PROCESSING';
+      inMemoryApprovals[idx].approved_by = safeUuid(approvedById);
+      inMemoryApprovals[idx].approved_at = new Date().toISOString();
+      claimed = inMemoryApprovals[idx];
+    }
   }
 
-  return { ...approval, ...updatePayload, executionResult, executionMessage: executionResult?.message };
+  if (!claimed) {
+    const existing = await getApprovalById(approvalId);
+    if (!existing) throw new Error(`Approval record ${approvalId} not found.`);
+    throw new Error(`Approval ${approvalId} is not in PENDING state (Current status: ${existing.status}). Operation already claimed, processed, or expired.`);
+  }
+
+  let executionResult = null;
+  let executionError = null;
+
+  try {
+    executionResult = await executeApprovedAction(claimed, approvedById);
+  } catch (err) {
+    console.error(`❌ [AI Approval Service] Action execution failed:`, err);
+    executionError = err.message;
+  }
+
+  const finalStatus = executionError ? 'EXECUTION_FAILED' : 'EXECUTED';
+  const finalUpdate = {
+    status: finalStatus,
+    execution_result: executionResult || { error: executionError },
+  };
+
+  try {
+    const { data } = await safeQuery(() =>
+      supabase
+        .from('ai_agent_approvals')
+        .update(finalUpdate)
+        .eq('id', approvalId)
+        .select()
+        .single()
+    );
+    if (data) return { ...data, executionResult, executionMessage: executionResult?.message };
+  } catch (e) {}
+
+  const memIdx = inMemoryApprovals.findIndex(a => a.id === approvalId);
+  if (memIdx !== -1) {
+    inMemoryApprovals[memIdx] = { ...inMemoryApprovals[memIdx], ...finalUpdate };
+    return { ...inMemoryApprovals[memIdx], executionResult, executionMessage: executionResult?.message };
+  }
+
+  return { ...claimed, ...finalUpdate, executionResult, executionMessage: executionResult?.message };
 }
 
 /**
@@ -277,6 +318,20 @@ async function rejectAction(approvalId, rejectedById, reason = 'Rejected by admi
     return inMemoryApprovals[idx];
   }
   throw new Error(`Approval ${approvalId} not found`);
+}
+
+/**
+ * Fetch a single approval request by ID.
+ */
+async function getApprovalById(approvalId) {
+  try {
+    const { data, error } = await safeQuery(() =>
+      supabase.from('ai_agent_approvals').select('*').eq('id', approvalId).maybeSingle()
+    );
+    if (!error && data) return data;
+  } catch (e) {}
+
+  return inMemoryApprovals.find(a => a.id === approvalId) || null;
 }
 
 /**
@@ -357,6 +412,7 @@ async function expireOldApprovals() {
 
 module.exports = {
   createApproval,
+  createApprovalRequest,
   approveAction,
   rejectAction,
   getApprovalById,

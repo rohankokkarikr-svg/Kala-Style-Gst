@@ -204,13 +204,14 @@ exports.getCustomers = async (req, res) => {
       supabase
         .from('users')
         .select('id, name, email, role, created_at, status')
+        .eq('role', 'user')
         .order('created_at', { ascending: false })
     );
 
     if (error) throw error;
 
-    // Filter customers
-    let customers = (users || []).filter(u => u.role !== 'admin');
+    // Filter customers strictly by role = 'user' (artisans and admins excluded)
+    let customers = (users || []).filter(u => u.role === 'user');
 
     if (status && status !== 'all') {
       customers = customers.filter(c => (c.status || 'active') === status);
@@ -255,14 +256,18 @@ exports.updateCustomerStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; // 'active', 'suspended'
 
+    // Server-side authorization guard: only update customer accounts (role = 'user')
     const { data, error } = await supabase
       .from('users')
       .update({ status })
       .eq('id', id)
+      .eq('role', 'user')
       .select()
       .single();
 
-    if (error) throw error;
+    if (error || !data) {
+      return res.status(404).json({ error: 'Customer not found or account is not a customer' });
+    }
     await logActivity(req, `Customer Status Changed to ${status}`, 'Customer', id);
     res.json({ message: 'Customer status updated successfully', user: data });
   } catch (err) {
@@ -488,23 +493,16 @@ exports.getCategories = async (req, res) => {
       supabase.from('categories').select('*').order('name')
     );
 
-    if (data && data.length > 0) {
-      return res.json(data);
+    if (error) {
+      console.error('getCategories database error:', error.message);
+      return res.status(500).json({ error: 'Database unavailable: Could not fetch categories from database.' });
     }
 
-    // Fallback to official 7 categories
-    res.json(HANDICRAFT_CATEGORIES.map((c, i) => ({
-      id: String(i + 1),
-      name: c.name,
-      slug: c.id,
-      description: c.description,
-      image_url: c.image,
-      subcategories: c.subcategories || [],
-      is_active: true
-    })));
+    // Return real database records (never fabricate fake IDs like "1", "2")
+    return res.json(data || []);
   } catch (err) {
     console.error('getCategories error:', err);
-    res.status(500).json({ error: 'Failed to fetch categories' });
+    res.status(500).json({ error: 'Database unavailable or categories query failed' });
   }
 };
 
@@ -645,27 +643,27 @@ exports.updateOrderStatus = async (req, res) => {
       .select()
       .single();
 
-    if (error) throw error;
-
-    // Sync sub-orders and trigger earnings if delivered
+    // SECTION 6 COMPLIANCE: Do NOT blindly synchronize every artisan order
+    // Separate Master Order Status from Artisan Fulfillment Status
     if (status) {
       try {
-        const aoUpdate = {
-          status,
-          updated_at: new Date().toISOString(),
-          ...(status === 'delivered' ? { delivered_at: new Date().toISOString() } : {}),
-          ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
-        };
-        await supabase.from('artisan_orders').update(aoUpdate).eq('order_id', id);
-
-        if (status === 'delivered') {
+        if (status === 'cancelled') {
+          // Cancellation cascades to all sub-orders
+          const aoUpdate = {
+            status: 'cancelled',
+            updated_at: new Date().toISOString(),
+            cancelled_at: new Date().toISOString(),
+          };
+          await supabase.from('artisan_orders').update(aoUpdate).eq('order_id', id);
+        } else if (status === 'delivered') {
+          // When master order is delivered, check verified earnings for delivered sub-orders
           const isPaid = ['paid', 'completed'].includes(String(data.payment_status || '').toLowerCase());
           if (isPaid) {
             const { createArtisanEarning } = require('../services/orderService');
             const { data: artOrders } = await supabase.from('artisan_orders').select('*').eq('order_id', id);
             if (artOrders && artOrders.length > 0) {
               for (const ao of artOrders) {
-                if (ao.artisan_id) {
+                if (ao.artisan_id && ao.status === 'delivered') {
                   await createArtisanEarning(ao.id, ao, ao.artisan_id);
                 }
               }
@@ -675,7 +673,7 @@ exports.updateOrderStatus = async (req, res) => {
           }
         }
       } catch (syncErr) {
-        console.warn('Sub-order sync error in updateOrderStatus:', syncErr.message);
+        console.warn('Sub-order status handling in updateOrderStatus:', syncErr.message);
       }
     }
 
@@ -743,7 +741,7 @@ exports.getPayments = async (req, res) => {
       const customerContact = o.users?.email || o.phone || o.users?.phone || '';
       const customerPhone = o.phone || o.users?.phone || '';
 
-      // Normalize status
+      // Normalize status strictly from verified payment status (never fabricate payment success)
       const pStatus = (o.payment_status || '').toLowerCase();
       let status = 'pending';
       if (pStatus === 'paid' || pStatus === 'successful' || pStatus === 'completed') {
@@ -752,9 +750,9 @@ exports.getPayments = async (req, res) => {
         status = 'failed';
       } else if (pStatus === 'refunded') {
         status = 'refunded';
-      } else if (o.status === 'delivered') {
-        status = 'successful';
       } else {
+        // SECTION 7 COMPLIANCE: COD delivered orders must NOT be treated as paid
+        // For COD or unpaid orders: delivered orders without confirmed collection remain pending
         status = 'pending';
       }
 
@@ -932,10 +930,10 @@ exports.getReports = async (req, res) => {
       }));
       return res.json(enriched);
     }
-    res.json(inMemoryReports);
+    return res.json(data || []);
   } catch (err) {
-    console.warn('getReports fallback notice:', err.message);
-    res.json(inMemoryReports);
+    console.error('getReports error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch reports from database' });
   }
 };
 
@@ -1101,11 +1099,11 @@ exports.getNotifications = async (req, res) => {
         .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
         .order('created_at', { ascending: false })
     );
-
-    if (data && data.length > 0) return res.json(data);
-    res.json(inMemoryNotifications);
-  } catch {
-    res.json(inMemoryNotifications);
+    if (error) throw error;
+    return res.json(data || []);
+  } catch (err) {
+    console.error('getNotifications error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch notifications from database' });
   }
 };
 
@@ -1190,10 +1188,11 @@ exports.getActivityLogs = async (req, res) => {
       supabase.from('admin_activity_logs').select('*').order('created_at', { ascending: false }).limit(50)
     );
 
-    if (data && data.length > 0) return res.json(data);
-    res.json(inMemoryActivityLogs);
-  } catch {
-    res.json(inMemoryActivityLogs);
+    if (error) throw error;
+    return res.json(data || []);
+  } catch (err) {
+    console.error('getActivityLogs error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch activity logs from database' });
   }
 };
 

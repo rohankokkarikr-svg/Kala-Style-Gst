@@ -219,6 +219,14 @@ server.listen(PORT, '0.0.0.0', async () => {
   } catch (e) {
     console.warn('  ⚠️ Could not start AI Job Processor:', e.message);
   }
+
+  // Initialize Autonomous AI Persistent Scheduler
+  try {
+    const { startScheduler } = require('./ai/aiScheduler');
+    startScheduler(60000);
+  } catch (e) {
+    console.warn('  ⚠️ Could not start AI Scheduler:', e.message);
+  }
 });
 
 // Trigger restart to load new environment variables from .env
