@@ -408,8 +408,10 @@ exports.getMyArtisanOrders = async (req, res) => {
 
     if (!profile) return res.status(404).json({ error: 'Artisan profile not found' });
 
-    // Fetch artisan_orders assigned to this artisan
-    const { data: myOrders, error: myErr } = await supabase
+    // 1. Fetch artisan_orders assigned to this artisan (or fallback null)
+    // Note: We avoid embedding order_items directly in the select because PostgREST
+    // requires a direct foreign key on artisan_orders which doesn't exist on order_items.
+    const { data: artOrders, error: myErr } = await supabase
       .from('artisan_orders')
       .select(`
         *,
@@ -417,51 +419,86 @@ exports.getMyArtisanOrders = async (req, res) => {
           id, order_number, total_amount, total_price, payment_method, payment_status,
           shipping_address, shipping_name, shipping_city, shipping_state, shipping_pincode,
           phone, created_at, order_status, status, coupon_code,
+          shipping_status, shipment_id, awb_code, courier_name, tracking_url,
+          live_location_url, transaction_id, razorpay_payment_id,
           user:users (id, name, email, phone)
-        ),
-        items:order_items (
-          id, quantity, price_at_time, unit_price_snapshot, total_price, size,
-          product_name_snapshot, product_image_snapshot, artisan_id,
-          product:products (id, name, image_url, price, category)
         )
       `)
-      .eq('artisan_id', profile.id)
+      .or(`artisan_id.eq.${profile.id},artisan_id.is.null`)
       .order('created_at', { ascending: false });
 
-    if (myErr) throw myErr;
+    if (myErr) {
+      console.error('[getMyArtisanOrders] Query error:', myErr);
+      throw myErr;
+    }
 
-    // Also fetch fallback artisan_orders (artisan_id = null) where this artisan has items
-    const { data: fallbackOrders } = await supabase
-      .from('artisan_orders')
-      .select(`
-        *,
-        order:orders (
-          id, order_number, total_amount, total_price, payment_method, payment_status,
-          shipping_address, shipping_name, shipping_city, shipping_state, shipping_pincode,
-          phone, created_at, order_status, status, coupon_code,
-          user:users (id, name, email, phone)
-        ),
-        items:order_items (
-          id, quantity, price_at_time, unit_price_snapshot, total_price, size,
-          product_name_snapshot, product_image_snapshot, artisan_id,
+    const orderList = artOrders || [];
+    const orderIds = [...new Set(orderList.map(ao => ao.order_id).filter(Boolean))];
+
+    // 2. Fetch order_items for all these orders
+    let itemsByOrderId = {};
+    if (orderIds.length > 0) {
+      const { data: items, error: itemsErr } = await supabase
+        .from('order_items')
+        .select(`
+          id, order_id, product_id, quantity, price_at_time, unit_price_snapshot, total_price, size,
+          product_name_snapshot, product_image_snapshot, artisan_id, item_status,
           product:products (id, name, image_url, price, category)
-        )
-      `)
-      .is('artisan_id', null)
-      .order('created_at', { ascending: false });
+        `)
+        .in('order_id', orderIds);
 
-    // Only include fallback orders that have at least one item for this artisan
-    const filteredFallbacks = (fallbackOrders || []).filter(ao =>
-      (ao.items || []).some(item => item.artisan_id === profile.id)
-    );
+      if (!itemsErr && items) {
+        for (const item of items) {
+          if (!itemsByOrderId[item.order_id]) itemsByOrderId[item.order_id] = [];
+          itemsByOrderId[item.order_id].push(item);
+        }
+      }
+    }
 
-    const allOrders = [...(myOrders || []), ...filteredFallbacks];
+    // 3. Filter orders to only those relevant to this artisan:
+    // Either assigned explicitly to this artisan, or fallback (null) where this artisan has items
+    const relevantOrders = orderList.filter(ao => {
+      if (ao.artisan_id === profile.id) return true;
+      if (ao.artisan_id === null) {
+        const orderItems = itemsByOrderId[ao.order_id] || [];
+        return orderItems.some(item => item.artisan_id === profile.id || !item.artisan_id);
+      }
+      return false;
+    });
 
-    // Filter order_items to only this artisan's items
-    const result = allOrders.map(ao => ({
-      ...ao,
-      items: (ao.items || []).filter(item => item.artisan_id === profile.id || !item.artisan_id),
-    }));
+    // 4. Format objects with backward-compatible aliases for all UI access patterns
+    const result = relevantOrders.map(ao => {
+      const allOrderItems = itemsByOrderId[ao.order_id] || [];
+      const artisanItems = allOrderItems.filter(
+        item => item.artisan_id === profile.id || !item.artisan_id
+      );
+      const displayItems = artisanItems.length > 0 ? artisanItems : allOrderItems;
+      const firstItem = displayItems[0] || {};
+      const productObj = firstItem.product || {
+        name: firstItem.product_name_snapshot,
+        image_url: firstItem.product_image_snapshot,
+      };
+
+      const orderObj = ao.order || {};
+      let utr = orderObj.transaction_id || orderObj.razorpay_payment_id;
+      if (!utr && orderObj.shipping_address) {
+        const match = orderObj.shipping_address.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i);
+        if (match) utr = match[1].trim();
+      }
+      orderObj.utr_number = utr || null;
+
+      return {
+        ...ao,
+        order: orderObj,
+        orders: orderObj,          // compatibility alias
+        items: displayItems,
+        product: productObj,
+        products: productObj,      // compatibility alias
+        price_at_time: firstItem.price_at_time || firstItem.unit_price_snapshot || 0,
+        quantity: firstItem.quantity || 1,
+        size: firstItem.size || 'Free Size',
+      };
+    });
 
     res.json(result);
   } catch (err) {
@@ -473,12 +510,17 @@ exports.getMyArtisanOrders = async (req, res) => {
 /**
  * PATCH /api/artisans/orders/:id/status
  * Update artisan_order status following the status machine.
- * Only the assigned artisan can update their own artisan_order.
+ * Supports multi-tier ID resolution:
+ *   1) artisan_orders.id
+ *   2) master order_id (from URL param or req.body.order_id)
+ *   3) order_items.id
+ *   4) orders.order_number
+ *   5) Auto-creates artisan_order if missing for an authorized order
  */
 exports.updateArtisanOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    let { status, rejection_reason } = req.body;
+    let { status, rejection_reason, order_id } = req.body;
 
     if (!status) return res.status(400).json({ error: 'Status is required' });
 
@@ -492,7 +534,6 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       on_the_way:    'out_for_delivery',
       completed:     'delivered',
     };
-    // Only remap if not already a valid backend status
     const VALID_STATUSES = ['pending','accepted','preparing','ready_for_pickup','dispatched','out_for_delivery','delivered','rejected','cancelled'];
     if (!VALID_STATUSES.includes(status) && STATUS_ALIAS_MAP[status]) {
       status = STATUS_ALIAS_MAP[status];
@@ -507,25 +548,158 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
     if (!profile) return res.status(404).json({ error: 'Artisan profile not found' });
 
-    // Fetch the artisan_order and verify ownership
-    const { data: artOrder, error: fetchErr } = await supabase
+    let artOrder = null;
+
+    // Strategy 1: Direct match by artisan_orders.id
+    const { data: byArtOrderId } = await supabase
       .from('artisan_orders')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    if (fetchErr || !artOrder) return res.status(404).json({ error: 'Artisan order not found' });
+    if (byArtOrderId) {
+      artOrder = byArtOrderId;
+    }
 
-    // Fallback artisan_orders (artisan_id = null) can be updated by any verified artisan of the platform
+    // Strategy 2: Match by master order_id (from URL parameter)
+    if (!artOrder) {
+      const { data: byOrderId } = await supabase
+        .from('artisan_orders')
+        .select('*')
+        .eq('order_id', id)
+        .or(`artisan_id.eq.${profile.id},artisan_id.is.null`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (byOrderId) {
+        artOrder = byOrderId;
+      }
+    }
+
+    // Strategy 3: Match by order_id passed in request body
+    if (!artOrder && order_id) {
+      const { data: byBodyOrderId } = await supabase
+        .from('artisan_orders')
+        .select('*')
+        .eq('order_id', order_id)
+        .or(`artisan_id.eq.${profile.id},artisan_id.is.null`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (byBodyOrderId) {
+        artOrder = byBodyOrderId;
+      }
+    }
+
+    // Strategy 4: id is an order_items.id
+    if (!artOrder) {
+      const { data: orderItem } = await supabase
+        .from('order_items')
+        .select('order_id, artisan_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (orderItem) {
+        const { data: byOrderItem } = await supabase
+          .from('artisan_orders')
+          .select('*')
+          .eq('order_id', orderItem.order_id)
+          .or(`artisan_id.eq.${profile.id},artisan_id.is.null`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        artOrder = byOrderItem;
+      }
+    }
+
+    // Strategy 5: id is an order_number (e.g. KALA-202688867)
+    if (!artOrder && String(id).startsWith('KALA-')) {
+      const { data: masterByNum } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', id)
+        .maybeSingle();
+
+      if (masterByNum) {
+        const { data: byOrderNum } = await supabase
+          .from('artisan_orders')
+          .select('*')
+          .eq('order_id', masterByNum.id)
+          .or(`artisan_id.eq.${profile.id},artisan_id.is.null`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        artOrder = byOrderNum;
+      }
+    }
+
+    // Strategy 6: Auto-create artisan_order if master order exists and has items for this artisan
+    if (!artOrder) {
+      const targetMasterId = order_id || id;
+      const { data: masterOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', targetMasterId)
+        .maybeSingle();
+
+      if (masterOrder) {
+        const { data: myItems } = await supabase
+          .from('order_items')
+          .select('*')
+          .eq('order_id', masterOrder.id);
+
+        const relevantItems = (myItems || []).filter(item => item.artisan_id === profile.id || !item.artisan_id);
+        if (relevantItems.length > 0) {
+          const subtotal = relevantItems.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+          const { data: newAo, error: createAoErr } = await supabase
+            .from('artisan_orders')
+            .insert([{
+              order_id: masterOrder.id,
+              artisan_id: profile.id,
+              subtotal,
+              delivery_fee: 0,
+              total_amount: subtotal,
+              status: masterOrder.order_status || masterOrder.status || 'pending',
+            }])
+            .select()
+            .single();
+
+          if (!createAoErr && newAo) {
+            artOrder = newAo;
+          }
+        }
+      }
+    }
+
+    if (!artOrder) {
+      return res.status(404).json({ error: 'Artisan order not found' });
+    }
+
+    // Authorization check: Must be assigned to this artisan, fallback order, or own items
     if (artOrder.artisan_id !== null && artOrder.artisan_id !== profile.id) {
-      return res.status(403).json({ error: 'Access denied: this order does not belong to you' });
+      const { data: myItem } = await supabase
+        .from('order_items')
+        .select('id')
+        .eq('order_id', artOrder.order_id)
+        .eq('artisan_id', profile.id)
+        .limit(1);
+
+      if (!myItem || myItem.length === 0) {
+        return res.status(403).json({ error: 'Access denied: this order does not belong to you' });
+      }
     }
 
     // Validate status transition
     if (!isValidArtisanTransition(artOrder.status, status)) {
-      return res.status(400).json({
-        error: `Invalid transition: ${artOrder.status} → ${status}. Allowed: ${require('../config/ecommerce').ARTISAN_STATUS_TRANSITIONS[artOrder.status]?.join(', ') || 'none'}`,
-      });
+      if (artOrder.status !== status) {
+        return res.status(400).json({
+          error: `Invalid transition: ${artOrder.status} → ${status}.`,
+        });
+      }
     }
 
     // Build update object with timestamp fields
@@ -545,14 +719,22 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     if (timestampMap[status]) updateData[timestampMap[status]] = now;
     if (status === 'rejected' && rejection_reason) updateData.rejection_reason = rejection_reason;
 
+    // Update using verified artisan_orders primary key
     const { data: updated, error: updateErr } = await supabase
       .from('artisan_orders')
       .update(updateData)
-      .eq('id', id)
+      .eq('id', artOrder.id)
       .select()
       .single();
 
     if (updateErr) throw updateErr;
+
+    // Also update matching order_items item_status
+    await supabase
+      .from('order_items')
+      .update({ item_status: status })
+      .eq('order_id', artOrder.order_id)
+      .or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
 
     // Special handling for delivered (COD finalization + earnings + reward)
     if (status === 'delivered') {
@@ -563,14 +745,14 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .single();
 
       // Sync master order status
-      const newMasterStatus = await syncMasterOrderStatus(artOrder.order_id);
+      await syncMasterOrderStatus(artOrder.order_id);
 
       // For PREPAID orders (already paid), create/finalize artisan earning record
       if (masterOrder?.payment_status === 'paid') {
-        await createArtisanEarning(id, artOrder, profile.id);
+        await createArtisanEarning(artOrder.id, artOrder, profile.id);
       } else if (masterOrder?.payment_method === 'cod') {
         // For COD: payment remains cod_pending until explicit collection confirmation.
-        console.log(`[artisanController] Artisan sub-order ${id} delivered for COD order ${artOrder.order_id}. Earnings will finalize upon confirmed COD collection.`);
+        console.log(`[artisanController] Artisan sub-order ${artOrder.id} delivered for COD order ${artOrder.order_id}. Earnings will finalize upon confirmed COD collection.`);
       }
 
       // Check reward for customer
@@ -582,14 +764,14 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       }
     }
 
-    // Sync master order status for any transition
+    // Sync master order status for all transitions
     if (status !== 'delivered') {
       await syncMasterOrderStatus(artOrder.order_id);
     }
 
-    // Broadcast realtime
-    broadcastSync('ORDERS_UPDATED', { artisanOrderId: id, status, orderId: artOrder.order_id });
-    broadcastSync('ARTISAN_ORDERS_UPDATED', { id, status });
+    // Broadcast realtime updates
+    broadcastSync('ORDERS_UPDATED', { artisanOrderId: artOrder.id, status, orderId: artOrder.order_id });
+    broadcastSync('ARTISAN_ORDERS_UPDATED', { id: artOrder.id, status });
 
     res.json({ success: true, artisan_order: updated });
   } catch (err) {

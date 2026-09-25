@@ -121,12 +121,20 @@ export default function ArtisanOrders() {
     }
   };
 
-  // New: Handle artisan sub-order status machine transition
-  const handleArtisanSubOrderStatus = async (artisanOrderId, newStatus) => {
+  // Handle artisan sub-order status machine transition
+  const handleArtisanSubOrderStatus = async (artisanOrderId, newStatus, orderId) => {
     if (!artisanOrderId || !newStatus) return;
     setUpdatingId(artisanOrderId);
     try {
-      await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus });
+      try {
+        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus, order_id: orderId });
+      } catch (subErr) {
+        if (orderId && orderId !== artisanOrderId) {
+          await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
+        } else {
+          throw subErr;
+        }
+      }
       toast.success(`✅ Status updated to "${newStatus}"!`);
       // Optimistically update
       setOrders(prev => prev.map(ao => ao.id === artisanOrderId ? { ...ao, status: newStatus } : ao));
@@ -160,8 +168,17 @@ export default function ArtisanOrders() {
 
     try {
       if (artisanOrderId) {
-        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus });
-      } else {
+        try {
+          await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus, order_id: orderId });
+        } catch (subErr) {
+          // If sub-order endpoint failed, fall back to master order status update
+          if (orderId && orderId !== artisanOrderId) {
+            await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
+          } else {
+            throw subErr;
+          }
+        }
+      } else if (orderId) {
         await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
       }
       toast.success(`Order updated to "${newStatus}"! 🚀`);
