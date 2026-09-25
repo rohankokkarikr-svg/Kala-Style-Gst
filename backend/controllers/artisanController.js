@@ -324,8 +324,10 @@ exports.getMyOrders = async (req, res) => {
       shippingService = require('../services/shipping/shippingService');
     } catch (e) {}
 
-    // Attach extracted clean utr_number and shipping details to order objects
+    // Attach extracted clean utr_number, item status and shipping details to order objects
     const sorted = (orderItems || []).map(item => {
+      item.status = item.item_status || item.status || item.orders?.status || 'pending';
+      item.order = item.orders || {};
       if (item.orders) {
         let utr = item.orders.transaction_id || item.orders.razorpay_payment_id;
         if (!utr && item.orders.shipping_address) {
@@ -546,6 +548,8 @@ exports.getMyArtisanOrders = async (req, res) => {
 
       return {
         ...ao,
+        status: ao.status || firstItem.item_status || orderObj.status || 'pending',
+        item_status: ao.status || firstItem.item_status || orderObj.status || 'pending',
         order: orderObj,
         orders: orderObj,          // compatibility alias
         items: displayItems,

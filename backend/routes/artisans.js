@@ -26,11 +26,11 @@ router.put('/me', protect, artisan, updateMyProfile);
 // ── Artisan sub-order management (uses artisan_orders table) ─────────────────
 router.get('/orders', protect, artisan, getMyArtisanOrders);
 router.patch('/orders/:id/status', protect, artisan, updateArtisanOrderStatus);
+router.put('/orders/:id/status', protect, artisan, updateArtisanOrderStatus);
 
 // ── Legacy order routes (kept for backward compat) ───────────────────────────
 router.get('/me/orders', protect, artisan, getMyOrders);
-router.put('/me/orders/:id/status', protect, artisan, updateOrderStatus);
-router.put('/orders/:id/status', protect, artisan, updateOrderStatus);
+router.put('/me/orders/:id/status', protect, artisan, updateArtisanOrderStatus);
 router.put('/orders/:id/verify-payment', protect, artisan, verifyPayment);
 router.put('/me/orders/:id/verify-payment', protect, artisan, verifyPayment);
 

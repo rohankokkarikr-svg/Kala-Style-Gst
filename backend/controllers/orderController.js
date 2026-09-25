@@ -463,6 +463,7 @@ exports.updateOrderStatus = async (req, res) => {
           ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
         };
         await supabase.from('artisan_orders').update(aoUpdate).eq('order_id', id);
+        await supabase.from('order_items').update({ item_status: status }).eq('order_id', id);
 
         if (status === 'delivered') {
           const isPaid = ['paid', 'completed'].includes(String(data.payment_status || '').toLowerCase());

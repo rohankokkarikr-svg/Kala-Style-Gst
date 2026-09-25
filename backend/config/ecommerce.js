@@ -76,20 +76,19 @@ async function calculateDeliveryFee(subtotal) {
 function deriveMasterStatus(artisanStatuses) {
   if (!artisanStatuses || artisanStatuses.length === 0) return 'pending';
 
-  const s = artisanStatuses.map(x => x.toLowerCase());
+  const s = artisanStatuses.map(x => (x || '').toLowerCase().trim());
   const all = (val) => s.every(x => x === val);
   const some = (val) => s.some(x => x === val);
   const allIn = (...vals) => s.every(x => vals.includes(x));
 
-  if (all('pending'))                             return 'pending';
-  if (all('cancelled') || all('rejected'))        return 'cancelled';
   if (all('delivered'))                           return 'delivered';
+  if (all('cancelled') || all('rejected'))        return 'cancelled';
   if (allIn('delivered', 'cancelled', 'rejected'))return 'partially_delivered';
-  if (some('out_for_delivery'))                   return 'processing';
-  if (some('dispatched'))                         return 'processing';
-  if (some('delivered') && some('preparing'))     return 'partially_processing';
+  if (some('delivered') && (some('preparing') || some('processing') || some('ready_for_pickup'))) return 'partially_processing';
   if (some('delivered'))                          return 'partially_delivered';
-  if (some('preparing') || some('ready_for_pickup') || some('accepted')) return 'processing';
+  if (some('out_for_delivery') || some('dispatched') || some('shipped')) return 'shipped';
+  if (some('preparing') || some('processing') || some('ready_for_pickup') || some('accepted')) return 'processing';
+  if (all('pending'))                             return 'pending';
   if (allIn('confirmed', 'pending'))              return 'confirmed';
   return 'processing';
 }

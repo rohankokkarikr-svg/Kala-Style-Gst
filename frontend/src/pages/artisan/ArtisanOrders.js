@@ -77,7 +77,11 @@ export default function ArtisanOrders() {
 
   // 1. DOM Real-time listener: instantly reflect when a customer places or updates an order
   useEffect(() => {
-    const handleSync = () => { fetchOrders(true); };
+    const handleSync = () => { 
+      // Skip background refetch if user has an update currently in-flight
+      if (updatingId) return;
+      fetchOrders(true); 
+    };
     window.addEventListener('kala:sync:orders_updated', handleSync);
     window.addEventListener('kala:sync:payments_updated', handleSync);
     window.addEventListener('kala:sync:artisan_orders_updated', handleSync);
@@ -88,7 +92,7 @@ export default function ArtisanOrders() {
       window.removeEventListener('kala:sync:artisan_orders_updated', handleSync);
       window.removeEventListener('kala:sync:shipment_updated', handleSync);
     };
-  }, []);
+  }, [updatingId]);
 
 
 
@@ -162,13 +166,15 @@ export default function ArtisanOrders() {
     const targetId = artisanOrderId || orderId;
     setUpdatingId(targetId);
 
-    // Optimistically update order status in state
+    // Optimistically update order status in state only for the targeted item
     setOrders(prev => prev.map(item => {
-      const currentOrderId = item.orders?.id || item.order?.id || item.order_id;
-      if (currentOrderId === orderId || item.id === artisanOrderId) {
+      const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
+                       (!artisanOrderId && (item.orders?.id === orderId || item.order?.id === orderId || item.order_id === orderId));
+      if (isTarget) {
         return {
           ...item,
           status: newStatus,
+          item_status: newStatus,
           orders: item.orders ? { ...item.orders, status: newStatus } : undefined,
           order: item.order ? { ...item.order, status: newStatus } : undefined
         };
@@ -181,7 +187,7 @@ export default function ArtisanOrders() {
         try {
           await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus, order_id: orderId });
         } catch (subErr) {
-          // If sub-order endpoint failed, fall back to master order status update
+          console.warn('Sub-order status update failed, attempting master order fallback:', subErr);
           if (orderId && orderId !== artisanOrderId) {
             await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
           } else {
@@ -191,8 +197,25 @@ export default function ArtisanOrders() {
       } else if (orderId) {
         await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
       }
-      toast.success(`Order updated to "${newStatus}"! 🚀`);
-      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: { orderId, status: newStatus } }));
+      toast.success(`Order status updated to "${newStatus === 'delivered' ? 'Delivered ✓' : newStatus}"! 🚀`);
+      
+      // Update local state definitively with server confirmation
+      setOrders(prev => prev.map(item => {
+        const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
+                         (!artisanOrderId && (item.orders?.id === orderId || item.order?.id === orderId || item.order_id === orderId));
+        if (isTarget) {
+          return {
+            ...item,
+            status: newStatus,
+            item_status: newStatus,
+            orders: item.orders ? { ...item.orders, status: newStatus } : undefined,
+            order: item.order ? { ...item.order, status: newStatus } : undefined
+          };
+        }
+        return item;
+      }));
+
+      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: { orderId, status: newStatus, artisanOrderId } }));
       window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', { detail: { artisanOrderId, status: newStatus } }));
     } catch (err) {
       console.error('Failed to update order status:', err);
@@ -209,18 +232,51 @@ export default function ArtisanOrders() {
     toast.success(`📋 ${label} copied to clipboard!`);
   };
 
+  // Status mapping aliases to handle all backend and database status conventions
+  const STATUS_ALIASES = {
+    preparing: 'processing',
+    in_preparation: 'processing',
+    ready_for_pickup: 'processing',
+    accepted: 'processing',
+    partially_processing: 'processing',
+    packed: 'processing',
+    dispatched: 'shipped',
+    out_for_delivery: 'shipped',
+    on_the_way: 'shipped',
+    completed: 'delivered',
+    partially_delivered: 'delivered',
+    confirmed: 'pending',
+    order_received: 'pending',
+  };
+
+  const normalizeArtisanStatus = (st) => {
+    if (!st) return 'pending';
+    const clean = String(st).toLowerCase().trim();
+    return STATUS_ALIASES[clean] || clean;
+  };
+
   const STATUS_CONFIG = {
     pending:                      { label: 'Pending Packing',          bg: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40', icon: HiClock },
+    confirmed:                    { label: 'Order Confirmed',          bg: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40', icon: HiClock },
     payment_verification_pending: { label: 'UTR Pending Verification', bg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',   icon: HiClock },
     processing:                   { label: 'In Preparation',           bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
+    preparing:                    { label: 'In Preparation',           bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
+    ready_for_pickup:             { label: 'Ready for Pickup',         bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
+    accepted:                     { label: 'Accepted by Artisan',      bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
     shipped:                      { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
+    dispatched:                   { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
+    out_for_delivery:             { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
     delivered:                    { label: 'Delivered',                bg: 'bg-green-500/20 text-green-400 border-green-500/40',   icon: HiCheckCircle },
+    completed:                    { label: 'Delivered',                bg: 'bg-green-500/20 text-green-400 border-green-500/40',   icon: HiCheckCircle },
+    partially_delivered:          { label: 'Delivered (Item)',         bg: 'bg-green-500/20 text-green-400 border-green-500/40',   icon: HiCheckCircle },
     cancelled:                    { label: 'Cancelled',                bg: 'bg-red-500/20 text-red-400 border-red-500/40',         icon: HiClock },
+    rejected:                     { label: 'Rejected',                 bg: 'bg-red-500/20 text-red-400 border-red-500/40',         icon: HiClock },
   };
 
   const filteredOrders = orders.filter(item => {
     const orderObj = item.orders || item.order || {};
-    const status = item.status || orderObj.status || 'pending';
+    const rawStatus = item.status || item.item_status || orderObj.status || 'pending';
+    const status = normalizeArtisanStatus(rawStatus);
     const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
     const isUtrPending = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
 
@@ -356,8 +412,9 @@ export default function ArtisanOrders() {
             const customerPhone = orderObj.phone || customerObj.phone || '';
             const customerEmail = customerObj.email || '';
             const loc = extractOrderLocation(orderObj);
-            const statusKey = item.status || orderObj.status || 'pending';
-            const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.pending;
+            const rawStatus = item.status || item.item_status || orderObj.status || 'pending';
+            const statusKey = normalizeArtisanStatus(rawStatus);
+            const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG[rawStatus] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
 
             const firstItem = (item.items && item.items[0]) || item;
@@ -763,6 +820,10 @@ export default function ArtisanOrders() {
                         <option value="shipped">🚚 Out for Delivery</option>
                         <option value="delivered">🟢 Delivered</option>
                         <option value="cancelled">🔴 Cancelled</option>
+                        {/* Hidden aliases for full DOM compatibility */}
+                        <option value="preparing" className="hidden">📦 In Preparation</option>
+                        <option value="dispatched" className="hidden">🚚 Out for Delivery</option>
+                        <option value="partially_delivered" className="hidden">🟢 Delivered (Item)</option>
                       </select>
                     </div>
 
@@ -793,6 +854,11 @@ export default function ArtisanOrders() {
                       >
                         <HiCheckCircle className="w-3.5 h-3.5" /> Mark as Delivered ✓
                       </button>
+                    )}
+                    {statusKey === 'delivered' && (
+                      <span className="text-xs py-1 px-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1 shadow-sm">
+                        <HiCheckCircle className="w-3.5 h-3.5" /> Delivered Successfully
+                      </span>
                     )}
                     {(updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId) && (
                       <span className="text-xs text-gold-400 animate-pulse font-medium">Updating...</span>
