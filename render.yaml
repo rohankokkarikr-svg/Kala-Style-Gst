@@ -21,9 +21,9 @@ services:
       - key: TWILIO_WHATSAPP_FROM
         value: "+14155238886"
       - key: RAZORPAY_KEY_ID
-        value: rzp_live_TamouXgJy9WoAl
+        value: rzp_live_TgKmH9jZyyQY6M
       - key: RAZORPAY_KEY_SECRET
-        value: 6UYg42iNEWzF2u0ViKHoBnNc
+        value: 2KT4MT3WvfuaX3eeYpUkUlkI
       # Shiprocket Production Logistics Configuration
       - key: SHIPPING_PROVIDER
         value: shiprocket
@@ -67,7 +67,7 @@ services:
         value: "false"
       # Razorpay public key for checkout — must match RAZORPAY_KEY_ID in backend envVars above
       - key: REACT_APP_RAZORPAY_KEY_ID
-        value: rzp_live_TamouXgJy9WoAl
+        value: rzp_live_TgKmH9jZyyQY6M
       # Managed in the dashboard so you can customize the backend URL if name changes
       - key: REACT_APP_API_URL
         sync: false
