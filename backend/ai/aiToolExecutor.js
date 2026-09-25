@@ -338,53 +338,6 @@ async function executeTool(toolName, args = {}, context = {}) {
         result = await recommendationService.analyzeSeasonalInventory();
         break;
 
-      // ─── SHIPPING TOOLS ─────────────────────────────────────────────
-      case 'get_shipping_status': {
-        const shiprocketConfigured = process.env.SHIPROCKET_EMAIL && !process.env.SHIPROCKET_EMAIL.startsWith('your_');
-        if (!shiprocketConfigured) {
-          result = {
-            configured: false,
-            message: 'Shiprocket integration is not configured. Set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD in backend/.env to enable shipping management.',
-            shipments: [],
-          };
-        } else if (args.order_id) {
-          // Check order shipping status from our DB
-          const { data: order } = await safeQuery(() =>
-            supabase.from('orders').select('id, order_number, status, created_at, shipping_address').eq('id', args.order_id).single()
-          );
-          result = { configured: true, order: order || null, message: 'Check Shiprocket dashboard for live tracking.' };
-        } else {
-          // General shipping stats from orders
-          const { data: shippedOrders } = await safeQuery(() =>
-            supabase.from('orders').select('id, order_number, status, created_at').eq('status', 'shipped').limit(20)
-          );
-          result = { configured: true, shippedOrders: shippedOrders || [], message: 'Shiprocket credentials present. Live tracking available via Shiprocket dashboard.' };
-        }
-        break;
-      }
-
-      case 'detect_delayed_shipments': {
-        const threshold = args.days_threshold || 7;
-        const cutoffDate = new Date(Date.now() - threshold * 24 * 60 * 60 * 1000).toISOString();
-        const { data: delayedOrders } = await safeQuery(() =>
-          supabase
-            .from('orders')
-            .select('id, order_number, status, payment_status, created_at, shipping_address, users(name, phone)')
-            .in('status', ['shipped', 'processing', 'confirmed'])
-            .lt('updated_at', cutoffDate)
-            .order('created_at', { ascending: true })
-            .limit(args.limit || 20)
-        );
-        result = {
-          total: (delayedOrders || []).length,
-          threshold_days: threshold,
-          delayed_orders: delayedOrders || [],
-          message: (delayedOrders || []).length === 0
-            ? `No orders found delayed beyond ${threshold} days.`
-            : `${(delayedOrders || []).length} order(s) may be delayed. Verify with Shiprocket dashboard.`,
-        };
-        break;
-      }
 
       // ─── HERO & STOREFRONT BANNER TOOLS ─────────────────────────────
       case 'get_hero_banners': {
@@ -1017,25 +970,70 @@ async function executeTool(toolName, args = {}, context = {}) {
 
       case 'get_shipping_status': {
         let shipment = null;
+        let order = null;
+
         if (args.shipment_id) {
           shipment = await shippingService.getShipmentById(args.shipment_id);
         } else if (args.order_id) {
           let resolvedOrderId = args.order_id;
           if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.order_id)) {
             const { data: oByNum } = await safeQuery(() =>
-              supabase.from('orders').select('id').eq('order_number', args.order_id).maybeSingle()
+              supabase.from('orders').select('id, order_number, status, created_at, shipping_address').eq('order_number', args.order_id).maybeSingle()
             );
-            if (oByNum?.id) resolvedOrderId = oByNum.id;
+            if (oByNum?.id) {
+              resolvedOrderId = oByNum.id;
+              order = oByNum;
+            }
           }
           shipment = await shippingService.getShipmentByOrderId(resolvedOrderId);
+          if (!shipment && !order) {
+            const { data: oById } = await safeQuery(() =>
+              supabase.from('orders').select('id, order_number, status, created_at, shipping_address').eq('id', resolvedOrderId).maybeSingle()
+            );
+            if (oById) order = oById;
+          }
         }
-        result = {
-          found: Boolean(shipment),
-          status: shipment?.status || 'PENDING',
-          awb_code: shipment?.awb_code || null,
-          courier_name: shipment?.courier_name || null,
-          tracking_url: shipment?.tracking_url || null,
-        };
+
+        if (shipment) {
+          result = {
+            found: true,
+            status: shipment.status || 'PENDING',
+            awb_code: shipment.awb_code || null,
+            courier_name: shipment.courier_name || null,
+            tracking_url: shipment.tracking_url || null,
+            shipment_id: shipment.id,
+            order_id: shipment.order_id,
+            details: shipment,
+          };
+        } else if (order) {
+          result = {
+            found: true,
+            status: order.status || 'PENDING',
+            order_number: order.order_number,
+            order_id: order.id,
+            shipping_address: order.shipping_address,
+            message: `Order ${order.order_number || order.id} has status: ${order.status}. Shipment record is pending courier dispatch.`,
+          };
+        } else if (!args.shipment_id && !args.order_id) {
+          // General platform shipping status summary
+          const stats = await shippingService.getShippingStatistics();
+          const { data: recentShipped } = await safeQuery(() =>
+            supabase.from('orders').select('id, order_number, status, created_at').eq('status', 'shipped').limit(10)
+          );
+          result = {
+            found: true,
+            platform_overview: true,
+            statistics: stats,
+            recentShippedOrders: recentShipped || [],
+            message: 'Retrieved overall platform shipping status and recent shipments overview.',
+          };
+        } else {
+          result = {
+            found: false,
+            status: 'NOT_FOUND',
+            message: `No shipment or order found matching identifier ${args.order_id || args.shipment_id}.`,
+          };
+        }
         break;
       }
 
@@ -1043,9 +1041,37 @@ async function executeTool(toolName, args = {}, context = {}) {
         result = await shippingService.getShippingStatistics();
         break;
 
-      case 'detect_delayed_shipments':
-        result = await shippingService.detectDelayedShipments();
+      case 'detect_delayed_shipments': {
+        const delayedShipments = await shippingService.detectDelayedShipments();
+        if (delayedShipments && delayedShipments.length > 0) {
+          result = {
+            total: delayedShipments.length,
+            delayed_shipments: delayedShipments,
+            message: `${delayedShipments.length} shipment(s) identified as delayed or stalled.`,
+          };
+        } else {
+          const threshold = args.days_threshold || 7;
+          const cutoffDate = new Date(Date.now() - threshold * 24 * 60 * 60 * 1000).toISOString();
+          const { data: delayedOrders } = await safeQuery(() =>
+            supabase
+              .from('orders')
+              .select('id, order_number, status, payment_status, created_at, shipping_address')
+              .in('status', ['shipped', 'processing', 'confirmed'])
+              .lt('updated_at', cutoffDate)
+              .order('created_at', { ascending: true })
+              .limit(args.limit || 20)
+          );
+          result = {
+            total: (delayedOrders || []).length,
+            threshold_days: threshold,
+            delayed_orders: delayedOrders || [],
+            message: (delayedOrders || []).length === 0
+              ? 'No delayed shipments or stalled orders detected across the platform.'
+              : `${(delayedOrders || []).length} order(s) may be delayed beyond ${threshold} days.`,
+          };
+        }
         break;
+      }
 
       case 'retry_failed_shipment':
         entityType = 'shipment';

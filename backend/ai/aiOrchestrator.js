@@ -64,7 +64,19 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
   const model = getModel();
 
   try {
-    // 2. Initialize Gemini multi-turn chat session with tools and system instruction
+    // 2. Pre-flight validation safeguard: assert unique tool declarations
+    const toolDeclarations = (GEMINI_TOOLS && GEMINI_TOOLS[0]?.functionDeclarations) || [];
+    const seenToolNames = new Set();
+    for (const tool of toolDeclarations) {
+      if (!tool || !tool.name) continue;
+      if (seenToolNames.has(tool.name)) {
+        console.error(`Duplicate AI tool declaration:\n${tool.name}`);
+        throw new Error(`Duplicate AI tool declaration: ${tool.name}`);
+      }
+      seenToolNames.add(tool.name);
+    }
+
+    // 3. Initialize Gemini multi-turn chat session with tools and system instruction
     const chat = ai.chats.create({
       model,
       config: {
@@ -141,7 +153,13 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
       conversationId,
     };
   } catch (error) {
-    console.error('❌ [AI Orchestrator] Google Gemini API Error:', error.message);
+    const isDuplicateTool = error.message && error.message.includes('Duplicate AI tool declaration');
+    if (isDuplicateTool) {
+      console.error(`Duplicate AI tool declaration:\n${error.message}`);
+    } else {
+      console.error('❌ [AI Orchestrator] Google Gemini API Error:', error.message);
+    }
+
     logUsage({
       feature: context.eventType || 'ai_admin_orchestrator',
       model,
@@ -149,10 +167,14 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
       metadata: { error: error.message, conversationId },
     });
 
+    const userFacingMessage = isDuplicateTool
+      ? 'AI Operations could not process the request. Please try again.'
+      : `AI Operations Manager encountered an API error: ${error.message}. Backend safeguards remain active.`;
+
     return {
       success: false,
-      error: error.message,
-      message: `AI Operations Manager encountered an API error: ${error.message}. Backend safeguards remain active.`,
+      error: isDuplicateTool ? 'Duplicate AI tool declaration' : error.message,
+      message: userFacingMessage,
       toolCallsExecuted,
       actionsCount: toolCallsExecuted.length,
       conversationId,

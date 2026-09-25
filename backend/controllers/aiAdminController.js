@@ -43,7 +43,11 @@ exports.chat = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ [AI Admin Controller] Chat error:', error.message);
-    res.status(500).json({ error: error.message || 'Internal AI manager error' });
+    const isDuplicateTool = error.message && error.message.includes('Duplicate AI tool declaration');
+    const safeError = isDuplicateTool
+      ? 'AI Operations could not process the request. Please try again.'
+      : (error.message || 'Internal AI manager error');
+    res.status(500).json({ error: safeError });
   }
 };
 

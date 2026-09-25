@@ -323,29 +323,6 @@ const FUNCTION_DECLARATIONS = [
     },
   },
 
-  // ─── SHIPPING TOOLS ───────────────────────────────────────────────
-  {
-    name: 'get_shipping_status',
-    description: 'Check Shiprocket shipping integration status and get recent shipment information.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        order_id: { type: 'STRING', description: 'UUID or order number to check shipping for (optional — omit for overall status)' },
-      },
-    },
-  },
-  {
-    name: 'detect_delayed_shipments',
-    description: 'Identify orders that have been confirmed or shipped but show no delivery progress beyond expected timeframes.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        days_threshold: { type: 'INTEGER', description: 'Orders shipped more than N days ago without delivery (default 7)' },
-        limit: { type: 'INTEGER', description: 'Maximum orders to return (default 20)' },
-      },
-    },
-  },
-
   // ─── APPROVAL MANAGEMENT TOOLS ────────────────────────────────────
   {
     name: 'get_pending_approvals',
@@ -996,12 +973,12 @@ const FUNCTION_DECLARATIONS = [
   },
   {
     name: 'get_shipping_status',
-    description: 'Get current normalized shipping status for an order or shipment.',
+    description: 'Get current normalized shipping status for an order or shipment, or platform logistics overview if omitted.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        order_id: { type: 'STRING', description: 'Order UUID' },
-        shipment_id: { type: 'STRING', description: 'Shipment UUID' },
+        order_id: { type: 'STRING', description: 'Order UUID or order number to inspect' },
+        shipment_id: { type: 'STRING', description: 'Shipment UUID to inspect' },
       },
     },
   },
@@ -1018,7 +995,10 @@ const FUNCTION_DECLARATIONS = [
     description: 'Identify delayed, stalled, or unassigned shipments requiring administrative or operational intervention.',
     parameters: {
       type: 'OBJECT',
-      properties: {},
+      properties: {
+        days_threshold: { type: 'INTEGER', description: 'Orders shipped more than N days ago without delivery (default 7)' },
+        limit: { type: 'INTEGER', description: 'Maximum shipments or orders to return (default 20)' },
+      },
     },
   },
   {
@@ -1043,16 +1023,54 @@ const FUNCTION_DECLARATIONS = [
       },
       required: ['order_id'],
     },
-    
   },
 ];
 
+/**
+ * Deduplicates tool declarations by name, preserving the canonical definition.
+ */
+function deduplicateToolsByName(tools = []) {
+  const map = new Map();
+  for (const tool of tools) {
+    if (!tool || !tool.name) continue;
+    if (map.has(tool.name)) {
+      console.warn(`⚠️ [aiTools] Duplicate tool declaration detected: "${tool.name}". Keeping canonical definition.`);
+    }
+    map.set(tool.name, tool);
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * Validates that all tool declarations have unique names.
+ * Throws a descriptive local error if any duplicate is found.
+ */
+function validateUniqueToolDeclarations(tools = []) {
+  const names = new Set();
+  for (const tool of tools) {
+    if (!tool || !tool.name) continue;
+    if (names.has(tool.name)) {
+      console.error(`Duplicate AI tool declaration:\n${tool.name}`);
+      throw new Error(`Duplicate AI tool declaration: ${tool.name}`);
+    }
+    names.add(tool.name);
+  }
+  return true;
+}
+
+// Ensure the canonical tool list is verified and deduplicated
+const UNIQUE_FUNCTION_DECLARATIONS = deduplicateToolsByName(FUNCTION_DECLARATIONS);
+validateUniqueToolDeclarations(UNIQUE_FUNCTION_DECLARATIONS);
+
 const GEMINI_TOOLS = [{
-  functionDeclarations: FUNCTION_DECLARATIONS,
+  functionDeclarations: UNIQUE_FUNCTION_DECLARATIONS,
 }];
 
 module.exports = {
-  FUNCTION_DECLARATIONS,
+  FUNCTION_DECLARATIONS: UNIQUE_FUNCTION_DECLARATIONS,
   GEMINI_TOOLS,
   AI_TOOLS: GEMINI_TOOLS,
+  deduplicateToolsByName,
+  validateUniqueToolDeclarations,
 };
+
