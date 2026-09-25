@@ -65,6 +65,9 @@ services:
         value: pk.f2bad577bd835e11c81ffd571d5c353b
       - key: CI
         value: "false"
+      # Razorpay public key for checkout — must match RAZORPAY_KEY_ID in backend envVars above
+      - key: REACT_APP_RAZORPAY_KEY_ID
+        value: rzp_live_TamouXgJy9WoAl
       # Managed in the dashboard so you can customize the backend URL if name changes
       - key: REACT_APP_API_URL
         sync: false

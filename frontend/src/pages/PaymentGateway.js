@@ -55,12 +55,22 @@ export default function PaymentGateway() {
         return;
       }
 
+      // Always prefer the key_id returned by the backend (set when creating the Razorpay order).
+      // The env fallback is only used if navigation state was lost (e.g., page refresh).
       const keyId =
         rzpData?.key_id ||
         process.env.REACT_APP_RAZORPAY_KEY_ID ||
         '';
 
+      if (!keyId) {
+        toast.error('Razorpay is not configured. Please contact support.');
+        setRazorpayLaunching(false);
+        return;
+      }
 
+      if (!rzpData?.key_id) {
+        console.warn('[PaymentGateway] key_id missing from backend response — falling back to REACT_APP_RAZORPAY_KEY_ID env var.');
+      }
       const amountInPaise =
         Number(rzpData.amount) ||
         Math.max(100, Math.round(Number(orderData?.total_amount || orderData?.total_price || 0) * 100));
