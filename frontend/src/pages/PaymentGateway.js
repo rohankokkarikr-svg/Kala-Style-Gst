@@ -10,6 +10,10 @@ import {
   HiCreditCard,
   HiLightningBolt,
   HiQrcode,
+  HiCash,
+  HiExclamationCircle,
+  HiX,
+  HiDuplicate,
 } from 'react-icons/hi';
 
 export default function PaymentGateway() {
@@ -22,6 +26,11 @@ export default function PaymentGateway() {
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [razorpayLaunching, setRazorpayLaunching] = useState(false);
+  const [gatewayError, setGatewayError] = useState(null);
+  const [switchingCOD, setSwitchingCOD] = useState(false);
+  const [showUPIModal, setShowUPIModal] = useState(false);
+  const [utrNumber, setUtrNumber] = useState('');
+  const [submittingUTR, setSubmittingUTR] = useState(false);
   const hasAutoLaunchedRef = useRef(false);
 
   // Get razorpay data passed from Checkout via navigate state
@@ -204,6 +213,8 @@ export default function PaymentGateway() {
         })
         .catch((err) => {
           console.warn('Auto initialize Razorpay session notice:', err.message);
+          const msg = err.response?.data?.error || err.message;
+          setGatewayError(msg);
         });
     }
   }, [order, submitted, razorpayData, launchRazorpay, orderId]);
@@ -272,9 +283,64 @@ export default function PaymentGateway() {
       toast.error('Could not initialize Razorpay payment session.');
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Could not initialize payment session.';
+      setGatewayError(errMsg);
       toast.error(errMsg);
     } finally {
       setRazorpayLaunching(false);
+    }
+  };
+
+  // Switch order to Cash on Delivery (COD)
+  const handleSwitchToCOD = async () => {
+    if (!orderId || switchingCOD) return;
+    try {
+      setSwitchingCOD(true);
+      await orderAPI.switchToCOD(orderId);
+      toast.success('Order switched to Cash on Delivery! 📦');
+      setOrder((prev) => ({
+        ...prev,
+        payment_method: 'cod',
+        payment_status: 'cod_pending',
+        status: 'confirmed',
+        order_status: 'confirmed',
+      }));
+      setSubmitted(true);
+    } catch (err) {
+      const errMsg = err.response?.data?.error || 'Failed to switch to Cash on Delivery.';
+      toast.error(errMsg);
+    } finally {
+      setSwitchingCOD(false);
+    }
+  };
+
+  // Submit manual UPI transaction reference (UTR)
+  const handleManualUPISubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!utrNumber.trim()) {
+      toast.error('Please enter the 12-digit UPI UTR / Reference number');
+      return;
+    }
+    try {
+      setSubmittingUTR(true);
+      await orderAPI.pay(orderId, {
+        ref: utrNumber.trim(),
+        payment_method: 'upi',
+      });
+      toast.success('UPI Reference submitted! Verifying transaction...');
+      setOrder((prev) => ({
+        ...prev,
+        payment_method: 'upi',
+        payment_status: 'pending_verification',
+        status: 'payment_verification_pending',
+        order_status: 'payment_verification_pending',
+        transaction_id: utrNumber.trim(),
+      }));
+      setSubmitted(true);
+      setShowUPIModal(false);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to submit payment reference.');
+    } finally {
+      setSubmittingUTR(false);
     }
   };
 
@@ -324,20 +390,30 @@ export default function PaymentGateway() {
         {/* Main Body */}
         <div className="p-6 space-y-6">
           {submitted ? (
-            /* Completed / Paid State */
+            /* Completed / Paid / COD / UPI Submitted State */
             <div className="py-6 text-center space-y-5 animate-in fade-in zoom-in duration-300">
               <div className="w-16 h-16 bg-green-500/10 border border-green-500/30 rounded-full flex items-center justify-center mx-auto text-green-400">
                 <HiCheck className="w-10 h-10" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-bold text-white">Payment Successful!</h2>
+                <h2 className="text-xl font-bold text-white">
+                  {order?.payment_method === 'cod'
+                    ? 'Order Confirmed!'
+                    : order?.payment_status === 'pending_verification'
+                    ? 'UPI Reference Received!'
+                    : 'Payment Successful!'}
+                </h2>
                 <p className="text-xs text-green-400 font-semibold uppercase tracking-wider bg-green-500/10 border border-green-500/20 py-1 px-3 rounded-full inline-block">
-                  ✓ Order Confirmed & Paid
+                  {order?.payment_method === 'cod'
+                    ? '✓ Cash on Delivery Confirmed'
+                    : order?.payment_status === 'pending_verification'
+                    ? '⏳ Payment Verification in Progress'
+                    : '✓ Order Confirmed & Paid'}
                 </p>
               </div>
 
-              <div className="bg-dark-900/80 border border-dark-600 p-4 rounded-2xl text-left space-y-2 font-mono text-xs">
+              <div className="bg-dark-900/80 border border-dark-600 p-4 rounded-2xl text-left space-y-2.5 font-mono text-xs">
                 <div className="flex justify-between text-gray-400">
                   <span>Order ID:</span>
                   <span className="text-white font-bold">
@@ -345,13 +421,25 @@ export default function PaymentGateway() {
                   </span>
                 </div>
                 <div className="flex justify-between text-gray-400">
-                  <span>Total Paid:</span>
+                  <span>{order?.payment_method === 'cod' ? 'Pay on Delivery:' : 'Total Amount:'}</span>
                   <span className="text-gold-400 font-bold">₹{orderTotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-gray-400">
-                  <span>Payment Gateway:</span>
-                  <span className="text-white font-bold">Razorpay Standard</span>
+                  <span>Payment Method:</span>
+                  <span className="text-white font-bold uppercase">
+                    {order?.payment_method === 'cod'
+                      ? 'Cash on Delivery (COD)'
+                      : order?.payment_method === 'upi'
+                      ? 'Direct UPI Transfer'
+                      : 'Razorpay Online'}
+                  </span>
                 </div>
+                {order?.transaction_id && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>Reference / UTR:</span>
+                    <span className="text-gold-400 font-bold">{order.transaction_id}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -370,8 +458,22 @@ export default function PaymentGateway() {
               </div>
             </div>
           ) : (
-            /* Razorpay Exclusive Checkout */
-            <div className="space-y-6 text-center">
+            /* Payment Selection & Fallback Body */
+            <div className="space-y-5 text-center">
+              {gatewayError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-left space-y-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
+                    <HiExclamationCircle className="w-5 h-5 shrink-0" />
+                    <span>Razorpay Notice</span>
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    {gatewayError.toLowerCase().includes('authentication')
+                      ? 'Razorpay authentication failed because store API keys need renewal in Razorpay Dashboard. You can switch to Cash on Delivery or Direct UPI below to place your order right now without delay!'
+                      : gatewayError}
+                  </p>
+                </div>
+              )}
+
               <div className="bg-dark-900/60 border border-dark-600 rounded-2xl p-5 space-y-4">
                 <div className="w-14 h-14 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto text-gold-400">
                   <HiLockClosed className="w-7 h-7" />
@@ -401,7 +503,7 @@ export default function PaymentGateway() {
                 </div>
               </div>
 
-              {/* Pay Button */}
+              {/* Razorpay Button */}
               <button
                 type="button"
                 onClick={handleTriggerRazorpay}
@@ -418,9 +520,109 @@ export default function PaymentGateway() {
                 )}
               </button>
 
-              <p className="text-[11px] text-gray-400">
-                Supports all UPI Apps: Google Pay, PhonePe, Paytm, BHIM, and instant dynamic QR code scanning.
-              </p>
+              {/* Alternative Options Divider */}
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-dark-600"></div>
+                <span className="flex-shrink mx-3 text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Or complete order with
+                </span>
+                <div className="flex-grow border-t border-dark-600"></div>
+              </div>
+
+              {/* Switch to COD button */}
+              <button
+                type="button"
+                onClick={handleSwitchToCOD}
+                disabled={switchingCOD}
+                className="w-full py-3.5 bg-dark-800 hover:bg-dark-700 border border-emerald-500/40 hover:border-emerald-500/70 text-emerald-400 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                {switchingCOD ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    Switching to Cash on Delivery...
+                  </>
+                ) : (
+                  <>
+                    <HiCash className="w-5 h-5 text-emerald-400" />
+                    Switch to Cash on Delivery (Pay ₹{orderTotal.toLocaleString()} upon arrival)
+                  </>
+                )}
+              </button>
+
+              {/* Direct UPI Button */}
+              <button
+                type="button"
+                onClick={() => setShowUPIModal(true)}
+                className="w-full py-3 bg-dark-800 hover:bg-dark-700 border border-dark-600 hover:border-gold-500/40 text-gray-300 font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <HiQrcode className="w-4 h-4 text-gold-400" />
+                Pay via Direct UPI (Google Pay, PhonePe, QR Code)
+              </button>
+            </div>
+          )}
+
+          {/* UPI Direct Modal */}
+          {showUPIModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-dark-800 border border-dark-600 rounded-3xl max-w-sm w-full p-6 space-y-4 relative animate-in fade-in zoom-in duration-200">
+                <button
+                  onClick={() => setShowUPIModal(false)}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-white p-1"
+                >
+                  <HiX className="w-5 h-5" />
+                </button>
+
+                <div className="text-center space-y-1">
+                  <div className="w-12 h-12 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto text-gold-400 mb-2">
+                    <HiQrcode className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-bold text-white text-base">Direct UPI Transfer</h3>
+                  <p className="text-xs text-gray-400">
+                    Pay ₹{orderTotal.toLocaleString()} directly to store UPI ID
+                  </p>
+                </div>
+
+                <div className="bg-dark-900 border border-dark-600 p-3 rounded-xl flex items-center justify-between">
+                  <span className="font-mono text-xs text-gold-400 select-all">styleheaven@upi</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('styleheaven@upi');
+                      toast.success('UPI ID copied to clipboard!');
+                    }}
+                    className="text-xs text-gray-400 hover:text-white flex items-center gap-1 cursor-pointer bg-dark-700 px-2.5 py-1 rounded-lg"
+                  >
+                    <HiDuplicate className="w-3.5 h-3.5" /> Copy
+                  </button>
+                </div>
+
+                <a
+                  href={`upi://pay?pa=styleheaven@upi&pn=KalaStyle%20AI&am=${orderTotal}&tr=${order?.order_number || orderId}&tn=Order%20Payment&cu=INR`}
+                  className="w-full py-3 bg-gradient-luxury text-dark-900 font-bold text-xs rounded-xl flex items-center justify-center gap-2"
+                >
+                  Open in UPI App (GPay / PhonePe / Paytm) 📱
+                </a>
+
+                <form onSubmit={handleManualUPISubmit} className="space-y-3 pt-2 border-t border-dark-600">
+                  <p className="text-[11px] text-gray-400 text-left">
+                    After making payment, enter the 12-digit UTR / Reference number:
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="Enter 12-digit UPI UTR / Ref No."
+                    value={utrNumber}
+                    onChange={(e) => setUtrNumber(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-dark-900 border border-dark-600 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 font-mono"
+                  />
+                  <button
+                    type="submit"
+                    disabled={submittingUTR || !utrNumber.trim()}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                  >
+                    {submittingUTR ? 'Submitting...' : 'Confirm UPI Payment Proof ✓'}
+                  </button>
+                </form>
+              </div>
             </div>
           )}
 

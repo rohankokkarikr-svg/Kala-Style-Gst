@@ -11,6 +11,7 @@ const {
   createOrder,
   getMyOrders,
   cancelOrder,
+  switchToCOD,
   updateOrderDetails,
   getAllOrders,
   updateOrderStatus,
@@ -32,6 +33,7 @@ router.get('/:id', protect, getOrderById);
 router.get('/:id/tracking', protect, getOrderTracking);
 router.put('/:id/edit', protect, updateOrderDetails);
 router.put('/:id/cancel', protect, cancelOrder);
+router.put('/:id/switch-to-cod', protect, switchToCOD);
 router.put('/:id/pay', protect, payOrder);                 // legacy UTR flow
 
 // ── Admin Routes ─────────────────────────────────────────────────────────────

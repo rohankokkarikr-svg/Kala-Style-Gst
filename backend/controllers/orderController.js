@@ -628,6 +628,87 @@ exports.cancelOrder = async (req, res) => {
   }
 };
 
+// ── 7B. SWITCH TO CASH ON DELIVERY (Customer / Admin) ─────────────────────────
+/**
+ * PUT /api/orders/:id/switch-to-cod
+ * Converts an unpaid online order to Cash on Delivery (COD)
+ * Called when Razorpay payment fails, is canceled, or gateway credentials are misconfigured.
+ */
+exports.switchToCOD = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user_id = req.user.id;
+
+    const { data: order, error: fetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError || !order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.user_id !== user_id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to modify this order' });
+    }
+
+    if (order.payment_status === 'paid') {
+      return res.status(400).json({ error: 'Order is already paid' });
+    }
+
+    const { data: updatedOrder, error: updateErr } = await supabase
+      .from('orders')
+      .update({
+        payment_method: 'cod',
+        payment_status: 'cod_pending',
+        status: 'confirmed',
+        order_status: 'confirmed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    // Update payment record if exists
+    await supabase
+      .from('payments')
+      .update({
+        payment_method: 'cod',
+        status: 'pending',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('order_id', id);
+
+    broadcastSync('ORDERS_UPDATED', { id, status: 'confirmed', payment_method: 'cod' });
+    broadcastSync('PAYMENTS_UPDATED', { id, payment_status: 'cod_pending' });
+
+    // Send notifications to Admin & WhatsApp
+    try {
+      const orderNum = order.order_number || String(order.id).substring(0, 8);
+      await createSystemNotification({
+        title: `Order #${orderNum} switched to COD`,
+        message: `Customer switched payment method to Cash on Delivery for ₹${order.total_amount || order.total_price}.`,
+        target_audience: 'admin',
+        target_user_id: null,
+      });
+    } catch (notifyErr) {
+      console.warn('[switchToCOD] Notification error:', notifyErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Order successfully switched to Cash on Delivery',
+      order: updatedOrder,
+    });
+  } catch (err) {
+    console.error('[switchToCOD] Error:', err);
+    return res.status(500).json({ error: 'Failed to switch order to COD: ' + err.message });
+  }
+};
+
 // ── 8. UPDATE ORDER DETAILS (Customer) ──────────────────────────────────────
 
 exports.updateOrderDetails = async (req, res) => {

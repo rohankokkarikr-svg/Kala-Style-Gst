@@ -146,6 +146,7 @@ export const orderAPI = {
   updateStatus:       (id, data) => { apiCache.invalidateOrders(); return api.put(`/orders/${id}/status`, data); },
   updateOrderDetails: (id, data) => { apiCache.invalidateOrders(); return api.put(`/orders/${id}/edit`, data); },
   cancelOrder:        (id)       => { apiCache.invalidateOrders(); return api.put(`/orders/${id}/cancel`); },
+  switchToCOD:        (id)       => { apiCache.invalidateOrders(); return api.put(`/orders/${id}/switch-to-cod`); },
   pay:                (id, data) => api.put(`/orders/${id}/pay`, data),
   verifyPayment:      (id, data) => api.put(`/orders/${id}/verify-payment`, data),
   refund:             (id, data) => api.post(`/orders/${id}/refund`, data),

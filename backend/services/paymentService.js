@@ -64,7 +64,10 @@ exports.createRazorpayOrder = async (amount, receipt, notes = {}, isPaise = fals
     const order = await razorpay.orders.create(options);
     return { success: true, order, key_id: activeKeyId };
   } catch (error) {
-    const errMsg = error?.error?.description || error?.description || error?.message || 'Failed to create Razorpay order';
+    let errMsg = error?.error?.description || error?.description || error?.message || 'Failed to create Razorpay order';
+    if (errMsg.toLowerCase().includes('authentication failed')) {
+      errMsg = 'Razorpay Authentication Failed: Razorpay API Key or Secret is invalid or expired. Please verify your Razorpay API Keys in the Dashboard.';
+    }
     console.error('[paymentService] Razorpay order creation failed:', errMsg);
     return { success: false, error: errMsg };
   }
