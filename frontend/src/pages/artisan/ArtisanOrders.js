@@ -36,25 +36,35 @@ export default function ArtisanOrders() {
   const fetchOrders = async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      // Try new artisan_orders based endpoint first (secure, uses artisan_id)
-      const res = await artisanAPI.getArtisanOrders();
-      if (res?.data && Array.isArray(res.data)) {
-        setOrders(res.data);
-        return;
-      }
-    } catch (e) { /* fallback */ }
-    try {
-      const res = await artisanAPI.getMyOrders();
-      if (res?.data && Array.isArray(res.data)) {
-        setOrders(res.data);
-        return;
-      }
-    } catch {
+      let loaded = false;
+      // 1. Try modern artisan_orders based endpoint first
       try {
-        const statsRes = await artisanAPI.getMyStats();
-        setOrders(statsRes?.data?.recentOrders || []);
-      } catch (err) {
-        console.error('Failed to load artisan orders:', err);
+        const res = await artisanAPI.getArtisanOrders();
+        if (res?.data && Array.isArray(res.data)) {
+          setOrders(res.data);
+          loaded = true;
+        }
+      } catch (e) { /* fallback to getMyOrders */ }
+
+      // 2. Fallback to getMyOrders
+      if (!loaded) {
+        try {
+          const res = await artisanAPI.getMyOrders();
+          if (res?.data && Array.isArray(res.data)) {
+            setOrders(res.data);
+            loaded = true;
+          }
+        } catch (e) { /* fallback to getMyStats */ }
+      }
+
+      // 3. Fallback to recentOrders from stats
+      if (!loaded) {
+        try {
+          const statsRes = await artisanAPI.getMyStats();
+          setOrders(statsRes?.data?.recentOrders || []);
+        } catch (err) {
+          console.error('Failed to load artisan orders:', err);
+        }
       }
     } finally {
       setLoading(false);
