@@ -468,11 +468,12 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .from('artisan_orders')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (fetchErr || !artOrder) return res.status(404).json({ error: 'Artisan order not found' });
 
-    if (artOrder.artisan_id !== profile.id) {
+    // Fallback artisan_orders (artisan_id = null) can be updated by any verified artisan of the platform
+    if (artOrder.artisan_id !== null && artOrder.artisan_id !== profile.id) {
       return res.status(403).json({ error: 'Access denied: this order does not belong to you' });
     }
 

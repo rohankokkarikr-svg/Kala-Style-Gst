@@ -282,6 +282,32 @@ exports.createMasterOrder = async ({
     }
   }
 
+  // CRITICAL FIX: If no artisan_orders were created (all products have artisan_id = null),
+  // insert a fallback artisan_order so the order always has at least one trackable sub-order.
+  // Without this, COD orders on unlinked products show "Artisan order not found" everywhere.
+  if (artisanOrders.length === 0) {
+    const unlinkedSubtotal = enrichedItems.reduce((s, i) => s + i.total_price, 0);
+    const { data: fallbackArtOrder, error: fallbackErr } = await supabase
+      .from('artisan_orders')
+      .insert([{
+        order_id: order.id,
+        artisan_id: null,
+        subtotal: unlinkedSubtotal,
+        delivery_fee: deliveryFee,
+        total_amount: unlinkedSubtotal + deliveryFee,
+        status: 'pending',
+      }])
+      .select()
+      .single();
+
+    if (!fallbackErr && fallbackArtOrder) {
+      artisanOrders.push(fallbackArtOrder);
+      console.log(`[orderService] ✅ Fallback artisan_order created for unlinked products (order ${order.id})`);
+    } else {
+      console.warn(`[orderService] ⚠️ Fallback artisan_order insert failed:`, fallbackErr?.message);
+    }
+  }
+
   // 9. Create payment record
   let paymentRecord = null;
   const { data: payment } = await supabase
@@ -390,7 +416,7 @@ exports.finalizeCODDelivery = async (artisanOrderId, artisanProfileId) => {
     .from('artisan_orders')
     .select('*')
     .eq('id', artisanOrderId)
-    .single();
+    .maybeSingle();
 
   if (!artOrder) return { error: 'Artisan order not found' };
 
