@@ -16,6 +16,7 @@ const STEPS = [
   { id: 'price',       label: 'Price Suggestion',   icon: '💰' },
   { id: 'translate',   label: 'Multilingual',       icon: '🌐' },
   { id: 'publish',     label: 'Publish',            icon: '🚀' },
+  { id: 'ai_images',   label: 'AI Photos',          icon: '🎨' },
 ];
 
 const SEVEN_CATEGORIES = [
@@ -106,6 +107,12 @@ export default function AIProductStudio() {
 
   // Step 7 — Publish
   const [isPublishing, setIsPublishing] = useState(false);
+
+  // Step 8 — AI Image Generation
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState([]);
+  const [imageGenProgress, setImageGenProgress] = useState(0);
+  const [publishedProductId, setPublishedProductId] = useState(null);
 
   // Dynamic Categories from Admin updates
   const [availableCategories, setAvailableCategories] = useState(SEVEN_CATEGORIES);
@@ -365,13 +372,60 @@ export default function AIProductStudio() {
         ai_generated:   catalog.isAIGenerated,
       };
 
-      await productAPI.create(productData);
+      const { data: createdProduct } = await productAPI.create(productData);
       apiCache.invalidateProducts();
       window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
         detail: { payload: { action: 'create' } }
       }));
-      toast.success(isDraft ? 'Saved as draft!' : 'Product submitted for admin review! 🎉');
-      navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products');
+
+      const productId = createdProduct?.id;
+      setPublishedProductId(productId);
+      toast.success(isDraft ? 'Saved as draft!' : 'Product submitted! Now generating AI photos... 🎨');
+
+      // ── Advance to Step 8: AI Image Generation ──
+      if (!isDraft && finalUrl) {
+        setStep(7);
+        setIsGeneratingImages(true);
+        setImageGenProgress(8);
+
+        // Animate progress bar during generation
+        const progressTimer = setInterval(() => {
+          setImageGenProgress(prev => prev < 82 ? prev + 4 : prev);
+        }, 3000);
+
+        try {
+          const { data: imgResult } = await aiAPI.generateProductImages({
+            image_url:        finalUrl,
+            product_name:     catalog.productName,
+            category:         catalog.category,
+            material:         catalog.materials,
+            craft_technique:  catalog.craftTechnique,
+            product_id:       productId,
+          });
+
+          clearInterval(progressTimer);
+          setImageGenProgress(100);
+          const imgs = imgResult?.images || [finalUrl];
+          setGeneratedImages(imgs);
+
+          if (imgs.length > 1) {
+            toast.success(`🌟 ${imgs.length} AI product photos generated and saved to your product!`);
+          } else {
+            toast('📸 Product saved! AI photos will appear after approval.');
+          }
+        } catch (imgErr) {
+          clearInterval(progressTimer);
+          setImageGenProgress(100);
+          setGeneratedImages(finalUrl ? [finalUrl] : []);
+          console.warn('Image generation notice:', imgErr.message);
+          toast('Product published! AI photo generation is running in the background.');
+        } finally {
+          setIsGeneratingImages(false);
+        }
+      } else {
+        // Draft or no image: navigate away immediately
+        navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products');
+      }
     } catch (err) {
       console.error('Publish error:', err);
       toast.error('Publish failed. Please try again.');
@@ -829,6 +883,105 @@ export default function AIProductStudio() {
           <button onClick={() => setStep(5)} className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-1 transition-colors">
             <HiChevronLeft className="w-4 h-4" /> Back to translations
           </button>
+        </div>
+      )}
+
+      {/* ── STEP 8: AI Image Generation ── */}
+      {step === 7 && (
+        <div className="card p-8 space-y-8 text-center">
+          {isGeneratingImages ? (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <span className="text-3xl animate-bounce">🎨</span>
+                  <h2 className="text-xl font-serif font-bold text-white">AI is Generating Your Product Photos</h2>
+                </div>
+                <p className="text-gray-400 text-sm max-w-md mx-auto">
+                  Gemini Imagen AI is creating <strong className="text-gold-400">3–4 professional product photos</strong> — studio shot, lifestyle photo, close-up detail, and festive background. This takes about 60–90 seconds.
+                </p>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="max-w-md mx-auto space-y-2">
+                <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                  <span>Generating photos via AI...</span>
+                  <span className="text-gold-400 font-bold">{imageGenProgress}%</span>
+                </div>
+                <div className="h-3 bg-dark-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-gold-600 via-gold-400 to-gold-300 rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${imageGenProgress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                  <span>📸 Studio shot</span>
+                  <span>🌿 Lifestyle</span>
+                  <span>🔍 Detail</span>
+                  <span>✨ Festive</span>
+                </div>
+              </div>
+
+              {/* Spinning loader */}
+              <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+                <div className="w-5 h-5 border-2 border-gold-500/30 border-t-gold-400 rounded-full animate-spin" />
+                <span>Please don't close this page while photos are being created...</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <span className="text-3xl">🌟</span>
+                  <h2 className="text-xl font-serif font-bold text-white">AI Photos Generated!</h2>
+                </div>
+                <p className="text-gray-400 text-sm">
+                  {generatedImages.length > 1
+                    ? `${generatedImages.length} professional product photos were created and saved to your product.`
+                    : 'Your product has been published successfully.'}
+                </p>
+              </div>
+
+              {/* Image Gallery Preview */}
+              {generatedImages.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto">
+                  {generatedImages.map((img, idx) => (
+                    <div key={idx} className={`relative rounded-xl overflow-hidden aspect-square border-2 ${idx === 0 ? 'border-gold-500' : 'border-dark-600'}`}>
+                      <img src={img} alt={`Variant ${idx + 1}`} className="w-full h-full object-cover" />
+                      {idx === 0 && (
+                        <span className="absolute bottom-1 left-1 right-1 bg-dark-900/80 text-[9px] text-gold-400 font-bold text-center py-0.5 rounded">Your Photo</span>
+                      )}
+                      {idx > 0 && (
+                        <span className="absolute bottom-1 left-1 right-1 bg-dark-900/80 text-[9px] text-emerald-400 font-bold text-center py-0.5 rounded">AI Photo</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {publishedProductId && (
+                  <button
+                    onClick={() => navigate(`/products/${publishedProductId}`)}
+                    className="btn-primary px-8 py-3 flex items-center justify-center gap-2"
+                  >
+                    <HiCheck className="w-5 h-5" /> View Product Page
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products')}
+                  className={publishedProductId ? 'btn-secondary px-6 py-3' : 'btn-primary px-8 py-3 flex items-center justify-center gap-2'}
+                >
+                  Manage Products
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="btn-secondary px-6 py-3"
+                >
+                  Marketplace
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

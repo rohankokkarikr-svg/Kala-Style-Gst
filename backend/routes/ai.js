@@ -11,6 +11,7 @@ const {
   getAIInsights,
   smartSearch,
   getHealth,
+  generateProductImages,
 } = require('../controllers/aiController');
 
 // All AI endpoints — open access
@@ -24,5 +25,7 @@ router.post('/suggest-price',      suggestPrice);
 router.post('/artisan-story',      generateArtisanStory);
 router.post('/insights',           getAIInsights);
 router.post('/smart-search',       smartSearch);
+router.post('/generate-product-images', generateProductImages);
 
 module.exports = router;
+

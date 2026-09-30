@@ -18,9 +18,11 @@ CREATE TABLE IF NOT EXISTS products (
   category VARCHAR(100) NOT NULL,
   sizes TEXT[], -- Array of strings e.g., ['S', 'M', 'L']
   image_url TEXT,
+  images TEXT[],
   barcode VARCHAR(100) UNIQUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT[];
 
 -- 3. Create Orders Table
 CREATE TABLE IF NOT EXISTS orders (

@@ -245,7 +245,7 @@ router.post('/verify', protect, async (req, res) => {
         payment_id: razorpay_payment_id,
         order_number: order.order_number,
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // Auto-create Shiprocket logistics shipment (non-blocking)
     try {
@@ -254,7 +254,7 @@ router.post('/verify', protect, async (req, res) => {
         .createShipmentFromOrder(order.id)
         .then((sRes) => console.log(`[verify] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
         .catch((sErr) => console.warn(`[verify] Auto Shiprocket shipment notice:`, sErr.message));
-    } catch (shpErr) {}
+    } catch (shpErr) { }
 
     // Send Payment Success WhatsApp Notification to Admin
     try {
@@ -375,7 +375,7 @@ router.post('/webhook', async (req, res) => {
               status: 'paid',
               payment_id: razorpayPaymentId,
             });
-          } catch (e) {}
+          } catch (e) { }
 
           // Auto-create Shiprocket logistics shipment (non-blocking)
           try {
@@ -384,7 +384,7 @@ router.post('/webhook', async (req, res) => {
               .createShipmentFromOrder(order.id)
               .then((sRes) => console.log(`[webhook] ✅ Auto Shiprocket shipment created for order ${order.id}:`, sRes.shipment?.id))
               .catch((sErr) => console.warn(`[webhook] Auto Shiprocket shipment notice:`, sErr.message));
-          } catch (shpErr) {}
+          } catch (shpErr) { }
 
           // Send Real-Time WhatsApp Alert for Razorpay Payment Captured
           try {
@@ -446,7 +446,7 @@ router.post('/webhook', async (req, res) => {
               status: 'failed',
               error: payment.error_description || 'Payment failed',
             });
-          } catch (e) {}
+          } catch (e) { }
         }
       } catch (err) {
         console.error('[webhook] Error handling payment.failed:', err.message);
@@ -849,15 +849,6 @@ const verifyPaymentDirect = async (req, res) => {
 
         broadcastSync('PAYMENTS_UPDATED', { orderId: targetOrderId, status: 'paid' });
         broadcastSync('ORDERS_UPDATED', { orderId: targetOrderId, order_status: 'confirmed' });
-
-        // Auto-create Shiprocket logistics shipment (non-blocking)
-        try {
-          const shippingService = require('../services/shipping/shippingService');
-          shippingService
-            .createShipmentFromOrder(targetOrderId)
-            .then((sRes) => console.log(`[verifyPaymentDirect] ✅ Auto Shiprocket shipment created for order ${targetOrderId}:`, sRes.shipment?.id))
-            .catch((sErr) => console.warn(`[verifyPaymentDirect] Auto Shiprocket shipment notice:`, sErr.message));
-        } catch (shpErr) {}
       } catch (dbErr) {
         console.warn('[verify-payment-direct] DB sync error:', dbErr.message);
       }

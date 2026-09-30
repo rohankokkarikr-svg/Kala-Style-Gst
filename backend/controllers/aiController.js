@@ -875,3 +875,153 @@ exports.getHealth = async (req, res) => {
   }
 };
 
+/**
+ * 11. generateProductImages
+ * ─────────────────────────────────────────────────────────────────
+ * Given a product's uploaded image URL + metadata, generates 3–4 additional
+ * product image variations using the Gemini Imagen API, uploads each one to
+ * Cloudinary, and returns the resulting URL array.
+ *
+ * Also updates the product's `images` column in Supabase if product_id is
+ * provided, so the gallery is immediately populated for the new product.
+ *
+ * Body: { image_url, product_name, category, material, craft_technique, product_id? }
+ */
+exports.generateProductImages = async (req, res) => {
+  const { image_url, product_name, category, material, craft_technique, product_id } = req.body;
+
+  if (!image_url && !product_name) {
+    return res.status(400).json({ error: 'image_url or product_name is required.' });
+  }
+
+  // ── Build image generation prompts ────────────────────────────────────────
+  const baseSubject = product_name || 'Indian handicraft artisan product';
+  const cat = category || 'Indian Handicraft';
+  const mat = material || 'handcrafted natural materials';
+  const tech = craft_technique || 'traditional Indian technique';
+
+  const VARIANTS = [
+    `Professional product photography of ${baseSubject}, a ${cat} made from ${mat} using ${tech}. Shot on a clean white background, soft studio lighting, sharp focus, high resolution, ecommerce style, 4K quality.`,
+    `${baseSubject} displayed on a dark rustic wooden table with a soft bokeh background, warm golden hour lighting, lifestyle product photography, Indian artisan craft aesthetic, premium brand photography, 4K.`,
+    `Close-up macro detail shot of ${baseSubject} showing intricate ${tech} texture and ${mat} quality, Indian artisan craftsmanship, shallow depth of field, rich colors, professional product photography.`,
+    `${baseSubject} placed on a traditional Indian Rajasthani or Mughal-inspired decorative background, warm earthy tones, festive presentation, premium artisan marketplace product photo, beautiful and authentic.`,
+  ];
+
+  try {
+    const { GoogleGenAI, Modality } = require('@google/genai');
+    const { cloudinary } = require('../config/cloudinary');
+
+    const apiKey = process.env.GEMINI_ADMIN_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: 'AI image generation is not configured on this server.' });
+    }
+
+    const genAI = new GoogleGenAI({ apiKey });
+    const generatedUrls = [];
+
+    // Always include original uploaded image first
+    if (image_url) generatedUrls.push(image_url);
+
+    // Generate up to 3 additional AI images (cap at 3 to avoid timeout)
+    const targetCount = 3;
+    const maxAttempts = Math.min(VARIANTS.length, targetCount + 1);
+
+    for (let i = 0; i < maxAttempts && generatedUrls.length < targetCount + 1; i++) {
+      const prompt = VARIANTS[i];
+      try {
+        const response = await genAI.models.generateImages({
+          model: 'imagen-3.0-generate-002',
+          prompt,
+          config: {
+            numberOfImages: 1,
+            outputMimeType: 'image/jpeg',
+            aspectRatio: '1:1',
+          },
+        });
+
+        const imgData = response?.generatedImages?.[0]?.image?.imageBytes;
+        if (!imgData) continue;
+
+        // Upload generated image bytes to Cloudinary
+        const base64Str = `data:image/jpeg;base64,${imgData}`;
+        const uploadRes = await cloudinary.uploader.upload(base64Str, {
+          folder: 'kalastyle-artisan-marketplace/ai-generated',
+          resource_type: 'image',
+          tags: ['ai-generated', 'product-variant'],
+        });
+
+        const url = uploadRes.secure_url || uploadRes.url;
+        if (url && url !== image_url) {
+          generatedUrls.push(url);
+        }
+      } catch (imgErr) {
+        // Individual image failures are non-fatal — just skip this variant
+        console.warn(`[generateProductImages] Variant ${i + 1} failed:`, imgErr.message);
+      }
+    }
+
+    // Deduplicate and cap at 5
+    const finalImages = [...new Set(generatedUrls)].slice(0, 5);
+
+    // ── Persist images[] to Supabase if product_id provided ───────────────────
+    if (product_id && finalImages.length > 0) {
+      try {
+        const supabase = require('../config/supabase');
+        // 1. First attempt to update images column directly
+        const { error: updateColErr } = await supabase
+          .from('products')
+          .update({ images: finalImages, image_url: finalImages[0] })
+          .eq('id', product_id);
+
+        if (updateColErr) {
+          console.warn('[generateProductImages] images column update notice:', updateColErr.message);
+          // 2. Fallback: fetch current tags, append __IMAGES__ tag, and update image_url
+          const { data: prodData } = await supabase
+            .from('products')
+            .select('tags')
+            .eq('id', product_id)
+            .maybeSingle();
+
+          const existingTags = Array.isArray(prodData?.tags)
+            ? prodData.tags.filter(t => typeof t === 'string' && !t.startsWith('__IMAGES__:'))
+            : [];
+
+          existingTags.push(`__IMAGES__:${JSON.stringify(finalImages)}`);
+
+          await supabase
+            .from('products')
+            .update({
+              image_url: finalImages[0],
+              tags: existingTags,
+            })
+            .eq('id', product_id);
+          console.log(`[generateProductImages] Stored ${finalImages.length} images via tags fallback for product ${product_id}`);
+        } else {
+          console.log(`[generateProductImages] Updated images[] column for product ${product_id}`);
+        }
+      } catch (dbErr) {
+        console.warn('[generateProductImages] DB update notice:', dbErr.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      images: finalImages,
+      count: finalImages.length,
+      ai_generated_count: finalImages.length - (image_url ? 1 : 0),
+    });
+
+  } catch (err) {
+    console.error('[generateProductImages] Fatal error:', err.message);
+    // On total failure, return the original image at minimum so the product is still usable
+    const fallback = image_url ? [image_url] : [];
+    return res.status(207).json({
+      success: false,
+      images: fallback,
+      count: fallback.length,
+      error: 'AI image generation partially failed. Original image preserved.',
+      details: err.message,
+    });
+  }
+};
+

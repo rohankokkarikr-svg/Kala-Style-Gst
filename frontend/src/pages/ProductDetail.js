@@ -56,6 +56,38 @@ function StarRow({ rating, size = 'w-4 h-4' }) {
   );
 }
 
+/* ─── Product Images Extraction Helper ─── */
+function extractProductImages(prod) {
+  if (!prod) return [];
+  let list = [];
+  if (Array.isArray(prod.images) && prod.images.length > 0) {
+    list = prod.images.filter(Boolean);
+  } else if (typeof prod.images === 'string') {
+    try {
+      const parsed = JSON.parse(prod.images);
+      if (Array.isArray(parsed)) list = parsed.filter(Boolean);
+    } catch (e) {}
+  }
+
+  // Check tags for __IMAGES__: fallback
+  if (list.length === 0 && Array.isArray(prod.tags)) {
+    const imgTag = prod.tags.find(t => typeof t === 'string' && t.startsWith('__IMAGES__:'));
+    if (imgTag) {
+      try {
+        const parsed = JSON.parse(imgTag.replace('__IMAGES__:', ''));
+        if (Array.isArray(parsed)) list = parsed.filter(Boolean);
+      } catch (e) {}
+    }
+  }
+
+  if (list.length === 0) {
+    const fallback = prod.image_url || prod.image;
+    if (fallback) list = [fallback];
+  }
+
+  return [...new Set(list.filter(Boolean))];
+}
+
 /* ══════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════ */
@@ -109,8 +141,8 @@ export default function ProductDetail() {
           } catch (e) {}
         }
         setProduct(found);
-        const firstImg = (found.images && found.images[0]) || found.image_url || found.image || '';
-        setSelectedImage(firstImg);
+        const imgs = extractProductImages(found);
+        setSelectedImage(imgs[0] || '');
         setSelectedImageIdx(0);
       } else {
         throw new Error('Product not found');
@@ -200,10 +232,7 @@ export default function ProductDetail() {
       ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
       : null);
 
-  const imagesList =
-    product.images && product.images.length > 0
-      ? product.images
-      : [product.image_url || product.image].filter(Boolean);
+  const imagesList = extractProductImages(product);
 
   const isFavorited = isInWishlist(product.id);
   const artisanProfile = product?.artisan_profiles || {};
@@ -290,7 +319,14 @@ export default function ProductDetail() {
                           : 'border-dark-700 opacity-55 hover:opacity-90 hover:border-dark-500'
                       }`}
                     >
-                      <img src={img} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
+                      <img
+                        src={img}
+                        alt={`View ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={e => {
+                          e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+                        }}
+                      />
                     </button>
                   ))}
                 </div>
@@ -347,7 +383,14 @@ export default function ProductDetail() {
                           selectedImageIdx === idx ? 'border-gold-500 ring-1 ring-gold-500/30' : 'border-dark-700 opacity-55 hover:opacity-90'
                         }`}
                       >
-                        <img src={img} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
+                        <img
+                          src={img}
+                          alt={`View ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+                          }}
+                        />
                       </button>
                     ))}
                   </div>

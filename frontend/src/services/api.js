@@ -238,15 +238,17 @@ export const artisanAPI = {
 
 // ─── AI ──────────────────────────────────────────
 export const aiAPI = {
-  analyzeProduct:       (data) => api.post('/ai/analyze-product',       data, { timeout: 60000 }),
-  generateDescription:  (data) => api.post('/ai/generate-description',   data, { timeout: 60000 }),
-  generateFullCatalog:  (data) => api.post('/ai/full-catalog',           data, { timeout: 60000 }),
-  detectCategory:       (data) => api.post('/ai/detect-category',        data, { timeout: 60000 }),
-  translateProduct:     (data) => api.post('/ai/translate',              data, { timeout: 60000 }),
-  suggestPrice:         (data) => api.post('/ai/suggest-price',          data, { timeout: 60000 }),
-  generateArtisanStory: (data) => api.post('/ai/artisan-story',          data, { timeout: 60000 }),
-  getInsights:          (data) => api.post('/ai/insights',               data, { timeout: 60000 }),
-  smartSearch:          (data) => api.post('/ai/smart-search',           data, { timeout: 60000 }),
+  analyzeProduct:          (data) => api.post('/ai/analyze-product',           data, { timeout: 60000 }),
+  generateDescription:     (data) => api.post('/ai/generate-description',      data, { timeout: 60000 }),
+  generateFullCatalog:     (data) => api.post('/ai/full-catalog',              data, { timeout: 60000 }),
+  detectCategory:          (data) => api.post('/ai/detect-category',           data, { timeout: 60000 }),
+  translateProduct:        (data) => api.post('/ai/translate',                 data, { timeout: 60000 }),
+  suggestPrice:            (data) => api.post('/ai/suggest-price',             data, { timeout: 60000 }),
+  generateArtisanStory:    (data) => api.post('/ai/artisan-story',             data, { timeout: 60000 }),
+  getInsights:             (data) => api.post('/ai/insights',                  data, { timeout: 60000 }),
+  smartSearch:             (data) => api.post('/ai/smart-search',              data, { timeout: 60000 }),
+  // AI Product Image Generation — generates 3-4 variant photos via Gemini Imagen
+  generateProductImages:   (data) => api.post('/ai/generate-product-images',  data, { timeout: 120000 }),
 };
 
 // ─── Admin Control Center ────────────────────────
