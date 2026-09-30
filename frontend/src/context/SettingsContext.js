@@ -146,37 +146,32 @@ export const SettingsProvider = ({ children }) => {
       // Storage CDN fallback
     }
 
-    // 1. Try Backend API
+    // 1. Fast parallel load: Race Backend API with direct Supabase Edge
     try {
       if (force) {
         apiCache.invalidateSettings();
       }
-      const { data } = await settingsAPI.get();
-      if (data && typeof data === 'object') {
-        loadedData = data;
+      const backendPromise = settingsAPI.get().catch(() => null);
+      const supaPromise = supabase
+        .from('platform_settings')
+        .select('*')
+        .eq('id', 'main')
+        .single()
+        .then((res) => (res.data ? { data: { ...DEFAULT_SETTINGS, ...res.data } } : null))
+        .catch(() => null);
+
+      // Fast race: whichever responds first with valid data wins!
+      const fastResult = await Promise.race([backendPromise, supaPromise]);
+      if (fastResult?.data && typeof fastResult.data === 'object') {
+        loadedData = fastResult.data;
+      } else {
+        const fallback = await (backendPromise || supaPromise);
+        if (fallback?.data && typeof fallback.data === 'object') {
+          loadedData = fallback.data;
+        }
       }
     } catch (err) {
-      // Backend not reachable from mobile client or static hosting — proceed to Supabase fallback
-    }
-
-    // 2. Fallback to Supabase platform_settings / custom settings
-    if (!loadedData) {
-      try {
-        const { data: supaData } = await supabase
-          .from('platform_settings')
-          .select('*')
-          .eq('id', 'main')
-          .single();
-
-        if (supaData) {
-          loadedData = {
-            ...DEFAULT_SETTINGS,
-            ...supaData,
-          };
-        }
-      } catch (e) {
-        // Silently use defaults if offline
-      }
+      // Backend or Supabase fetch caught
     }
 
     const activeHeroSlides = (Array.isArray(cloudHeroSlides) && cloudHeroSlides.length > 0)

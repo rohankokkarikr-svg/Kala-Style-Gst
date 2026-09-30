@@ -227,6 +227,20 @@ server.listen(PORT, '0.0.0.0', async () => {
   } catch (e) {
     console.warn('  ⚠️ Could not start AI Scheduler:', e.message);
   }
+
+  // Keep-alive self-ping in production to prevent Render free-tier idle sleep (15 min limit)
+  if (process.env.NODE_ENV === 'production') {
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || 'https://style-heaven-backend.onrender.com';
+    const https = require('https');
+    setInterval(() => {
+      try {
+        https.get(`${keepAliveUrl}/health`, (res) => {
+          // Keep-alive heartbeat successfully sent
+        }).on('error', () => {});
+      } catch (_) {}
+    }, 13 * 60 * 1000); // 13 minutes interval
+    console.log(`  ⚡ Keep-alive self-ping active for ${keepAliveUrl} (every 13m)`);
+  }
 });
 
 // Trigger restart to load new environment variables from .env

@@ -10,37 +10,46 @@ import Testimonials from '../components/Testimonials';
 import Footer from '../components/Footer';
 import { productAPI, artisanAPI } from '../services/api';
 import { useSettings, DEFAULT_DISCOUNT_BANNER } from '../context/SettingsContext';
+import { apiCache } from '../utils/apiCache';
 import toast from 'react-hot-toast';
 
 export default function Home() {
   const { settings } = useSettings();
-  const [featured, setFeatured] = useState([]);
-  const [artisans, setArtisans] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedFeatured = apiCache.getSync('/products/featured?{}');
+  const cachedArtisans = apiCache.getSync('/artisans?{}');
+
+  const initialFeatured = Array.isArray(cachedFeatured?.data) ? cachedFeatured.data : (Array.isArray(cachedFeatured) ? cachedFeatured : []);
+  const initialArtisans = Array.isArray(cachedArtisans?.data) ? cachedArtisans.data : (Array.isArray(cachedArtisans) ? cachedArtisans : []);
+
+  const [featured, setFeatured] = useState(() => initialFeatured);
+  const [artisans, setArtisans] = useState(() => initialArtisans.slice(0, 4));
+  const [loading, setLoading] = useState(() => initialFeatured.length === 0);
 
   const discountBanner = settings?.discountBanner || DEFAULT_DISCOUNT_BANNER;
 
   const fetchData = React.useCallback(async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
+    if (!isBackground && initialFeatured.length === 0) setLoading(true);
     try {
-      const { data } = await productAPI.getFeatured();
-      if (Array.isArray(data)) {
-        setFeatured(data);
-      } else {
-        setFeatured([]);
+      const res = await productAPI.getFeatured();
+      const items = res?.data || res;
+      if (Array.isArray(items) && items.length > 0) {
+        setFeatured(items);
       }
     } catch {
-      setFeatured([]);
+      // keep existing items
     }
     try {
-      const { data } = await artisanAPI.getAll();
-      setArtisans(Array.isArray(data) ? data.slice(0, 4) : []);
+      const res = await artisanAPI.getAll();
+      const items = res?.data || res;
+      if (Array.isArray(items) && items.length > 0) {
+        setArtisans(items.slice(0, 4));
+      }
     } catch {}
     setLoading(false);
-  }, []);
+  }, [initialFeatured.length]);
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
   }, [fetchData]);
 
   // Real-time listener: auto-update when Admin changes products or artisans

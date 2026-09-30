@@ -43,6 +43,7 @@ const ArtisanDashboard = lazy(() => import('./pages/artisan/ArtisanDashboard'));
 const ArtisanProducts = lazy(() => import('./pages/artisan/ArtisanProducts'));
 const AIProductStudio = lazy(() => import('./pages/artisan/AIProductStudio'));
 const AIPriceSuggestion = lazy(() => import('./pages/artisan/AIPriceSuggestion'));
+
 const AIArtisanStory = lazy(() => import('./pages/artisan/AIArtisanStory'));
 const AIInsightsDashboard = lazy(() => import('./pages/artisan/AIInsightsDashboard'));
 const ArtisanOrders = lazy(() => import('./pages/artisan/ArtisanOrders'));
@@ -85,6 +86,12 @@ function MaintenanceGuard({ children }) {
   const { isAdmin, loading } = useAuth();
   const location = useLocation();
 
+  // Instant pass-through when maintenance mode is inactive (normal operation)
+  if (!settings?.maintenanceMode) {
+    return children;
+  }
+
+  // Only when maintenance mode is active, check auth state
   if (loading) return null;
 
   if (settings.maintenanceMode && !isAdmin && location.pathname !== '/login') {

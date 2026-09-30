@@ -10,34 +10,57 @@
       content="KalaStyle AI — Authentic Indian Handicrafts, Handloom Textiles, Pottery, Woodcrafts, and Folk Art directly from generational artisans."
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/images/kalastyle_logo.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
 
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
+    <!-- Performance: Preconnect & DNS-Prefetch critical domains -->
+    <link rel="preconnect" href="https://style-heaven-backend.onrender.com" crossorigin />
+    <link rel="dns-prefetch" href="https://style-heaven-backend.onrender.com" />
+    <link rel="preconnect" href="https://fwuhlhaadhhveuljsqbh.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://fwuhlhaadhhveuljsqbh.supabase.co" />
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin />
+    <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Google Fonts non-blocking stylesheet -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Pre-warm Backend Web Service at earliest millisecond -->
+    <script>
+      (function() {
+        try {
+          var backendUrl = 'https://style-heaven-backend.onrender.com/health';
+          if (window.fetch) {
+            window.fetch(backendUrl, { mode: 'no-cors', cache: 'no-store' }).catch(function(){});
+          }
+        } catch (_) {}
+      })();
+    </script>
+
     <title>KalaStyle AI | Authentic Indian Handicrafts & Handloom</title>
   </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+  <body style="background-color: #0a0a0a; margin: 0; padding: 0;">
+    <noscript>You need to enable JavaScript to run KalaStyle AI.</noscript>
+    
+    <!-- Instant First-Paint Branded Shell: replaced smoothly by React on hydrate -->
+    <div id="root">
+      <div style="min-height: 100vh; background-color: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #fff;">
+        <div style="position: relative; width: 68px; height: 68px; margin-bottom: 22px;">
+          <div style="box-sizing: border-box; position: absolute; inset: 0; border: 2.5px solid rgba(212, 175, 55, 0.15); border-top-color: #D4AF37; border-radius: 50%; animation: kalaSpin 0.85s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;"></div>
+          <img src="%PUBLIC_URL%/images/kalastyle_logo.png" alt="KalaStyle" style="width: 38px; height: 38px; position: absolute; top: 15px; left: 15px; object-fit: contain;" onerror="this.style.display='none'" />
+        </div>
+        <div style="font-size: 15px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: #D4AF37;">KalaStyle AI</div>
+        <div style="font-size: 11px; letter-spacing: 0.12em; color: #888888; margin-top: 6px; text-transform: uppercase;">Authentic Indian Handicrafts</div>
+      </div>
+      <style>
+        @keyframes kalaSpin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
   </body>
 </html>

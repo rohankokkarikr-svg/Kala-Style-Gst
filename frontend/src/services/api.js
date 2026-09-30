@@ -13,7 +13,7 @@ const api = axios.create({
     }
     return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
   })(),
-  timeout: 15000,
+  timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -83,31 +83,46 @@ export const authAPI = {
   otpSession:      (data) => api.post('/auth/supabase-session', data, {
     headers: { Authorization: '' },
   }),
-  me:              ()     => api.get('/auth/me'),
+  me:              ()     => api.get('/auth/me', { timeout: 6000 }),
   getRewards:      ()     => api.get('/auth/rewards'),
   getLeaderboard:  ()     => api.get('/auth/leaderboard'),
 };
 
-// Ultra-fast cached GET with instant SWR revalidation
+// Ultra-fast cached GET with instant SWR revalidation (0ms load)
 export const cachedGet = async (url, config = {}, ttl) => {
   const cacheKey = `${url}?${JSON.stringify(config.params || {})}`;
   const cached = apiCache.get(cacheKey);
-  const isCachedArrayEmpty = cached && ((Array.isArray(cached.data?.data) && cached.data.data.length === 0) || (Array.isArray(cached.data) && cached.data.length === 0));
+  const isCachedArrayEmpty = cached && (
+    (Array.isArray(cached.data?.data) && cached.data.data.length === 0) ||
+    (Array.isArray(cached.data) && cached.data.length === 0)
+  );
 
-  if (cached && !cached.isExpired && !isCachedArrayEmpty) {
+  // Return cached data immediately if available (0ms paint) and refresh in background
+  if (cached && cached.data && !isCachedArrayEmpty) {
+    api.get(url, config).then((res) => {
+      const isResArrayEmpty = res && (
+        (Array.isArray(res.data) && res.data.length === 0) ||
+        (Array.isArray(res) && res.length === 0)
+      );
+      if (!isResArrayEmpty) {
+        apiCache.set(cacheKey, res, ttl);
+      }
+    }).catch(() => {});
     return cached.data;
   }
+
+  // Network fetch if not in cache
   const promise = api.get(url, config).then((res) => {
-    const isResArrayEmpty = res && ((Array.isArray(res.data) && res.data.length === 0) || (Array.isArray(res) && res.length === 0));
+    const isResArrayEmpty = res && (
+      (Array.isArray(res.data) && res.data.length === 0) ||
+      (Array.isArray(res) && res.length === 0)
+    );
     if (!isResArrayEmpty) {
       apiCache.set(cacheKey, res, ttl);
     }
     return res;
   });
-  if (cached && cached.data && !isCachedArrayEmpty) {
-    promise.catch(() => {});
-    return cached.data;
-  }
+
   return promise;
 };
 

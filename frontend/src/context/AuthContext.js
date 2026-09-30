@@ -19,7 +19,23 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {}
     return null;
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hasOAuth = Boolean(
+          sessionStorage.getItem('oauth_in_flight') === 'true' ||
+          (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+          (window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+        );
+        if (hasOAuth) return true;
+        const token = localStorage.getItem('sh_token');
+        const stored = localStorage.getItem('sh_user');
+        // Only wait in loading if token exists but cached user profile is missing
+        return Boolean(token && !stored);
+      }
+    } catch (_) {}
+    return false;
+  });
   const [oauthProcessing, setOauthProcessing] = useState(false);
   const [oauthError, setOauthError] = useState(null);
   const syncPromiseRef = useRef(null);
