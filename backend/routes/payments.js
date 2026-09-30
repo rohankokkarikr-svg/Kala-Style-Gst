@@ -849,6 +849,15 @@ const verifyPaymentDirect = async (req, res) => {
 
         broadcastSync('PAYMENTS_UPDATED', { orderId: targetOrderId, status: 'paid' });
         broadcastSync('ORDERS_UPDATED', { orderId: targetOrderId, order_status: 'confirmed' });
+
+        // Auto-create Shiprocket logistics shipment (non-blocking)
+        try {
+          const shippingService = require('../services/shipping/shippingService');
+          shippingService
+            .createShipmentFromOrder(targetOrderId)
+            .then((sRes) => console.log(`[verifyPaymentDirect] ✅ Auto Shiprocket shipment created for order ${targetOrderId}:`, sRes.shipment?.id))
+            .catch((sErr) => console.warn(`[verifyPaymentDirect] Auto Shiprocket shipment notice:`, sErr.message));
+        } catch (shpErr) {}
       } catch (dbErr) {
         console.warn('[verify-payment-direct] DB sync error:', dbErr.message);
       }

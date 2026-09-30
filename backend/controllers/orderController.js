@@ -220,9 +220,18 @@ exports.createOrder = async (req, res) => {
       });
     } catch (e) {}
 
-    // NOTE: COD shipments are NOT auto-created at order placement.
-    // Admin/artisan must explicitly create the shipment when the order is ready to ship.
-    // This prevents premature AWB assignment before artisan acceptance.
+    // Auto-create Shiprocket logistics shipment for COD order (non-blocking)
+    if (normalizedMethod === 'cod') {
+      try {
+        const shippingService = require('../services/shipping/shippingService');
+        shippingService
+          .createShipmentFromOrder(order.id)
+          .then((sRes) => console.log(`[createOrder] ✅ Auto Shiprocket shipment created for COD order ${order.id}:`, sRes.shipment?.id))
+          .catch((sErr) => console.warn(`[createOrder] Auto Shiprocket COD shipment notice:`, sErr.message));
+      } catch (shpErr) {
+        console.warn('[createOrder] Shiprocket shipment creation error:', shpErr.message);
+      }
+    }
 
 
 
@@ -696,6 +705,17 @@ exports.switchToCOD = async (req, res) => {
       });
     } catch (notifyErr) {
       console.warn('[switchToCOD] Notification error:', notifyErr.message);
+    }
+
+    // Auto-create Shiprocket logistics shipment when switched to COD (non-blocking)
+    try {
+      const shippingService = require('../services/shipping/shippingService');
+      shippingService
+        .createShipmentFromOrder(id)
+        .then((sRes) => console.log(`[switchToCOD] ✅ Auto Shiprocket shipment created for order ${id}:`, sRes.shipment?.id))
+        .catch((sErr) => console.warn(`[switchToCOD] Auto Shiprocket shipment notice:`, sErr.message));
+    } catch (shpErr) {
+      console.warn('[switchToCOD] Shiprocket shipment creation error:', shpErr.message);
     }
 
     return res.json({

@@ -113,7 +113,7 @@ async function createShipmentFromOrder(orderIdOrData, options = {}) {
     }
 
     if (isCod) {
-      const validCodPayment = ['cod_pending', 'paid'].includes(String(order.payment_status || '').toLowerCase().trim());
+      const validCodPayment = ['cod_pending', 'paid', 'pending'].includes(String(order.payment_status || '').toLowerCase().trim());
       if (!validCodPayment) {
         throw new Error(`Cannot ship COD order ${order.order_number || orderId}: Payment status is '${order.payment_status}'.`);
       }
