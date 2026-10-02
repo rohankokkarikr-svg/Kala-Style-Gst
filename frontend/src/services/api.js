@@ -142,7 +142,7 @@ export const productAPI = {
     const isFormData = data instanceof FormData;
     return api.post('/products/upload', data, {
       headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : { 'Content-Type': 'application/json' },
-      timeout: 60000,
+      timeout: 120000,
     });
   },
 

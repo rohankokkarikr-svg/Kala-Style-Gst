@@ -62,6 +62,57 @@ const DEFAULT_DISCOUNT_BANNER = {
   isActive: true,
 };
 
+const DEFAULT_CATEGORY_BANNERS = {
+  all: {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-weaving-colorful-threads-42859-large.mp4',
+    imageUrl: '/images/explore_handicrafts_banner.jpg',
+    title: 'Explore Indian Handicrafts',
+    subtitle: 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.',
+  },
+  'handloom-textiles': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-weaving-on-a-loom-42861-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg',
+    title: 'Handloom & Textiles',
+    subtitle: "Discover India's rich heritage of handwoven fabrics, sarees, shawls, and traditional textiles.",
+  },
+  'pottery-terracotta': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-potter-working-on-a-clay-pot-on-a-pottery-wheel-42845-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048198/kalastyle-artisan-marketplace/dgqnjxjokbbkuuznvwnu.jpg',
+    title: 'Pottery & Terracotta',
+    subtitle: 'Handcrafted clay pots, blue pottery vases, terracotta diyas, and authentic artisanal ceramics.',
+  },
+  'wooden-handicrafts': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-sculpting-wood-with-a-chisel-42857-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047127/kalastyle-artisan-marketplace/xi20ztdn6lzlcvssqskl.jpg',
+    title: 'Wooden Handicrafts',
+    subtitle: 'Channapatna lac-turnery toys, intricately hand-carved teak sculptures, wall art, and heritage woodwork.',
+  },
+  'home-decor': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-weaving-colorful-threads-42859-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789049267/kalastyle-artisan-marketplace/gnyzho03a9jz09nrwzti.jpg',
+    title: 'Home Décor & Furnishings',
+    subtitle: 'Elevate your living space with artisanal wall hangings, rugs, decorative lamps, and Indian crafts.',
+  },
+  'handmade-jewelry': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048588/kalastyle-artisan-marketplace/wswk3llhg5bu3y2ypuj6.jpg',
+    title: 'Handmade Jewelry & Accessories',
+    subtitle: 'Adorn timeless silver, oxidized brass, Kundan, and terracotta handmade jewelry masterfully crafted by hand.',
+  },
+  'traditional-paintings': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047511/kalastyle-artisan-marketplace/vhhx4egup5jxucqtelv9.jpg',
+    title: 'Traditional Paintings & Wall Art',
+    subtitle: 'Authentic Madhubani, Warli tribal art, Pattachitra, Gond, and Tanjore gold foil handmade paintings.',
+  },
+  'eco-friendly': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789044071/kalastyle-artisan-marketplace/pwgxu5f4ucraorrlyfip.jpg',
+    title: 'Eco-Friendly & Natural Products',
+    subtitle: 'Sustainable natural fiber baskets, golden jute rugs, bamboo tableware, and conscious handcrafted living.',
+  },
+};
+
 const DEFAULT_SETTINGS = {
   storeName: 'KalaStyle AI',
   supportEmail: 'support@kalastyle.ai',
@@ -76,6 +127,7 @@ const DEFAULT_SETTINGS = {
   footerTagline: "Empowering India's generational artisans, master handloom weavers, and traditional craftsmen with AI-driven direct commerce.",
   heroSlides: DEFAULT_HERO_SLIDES,
   discountBanner: DEFAULT_DISCOUNT_BANNER,
+  categoryBanners: DEFAULT_CATEGORY_BANNERS,
   delivery_fee: 0,
   free_delivery_above: 0,
   shipping_estimated_days: '3 - 5 Business Days',
@@ -97,6 +149,7 @@ function readSettings() {
         ...parsed,
         heroSlides: Array.isArray(parsed.heroSlides) && parsed.heroSlides.length > 0 ? parsed.heroSlides : DEFAULT_HERO_SLIDES,
         discountBanner: parsed.discountBanner ? { ...DEFAULT_DISCOUNT_BANNER, ...parsed.discountBanner } : DEFAULT_DISCOUNT_BANNER,
+        categoryBanners: { ...DEFAULT_CATEGORY_BANNERS, ...(parsed.categoryBanners || {}) },
       };
     }
   } catch (e) {
@@ -122,8 +175,9 @@ exports.getSettings = async (req, res) => {
   try {
     const local = readSettings();
 
-    // 1. Fetch persistent cloud hero slides from Supabase Storage
+    // 1. Fetch persistent cloud hero slides & category banners from Supabase Storage
     let cloudSlides = null;
+    let cloudCategoryBanners = null;
     try {
       const { data: fileData, error: fileErr } = await supabase.storage
         .from('site-config')
@@ -138,6 +192,19 @@ exports.getSettings = async (req, res) => {
     } catch (storageErr) {
       // Storage fallback
     }
+
+    try {
+      const { data: catData, error: catErr } = await supabase.storage
+        .from('site-config')
+        .download('category_banners.json');
+      if (catData && !catErr) {
+        const text = await catData.text();
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          cloudCategoryBanners = parsed;
+        }
+      }
+    } catch (_) {}
 
     // 2. Query Supabase platform_settings for persistent cloud data
     const { data: supaData } = await safeQuery(() =>
@@ -166,6 +233,11 @@ exports.getSettings = async (req, res) => {
                 ? supaData.hero_slides
                 : DEFAULT_HERO_SLIDES)),
       discountBanner: supaData?.discount_banner || supaData?.discountBanner || local.discountBanner || DEFAULT_DISCOUNT_BANNER,
+      categoryBanners: (cloudCategoryBanners && typeof cloudCategoryBanners === 'object')
+        ? { ...DEFAULT_CATEGORY_BANNERS, ...cloudCategoryBanners }
+        : ((local.categoryBanners && typeof local.categoryBanners === 'object')
+            ? { ...DEFAULT_CATEGORY_BANNERS, ...local.categoryBanners }
+            : DEFAULT_CATEGORY_BANNERS),
       delivery_fee: supaData?.delivery_fee !== undefined ? Number(supaData.delivery_fee) : (local.delivery_fee !== undefined ? Number(local.delivery_fee) : DEFAULT_SETTINGS.delivery_fee),
       free_delivery_above: supaData?.free_delivery_above !== undefined ? Number(supaData.free_delivery_above) : (local.free_delivery_above !== undefined ? Number(local.free_delivery_above) : DEFAULT_SETTINGS.free_delivery_above),
       shipping_estimated_days: supaData?.shipping_estimated_days || local.shipping_estimated_days || DEFAULT_SETTINGS.shipping_estimated_days,
@@ -203,6 +275,7 @@ async function applySettingsUpdate(updates = {}) {
     ...(updates.hero_slides ? { hero_slides: updates.hero_slides, heroSlides: updates.hero_slides } : {}),
     ...(updates.discountBanner ? { discountBanner: updates.discountBanner, discount_banner: updates.discountBanner } : {}),
     ...(updates.discount_banner ? { discount_banner: updates.discount_banner, discountBanner: updates.discount_banner } : {}),
+    ...(updates.categoryBanners ? { categoryBanners: { ...(current.categoryBanners || DEFAULT_CATEGORY_BANNERS), ...updates.categoryBanners } } : {}),
     ...(updates.delivery_fee !== undefined ? { delivery_fee: Number(updates.delivery_fee) || 0 } : {}),
     ...(updates.free_delivery_above !== undefined ? { free_delivery_above: Number(updates.free_delivery_above) || 0 } : {}),
     ...(updates.shipping_estimated_days !== undefined ? { shipping_estimated_days: updates.shipping_estimated_days } : {}),
@@ -232,6 +305,21 @@ async function applySettingsUpdate(updates = {}) {
         });
     } catch (storageErr) {
       console.warn('Failed to upload hero_slides.json to Supabase storage:', storageErr.message);
+    }
+  }
+
+  // Persist category banners to Supabase Storage 'site-config' bucket for permanent cloud persistence
+  const activeCategoryBanners = normalizedUpdates.categoryBanners || updates.categoryBanners;
+  if (activeCategoryBanners && typeof activeCategoryBanners === 'object') {
+    try {
+      await supabase.storage
+        .from('site-config')
+        .upload('category_banners.json', Buffer.from(JSON.stringify(activeCategoryBanners, null, 2)), {
+          contentType: 'application/json',
+          upsert: true,
+        });
+    } catch (storageErr) {
+      console.warn('Failed to upload category_banners.json to Supabase storage:', storageErr.message);
     }
   }
 

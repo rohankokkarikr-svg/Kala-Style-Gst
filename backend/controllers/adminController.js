@@ -498,8 +498,23 @@ exports.getCategories = async (req, res) => {
       return res.status(500).json({ error: 'Database unavailable: Could not fetch categories from database.' });
     }
 
-    // Return real database records (never fabricate fake IDs like "1", "2")
-    return res.json(data || []);
+    let result = data || [];
+    try {
+      const { readSettings } = require('./settingsController');
+      const settings = readSettings();
+      const banners = settings?.categoryBanners || {};
+      result = result.map(c => {
+        const slug = c.slug || c.name?.toLowerCase().replace(/\s+/g, '-');
+        const b = banners[slug] || banners[c.name?.toLowerCase()] || {};
+        return {
+          ...c,
+          video_url: c.video_url || b.videoUrl || '',
+          banner_image: c.banner_image || b.imageUrl || c.image_url || ''
+        };
+      });
+    } catch (_) {}
+
+    return res.json(result);
   } catch (err) {
     console.error('getCategories error:', err);
     res.status(500).json({ error: 'Database unavailable or categories query failed' });
@@ -508,21 +523,54 @@ exports.getCategories = async (req, res) => {
 
 exports.createCategory = async (req, res) => {
   try {
-    const { name, slug, description, image_url, subcategories } = req.body;
+    const { name, slug, description, image_url, banner_image, video_url, subcategories } = req.body;
+    const finalSlug = slug || name.toLowerCase().replace(/\s+/g, '-');
     const { data, error } = await supabase
       .from('categories')
       .insert([{
         name,
-        slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
+        slug: finalSlug,
         description,
         image_url,
+        ...(banner_image ? { banner_image } : {}),
+        ...(video_url ? { video_url } : {}),
         subcategories: Array.isArray(subcategories) ? subcategories : subcategories?.split(',').map(s => s.trim()) || [],
         is_active: true
       }])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // Fallback if schema doesn't have video_url or banner_image column yet
+      const fallbackInsert = await supabase
+        .from('categories')
+        .insert([{
+          name,
+          slug: finalSlug,
+          description,
+          image_url,
+          subcategories: Array.isArray(subcategories) ? subcategories : subcategories?.split(',').map(s => s.trim()) || [],
+          is_active: true
+        }])
+        .select()
+        .single();
+      if (fallbackInsert.error) throw fallbackInsert.error;
+    }
+
+    // Sync banner video to site settings for instant storefront availability
+    try {
+      const { applySettingsUpdate, readSettings } = require('./settingsController');
+      const currentSettings = readSettings();
+      const catBanners = { ...(currentSettings.categoryBanners || {}) };
+      catBanners[finalSlug] = {
+        videoUrl: video_url || '',
+        imageUrl: banner_image || image_url || '',
+        title: name,
+        subtitle: description || ''
+      };
+      await applySettingsUpdate({ categoryBanners: catBanners });
+    } catch (_) {}
+
     broadcastSync('CATEGORIES_UPDATED', { action: 'create', category: data });
     await logActivity(req, `Created Category: ${name}`, 'Category', data?.id);
     res.status(201).json(data);
@@ -535,28 +583,66 @@ exports.createCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, image_url, subcategories, is_active } = req.body;
+    const { name, slug, description, image_url, banner_image, video_url, subcategories, is_active } = req.body;
+
+    let updatedRecord = null;
+    const updatePayload = {
+      ...(name ? { name } : {}),
+      ...(slug ? { slug } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(image_url !== undefined ? { image_url } : {}),
+      ...(banner_image !== undefined ? { banner_image } : {}),
+      ...(video_url !== undefined ? { video_url } : {}),
+      ...(subcategories ? { subcategories: Array.isArray(subcategories) ? subcategories : subcategories.split(',').map(s => s.trim()) } : {}),
+      ...(is_active !== undefined ? { is_active } : {})
+    };
 
     const { data, error } = await supabase
       .from('categories')
-      .update({
-        ...(name ? { name } : {}),
-        ...(description ? { description } : {}),
-        ...(image_url ? { image_url } : {}),
-        ...(subcategories ? { subcategories: Array.isArray(subcategories) ? subcategories : subcategories.split(',').map(s => s.trim()) } : {}),
-        ...(is_active !== undefined ? { is_active } : {})
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single();
 
-    if (error) throw error;
-    broadcastSync('CATEGORIES_UPDATED', { action: 'update', id, category: data });
+    if (error) {
+      // If error was due to missing video_url/banner_image column, retry without them
+      delete updatePayload.video_url;
+      delete updatePayload.banner_image;
+      const retryRes = await supabase
+        .from('categories')
+        .update(updatePayload)
+        .eq('id', id)
+        .select()
+        .single();
+      if (retryRes.error) throw retryRes.error;
+      updatedRecord = retryRes.data;
+    } else {
+      updatedRecord = data;
+    }
+
+    // Sync banner video to persistent site settings
+    const catSlug = slug || updatedRecord?.slug || (name ? name.toLowerCase().replace(/\s+/g, '-') : id);
+    try {
+      const { applySettingsUpdate, readSettings } = require('./settingsController');
+      const currentSettings = readSettings();
+      const catBanners = { ...(currentSettings.categoryBanners || {}) };
+      catBanners[catSlug] = {
+        ...(catBanners[catSlug] || {}),
+        ...(video_url !== undefined ? { videoUrl: video_url } : {}),
+        ...(image_url !== undefined ? { imageUrl: image_url } : {}),
+        ...(banner_image !== undefined ? { imageUrl: banner_image } : {}),
+        ...(name ? { title: name } : {}),
+        ...(description ? { subtitle: description } : {})
+      };
+      await applySettingsUpdate({ categoryBanners: catBanners });
+    } catch (_) {}
+
+    broadcastSync('CATEGORIES_UPDATED', { action: 'update', id, category: updatedRecord });
     await logActivity(req, `Updated Category: ${name || id}`, 'Category', id);
-    res.json(data);
+    res.json(updatedRecord);
   } catch (err) {
     console.error('updateCategory error:', err);
-    res.status(500).json({ error: 'Failed to update category' });
+    res.status(500).json({ error: 'Failed to update category: ' + err.message });
   }
 };
 

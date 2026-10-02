@@ -22,10 +22,13 @@ router.get('/categories', getCategories);
 router.get('/:id', getProductById);
 
 const uploadMiddleware = (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
+  upload.any()(req, res, (err) => {
     if (err) {
       console.error('❌ Cloudinary Multer Upload Error:', err);
-      return res.status(400).json({ error: err.message || 'Cloudinary upload failed. Please try a different image.' });
+      return res.status(400).json({ error: err.message || 'Media upload failed. Please try a different file.' });
+    }
+    if (req.files && req.files.length > 0 && !req.file) {
+      req.file = req.files[0];
     }
     next();
   });

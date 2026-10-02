@@ -52,7 +52,23 @@ exports.getCategories = async (req, res) => {
       return res.status(500).json({ error: 'Database unavailable: Could not fetch categories from database.' });
     }
 
-    return res.json(data || []);
+    let result = data || [];
+    try {
+      const { readSettings } = require('./settingsController');
+      const settings = readSettings();
+      const banners = settings?.categoryBanners || {};
+      result = result.map(c => {
+        const slug = c.slug || c.name?.toLowerCase().replace(/\s+/g, '-');
+        const b = banners[slug] || banners[c.name?.toLowerCase()] || {};
+        return {
+          ...c,
+          video_url: c.video_url || b.videoUrl || '',
+          banner_image: c.banner_image || b.imageUrl || c.image_url || ''
+        };
+      });
+    } catch (_) {}
+
+    return res.json(result);
   } catch (err) {
     console.error('getCategories error:', err.message);
     res.status(500).json({ error: 'Database unavailable or categories query failed' });
@@ -484,7 +500,7 @@ exports.uploadDirect = async (req, res) => {
       return res.status(400).json({ error: 'No image file or image data received' });
     }
 
-    res.json({ imageUrl });
+    res.json({ imageUrl, url: imageUrl, secure_url: imageUrl });
   } catch (error) {
     console.error('Direct Upload Error:', error);
     res.status(500).json({ error: error.message || 'Server Error during direct upload' });

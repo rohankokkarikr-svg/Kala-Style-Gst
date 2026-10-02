@@ -76,6 +76,57 @@ export const DEFAULT_DISCOUNT_BANNER = {
   isActive: true,
 };
 
+export const DEFAULT_CATEGORY_BANNERS = {
+  all: {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-weaving-colorful-threads-42859-large.mp4',
+    imageUrl: '/images/explore_handicrafts_banner.jpg',
+    title: 'Explore Indian Handicrafts',
+    subtitle: 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.',
+  },
+  'handloom-textiles': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-weaving-on-a-loom-42861-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg',
+    title: 'Handloom & Textiles',
+    subtitle: "Discover India's rich heritage of handwoven fabrics, sarees, shawls, and traditional textiles.",
+  },
+  'pottery-terracotta': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-potter-working-on-a-clay-pot-on-a-pottery-wheel-42845-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048198/kalastyle-artisan-marketplace/dgqnjxjokbbkuuznvwnu.jpg',
+    title: 'Pottery & Terracotta',
+    subtitle: 'Handcrafted clay pots, blue pottery vases, terracotta diyas, and authentic artisanal ceramics.',
+  },
+  'wooden-handicrafts': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-sculpting-wood-with-a-chisel-42857-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047127/kalastyle-artisan-marketplace/xi20ztdn6lzlcvssqskl.jpg',
+    title: 'Wooden Handicrafts',
+    subtitle: 'Channapatna lac-turnery toys, intricately hand-carved teak sculptures, wall art, and heritage woodwork.',
+  },
+  'home-decor': {
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-weaving-colorful-threads-42859-large.mp4',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789049267/kalastyle-artisan-marketplace/gnyzho03a9jz09nrwzti.jpg',
+    title: 'Home Décor & Furnishings',
+    subtitle: 'Elevate your living space with artisanal wall hangings, rugs, decorative lamps, and Indian crafts.',
+  },
+  'handmade-jewelry': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048588/kalastyle-artisan-marketplace/wswk3llhg5bu3y2ypuj6.jpg',
+    title: 'Handmade Jewelry & Accessories',
+    subtitle: 'Adorn timeless silver, oxidized brass, Kundan, and terracotta handmade jewelry masterfully crafted by hand.',
+  },
+  'traditional-paintings': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789047511/kalastyle-artisan-marketplace/vhhx4egup5jxucqtelv9.jpg',
+    title: 'Traditional Paintings & Wall Art',
+    subtitle: 'Authentic Madhubani, Warli tribal art, Pattachitra, Gond, and Tanjore gold foil handmade paintings.',
+  },
+  'eco-friendly': {
+    videoUrl: '',
+    imageUrl: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789044071/kalastyle-artisan-marketplace/pwgxu5f4ucraorrlyfip.jpg',
+    title: 'Eco-Friendly & Natural Products',
+    subtitle: 'Sustainable natural fiber baskets, golden jute rugs, bamboo tableware, and conscious handcrafted living.',
+  },
+};
+
 const DEFAULT_SETTINGS = {
   storeName: 'KalaStyle AI',
   supportEmail: 'support@kalastyle.ai',
@@ -90,6 +141,7 @@ const DEFAULT_SETTINGS = {
   footerTagline: "Empowering India's generational artisans, master handloom weavers, and traditional craftsmen with AI-driven direct commerce.",
   heroSlides: DEFAULT_HERO_SLIDES,
   discountBanner: DEFAULT_DISCOUNT_BANNER,
+  categoryBanners: DEFAULT_CATEGORY_BANNERS,
   delivery_fee: 0,
   free_delivery_above: 0,
   shipping_estimated_days: '3 - 5 Business Days',
@@ -116,6 +168,7 @@ export const SettingsProvider = ({ children }) => {
           ...parsed,
           heroSlides: Array.isArray(parsed.heroSlides) && parsed.heroSlides.length > 0 ? parsed.heroSlides : DEFAULT_HERO_SLIDES,
           discountBanner: parsed.discountBanner ? { ...DEFAULT_DISCOUNT_BANNER, ...parsed.discountBanner } : DEFAULT_DISCOUNT_BANNER,
+          categoryBanners: { ...DEFAULT_CATEGORY_BANNERS, ...(parsed.categoryBanners || {}) },
           delivery_fee: 0,
           free_delivery_above: 0,
           shipping_estimated_days: parsed.shipping_estimated_days || '3 - 5 Business Days',
@@ -131,6 +184,7 @@ export const SettingsProvider = ({ children }) => {
   const refreshSettings = useCallback(async (force = false) => {
     let loadedData = null;
     let cloudHeroSlides = null;
+    let cloudCategoryBanners = null;
 
     // 0. Instant fetch from persistent Supabase Storage CDN (public bucket site-config)
     try {
@@ -145,6 +199,17 @@ export const SettingsProvider = ({ children }) => {
     } catch (e) {
       // Storage CDN fallback
     }
+
+    try {
+      const catBannersCdnUrl = 'https://fwuhlhaadhhveuljsqbh.supabase.co/storage/v1/object/public/site-config/category_banners.json?t=' + Date.now();
+      const catRes = await fetch(catBannersCdnUrl);
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        if (catData && typeof catData === 'object') {
+          cloudCategoryBanners = catData;
+        }
+      }
+    } catch (_) {}
 
     // 1. Fast parallel load: Race Backend API with direct Supabase Edge
     try {
@@ -182,6 +247,12 @@ export const SettingsProvider = ({ children }) => {
               ? loadedData.hero_slides
               : DEFAULT_HERO_SLIDES));
 
+    const activeCategoryBanners = (cloudCategoryBanners && typeof cloudCategoryBanners === 'object')
+      ? { ...DEFAULT_CATEGORY_BANNERS, ...cloudCategoryBanners }
+      : ((loadedData?.categoryBanners && typeof loadedData.categoryBanners === 'object')
+          ? { ...DEFAULT_CATEGORY_BANNERS, ...loadedData.categoryBanners }
+          : DEFAULT_CATEGORY_BANNERS);
+
     const merged = {
       ...DEFAULT_SETTINGS,
       ...(loadedData || {}),
@@ -192,6 +263,7 @@ export const SettingsProvider = ({ children }) => {
       supportPhone: loadedData?.supportPhone || loadedData?.contact_phone || DEFAULT_SETTINGS.supportPhone,
       contact_phone: loadedData?.contact_phone || loadedData?.supportPhone || DEFAULT_SETTINGS.supportPhone,
       heroSlides: activeHeroSlides,
+      categoryBanners: activeCategoryBanners,
       discountBanner: loadedData?.discountBanner || loadedData?.discount_banner
         ? { ...DEFAULT_DISCOUNT_BANNER, ...(loadedData?.discountBanner || loadedData?.discount_banner) }
         : DEFAULT_DISCOUNT_BANNER,
@@ -279,6 +351,9 @@ export const SettingsProvider = ({ children }) => {
             discountBanner: (incoming.discountBanner || incoming.discount_banner)
               ? { ...prev.discountBanner, ...(incoming.discountBanner || incoming.discount_banner) }
               : prev.discountBanner,
+            categoryBanners: (incoming.categoryBanners || incoming.category_banners)
+              ? { ...prev.categoryBanners, ...(incoming.categoryBanners || incoming.category_banners) }
+              : prev.categoryBanners,
           };
           try {
             localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(merged));

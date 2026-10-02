@@ -29,14 +29,18 @@ const storage = multer.memoryStorage();
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max for HD banner videos & images
   fileFilter: (req, file, cb) => {
-    const isImageMime = file.mimetype && (file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream');
-    const isImageExt = /\.(jpe?g|png|webp|gif|svg|heic|heif|avif)$/i.test(file.originalname || '');
-    if (isImageMime || isImageExt) {
+    const isMediaMime = file.mimetype && (
+      file.mimetype.startsWith('image/') ||
+      file.mimetype.startsWith('video/') ||
+      file.mimetype === 'application/octet-stream'
+    );
+    const isMediaExt = /\.(jpe?g|png|webp|gif|svg|heic|heif|avif|mp4|webm|mov|m4v|ogg|mkv)$/i.test(file.originalname || '');
+    if (isMediaMime || isMediaExt) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error('Only image or video files (MP4, WebM, MOV, JPG, PNG, WebP) are allowed'), false);
     }
   }
 });

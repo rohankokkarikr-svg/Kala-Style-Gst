@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import ProductCard from '../components/ProductCard';
 import LanguageSelector from '../components/LanguageSelector';
 import { useLanguage } from '../context/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
 import { ProductCardSkeleton } from '../components/Skeleton';
 import { productAPI, categoryAPI } from '../services/api';
 import { HANDICRAFT_CATEGORIES } from '../constants/handicraftsData';
@@ -13,7 +14,9 @@ import {
   HiRefresh,
   HiChevronRight,
   HiChevronDown,
-  HiShieldCheck
+  HiShieldCheck,
+  HiVolumeUp,
+  HiVolumeOff
 } from 'react-icons/hi';
 
 export default function ProductList() {
@@ -21,7 +24,9 @@ export default function ProductList() {
   const [categories, setCategories] = useState(HANDICRAFT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const { currentLang, currentLangMeta } = useLanguage();
+  const { settings } = useSettings();
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -37,6 +42,8 @@ export default function ProductList() {
           slug: c.slug || c.name.toLowerCase().replace(/\s+/g, '-'),
           description: c.description,
           image: c.image_url || c.image,
+          bannerImage: c.banner_image || c.bannerImage || c.image_url || c.image,
+          videoUrl: c.video_url || c.videoUrl || '',
           subcategories: c.subcategories || [],
           productCount: c.productCount || ''
         }));
@@ -114,6 +121,29 @@ export default function ProductList() {
       ) || null
     );
   }, [activeCategory, categories]);
+
+  // Resolution for category-specific or "All Categories" video and poster
+  const categoryBannerSettings = useMemo(() => {
+    if (!currentCategoryInfo) {
+      return settings?.categoryBanners?.all || null;
+    }
+    const slug = currentCategoryInfo.slug || currentCategoryInfo.name?.toLowerCase()?.replace(/\s+/g, '-');
+    return settings?.categoryBanners?.[slug] || settings?.categoryBanners?.[currentCategoryInfo.name?.toLowerCase()] || null;
+  }, [currentCategoryInfo, settings]);
+
+  const activeVideoUrl = useMemo(() => {
+    if (currentCategoryInfo) {
+      return currentCategoryInfo.videoUrl || categoryBannerSettings?.videoUrl || '';
+    }
+    return settings?.categoryBanners?.all?.videoUrl || 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-artisan-weaving-colorful-threads-42859-large.mp4';
+  }, [currentCategoryInfo, categoryBannerSettings, settings]);
+
+  const activePosterImage = useMemo(() => {
+    if (currentCategoryInfo) {
+      return currentCategoryInfo.bannerImage || categoryBannerSettings?.imageUrl || currentCategoryInfo.image || '/images/explore_handicrafts_banner.jpg';
+    }
+    return settings?.categoryBanners?.all?.imageUrl || '/images/explore_handicrafts_banner.jpg';
+  }, [currentCategoryInfo, categoryBannerSettings, settings]);
 
   // Comprehensive Filtering & Sorting Logic
   const filteredAndSortedProducts = useMemo(() => {
@@ -333,21 +363,66 @@ export default function ProductList() {
       <div className="relative bg-dark-800 border-b border-dark-700 overflow-hidden">
         {currentCategoryInfo ? (
           <div className="relative min-h-[250px] sm:min-h-[310px] md:min-h-[370px] overflow-hidden flex items-center bg-dark-950">
-            <img
-              src={currentCategoryInfo.bannerImage || currentCategoryInfo.image}
-              alt={currentCategoryInfo.name}
-              className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.02]"
-            />
-            {/* Elegant soft gradient on left for text readability while leaving image vibrant */}
+            {/* Background Video or Image */}
+            {activeVideoUrl ? (
+              <video
+                key={`cat-vid-${activeVideoUrl}`}
+                src={activeVideoUrl}
+                poster={activePosterImage}
+                autoPlay
+                loop
+                muted={isMuted}
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover object-center filter brightness-[1.05] contrast-[1.02]"
+              />
+            ) : (
+              <img
+                src={activePosterImage}
+                alt={currentCategoryInfo.name}
+                className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.02]"
+              />
+            )}
+
+            {/* Sound Toggle Button (when video is active) */}
+            {activeVideoUrl && (
+              <button
+                type="button"
+                onClick={() => setIsMuted(prev => !prev)}
+                className="absolute top-4 right-4 sm:bottom-4 sm:top-auto z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-950/80 hover:bg-dark-900 border border-gold-500/30 text-white text-xs font-medium backdrop-blur-md transition-all shadow-lg hover:border-gold-400 group"
+                title={isMuted ? "Unmute Artisan Video" : "Mute Video"}
+              >
+                {isMuted ? (
+                  <>
+                    <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover:scale-110 transition-transform" />
+                    <span className="hidden sm:inline">Unmute Video</span>
+                  </>
+                ) : (
+                  <>
+                    <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover:scale-110 transition-transform" />
+                    <span className="hidden sm:inline">Playing Sound</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Elegant soft gradient on left for text readability while leaving media vibrant */}
             <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/50 to-transparent w-full md:w-3/5 pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-8 sm:py-12">
               <div className="max-w-xl backdrop-blur-md bg-dark-950/60 sm:bg-dark-950/40 p-6 sm:p-8 rounded-3xl border border-gold-500/20 shadow-2xl shadow-black/80">
-                <span className="text-xs uppercase tracking-widest text-gold-400 font-bold mb-2 block">
-                  Indian Handicraft Collection
-                </span>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs uppercase tracking-widest text-gold-400 font-bold block">
+                    Indian Handicraft Collection
+                  </span>
+                  {activeVideoUrl && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/30 text-red-300 text-[10px] font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping inline-block" />
+                      Video
+                    </span>
+                  )}
+                </div>
                 <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight drop-shadow-md">
                   {currentCategoryInfo.name}
                   {activeSubcategory && activeSubcategory !== 'all' && (
@@ -357,7 +432,7 @@ export default function ProductList() {
                   )}
                 </h1>
                 <p className="text-gray-200 text-sm sm:text-base mt-2.5 leading-relaxed drop-shadow">
-                  {currentCategoryInfo.shortDesc}
+                  {currentCategoryInfo.shortDesc || currentCategoryInfo.description || categoryBannerSettings?.subtitle}
                 </p>
                 <div className="flex flex-wrap items-center gap-3 mt-4 text-xs font-semibold text-gold-400">
                   <span className="px-3.5 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
@@ -371,16 +446,52 @@ export default function ProductList() {
           </div>
         ) : (
           <div className="relative min-h-[260px] sm:min-h-[320px] md:min-h-[390px] lg:min-h-[430px] overflow-hidden flex items-center bg-dark-950">
-            {/* Background Image - Rich, clear artisan photography */}
-            <img
-              src="/images/explore_handicrafts_banner.jpg"
-              alt="Explore Indian Handicrafts"
-              className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] transition-transform duration-1000 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
-              loading="eager"
-              onError={(e) => {
-                e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
-              }}
-            />
+            {/* Background Video or Image */}
+            {activeVideoUrl ? (
+              <video
+                key={`all-vid-${activeVideoUrl}`}
+                src={activeVideoUrl}
+                poster={activePosterImage}
+                autoPlay
+                loop
+                muted={isMuted}
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
+              />
+            ) : (
+              <img
+                src={activePosterImage}
+                alt="Explore Indian Handicrafts"
+                className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] transition-transform duration-1000 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
+                loading="eager"
+                onError={(e) => {
+                  e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
+                }}
+              />
+            )}
+
+            {/* Sound Toggle Button (when video is active) */}
+            {activeVideoUrl && (
+              <button
+                type="button"
+                onClick={() => setIsMuted(prev => !prev)}
+                className="absolute top-4 right-4 sm:bottom-4 sm:top-auto z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-950/80 hover:bg-dark-900 border border-gold-500/30 text-white text-xs font-medium backdrop-blur-md transition-all shadow-lg hover:border-gold-400 group"
+                title={isMuted ? "Unmute Artisan Video" : "Mute Video"}
+              >
+                {isMuted ? (
+                  <>
+                    <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover:scale-110 transition-transform" />
+                    <span className="hidden sm:inline">Unmute Video</span>
+                  </>
+                ) : (
+                  <>
+                    <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover:scale-110 transition-transform" />
+                    <span className="hidden sm:inline">Playing Sound</span>
+                  </>
+                )}
+              </button>
+            )}
+
             {/* Soft left-side directional gradient: keeps text crisp while leaving center & right crafts 100% luminous */}
             <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-transparent w-full md:w-3/5 pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
@@ -392,12 +503,17 @@ export default function ProductList() {
                   <span>🇮🇳</span>
                   <span>Master Artisans & Heritage</span>
                   <HiSparkles className="w-3.5 h-3.5 text-gold-400" />
+                  {activeVideoUrl && (
+                    <span className="ml-1 px-1.5 py-0.2 rounded bg-red-500/30 text-red-300 text-[9px] font-bold">
+                      VIDEO
+                    </span>
+                  )}
                 </div>
                 <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight leading-tight drop-shadow-lg">
                   Explore <span className="text-gold-400">Indian Handicrafts</span>
                 </h1>
                 <p className="text-gray-100 text-sm sm:text-base mt-3 leading-relaxed drop-shadow max-w-lg">
-                  Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.
+                  {settings?.categoryBanners?.all?.subtitle || 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.'}
                 </p>
                 <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5 text-xs font-semibold text-gray-300">
                   <span className="px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
