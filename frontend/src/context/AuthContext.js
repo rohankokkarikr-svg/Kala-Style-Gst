@@ -283,7 +283,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Supabase Email OTP: Verify OTP ───────────────────────────
-  const verifyOtp = async (email, otpToken, syncSession = true) => {
+  const verifyOtp = async (email, otpToken, syncSession = true, isSignup = false) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanToken = (otpToken || '').trim();
 
@@ -314,9 +314,11 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      // If called during Signup flow, mark signup in flight and return data (signup() will register full profile)
+      // If called without session sync (e.g. order confirmation or signup flow)
       if (!syncSession) {
-        isSigningUpRef.current = true;
+        if (isSignup) {
+          isSigningUpRef.current = true;
+        }
         return { success: true, data };
       }
 

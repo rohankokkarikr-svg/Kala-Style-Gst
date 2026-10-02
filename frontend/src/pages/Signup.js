@@ -171,7 +171,7 @@ export default function Signup() {
 
     try {
       // 1. Verify OTP with Supabase Auth (syncSession = false so signup creates the full profile)
-      const verifyRes = await verifyOtp(cleanEmail, code, false);
+      const verifyRes = await verifyOtp(cleanEmail, code, false, true);
       const sbUid = verifyRes?.data?.user?.id;
       setCountdown(0);
 

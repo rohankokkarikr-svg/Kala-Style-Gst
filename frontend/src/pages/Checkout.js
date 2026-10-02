@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -6,12 +6,21 @@ import { useSettings } from '../context/SettingsContext';
 import { orderAPI, couponAPI } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import {
   HiShieldCheck, HiTruck, HiUser, HiPhone, HiLocationMarker,
   HiCheckCircle, HiArrowRight, HiArrowLeft, HiTag, HiExclamationCircle,
   HiLockClosed, HiReceiptTax, HiCash, HiRefresh, HiMap, HiX, HiExternalLink, HiCreditCard,
   HiMail, HiKey, HiSparkles
 } from 'react-icons/hi';
+
+/* ─── Mask email helper (e.g. rohan@gmail.com -> r***@gmail.com) ─── */
+const maskEmail = (str) => {
+  if (!str || !str.includes('@')) return str;
+  const [name, domain] = str.split('@');
+  if (name.length <= 2) return `${name[0]}***@${domain}`;
+  return `${name[0]}***@${domain}`;
+};
 
 /* ─── Field error ─── */
 const FieldError = ({ msg }) =>
@@ -124,7 +133,7 @@ function parseNominatimAddress(addr = {}) {
 
 export default function Checkout() {
   const { items, totalPrice, clearCart } = useCart();
-  const { user } = useAuth();
+  const { user, sendOtp, verifyOtp } = useAuth();
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -159,15 +168,16 @@ export default function Checkout() {
     }
   }, [user]);
 
-  // ── Order Confirmation OTP States (Both COD & Online) ──
+  // ── Registered Email Order Confirmation OTP States (Both COD & Online) ──
   const [showOtpModal, setShowOtpModal]   = useState(false);
-  const [otpValue, setOtpValue]           = useState(['', '', '', '', '', '']); // 6-digit OTP
+  const [otpValue, setOtpValue]           = useState(Array(OTP_LENGTH).fill('')); // 8-digit OTP matching Login
   const [otpLoading, setOtpLoading]       = useState(false);
   const [otpSending, setOtpSending]       = useState(false);
   const [otpCountdown, setOtpCountdown]   = useState(60);
   const [canResendOtp, setCanResendOtp]   = useState(false);
   const [otpError, setOtpError]           = useState('');
   const [demoOtpHint, setDemoOtpHint]     = useState('');
+  const otpInputsRef                      = useRef([]);
 
   // OTP Countdown Timer
   useEffect(() => {
@@ -506,7 +516,7 @@ export default function Checkout() {
     }
   };
 
-  /* ─── Initiate Order Verification via OTP (Both COD & Online) ─── */
+  /* ─── Initiate Order Verification via Registered Email OTP (Both COD & Online) ─── */
   const handleInitiateOrderVerification = async () => {
     if (!validateStep1()) {
       setStep(1);
@@ -514,63 +524,81 @@ export default function Checkout() {
       return;
     }
 
+    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!targetEmail || !emailRegex.test(targetEmail)) {
+      setStep(1);
+      toast.error('A valid registered email address is required to receive order confirmation OTP.');
+      return;
+    }
+
     setOtpSending(true);
     setOtpError('');
     try {
-      const res = await orderAPI.sendOtp({
-        phone: form.phone,
-        email: form.email,
-        amount: finalTotal,
-        paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
-      });
-
-      if (res.data?.demoOtp) {
-        setDemoOtpHint(res.data.demoOtp);
-      } else {
-        setDemoOtpHint('');
+      // 1. Dispatch 8-digit OTP to user's registered email using Supabase Auth (same as in Login page)
+      try {
+        await sendOtp(targetEmail);
+      } catch (authErr) {
+        console.warn('Supabase email OTP dispatch notice:', authErr.message);
+        // Fallback to backend order OTP dispatch
+        const res = await orderAPI.sendOtp({
+          phone: form.phone,
+          email: targetEmail,
+          amount: finalTotal,
+          paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
+        });
+        if (res.data?.demoOtp) {
+          setDemoOtpHint(res.data.demoOtp);
+        }
       }
 
-      setOtpValue(['', '', '', '', '', '']);
+      setOtpValue(Array(OTP_LENGTH).fill(''));
       setOtpCountdown(60);
       setCanResendOtp(false);
       setShowOtpModal(true);
-      toast.success(`Verification OTP dispatched to +91 ${form.phone}! 📩`);
+      toast.success(`Verification OTP dispatched to ${maskEmail(targetEmail)}! 📩`);
     } catch (err) {
-      const errMsg = err.response?.data?.error || 'Failed to dispatch verification OTP. Please try again.';
+      const errMsg = err.message || err.response?.data?.error || 'Failed to dispatch verification OTP. Please try again.';
       toast.error(errMsg);
     } finally {
       setOtpSending(false);
     }
   };
 
-  /* ─── Resend OTP ─── */
+  /* ─── Resend Registered Email OTP ─── */
   const handleResendOrderOtp = async () => {
+    if (!canResendOtp || otpSending) return;
+    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
     setOtpSending(true);
     setOtpError('');
     try {
-      const res = await orderAPI.sendOtp({
-        phone: form.phone,
-        email: form.email,
-        amount: finalTotal,
-        paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
-      });
-
-      if (res.data?.demoOtp) {
-        setDemoOtpHint(res.data.demoOtp);
+      try {
+        await sendOtp(targetEmail);
+      } catch (authErr) {
+        console.warn('Supabase resend email OTP notice:', authErr.message);
+        const res = await orderAPI.sendOtp({
+          phone: form.phone,
+          email: targetEmail,
+          amount: finalTotal,
+          paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
+        });
+        if (res.data?.demoOtp) {
+          setDemoOtpHint(res.data.demoOtp);
+        }
       }
 
-      setOtpValue(['', '', '', '', '', '']);
+      setOtpValue(Array(OTP_LENGTH).fill(''));
       setOtpCountdown(60);
       setCanResendOtp(false);
-      toast.success('A fresh 6-digit OTP code has been sent! 📲');
+      toast.success(`A fresh OTP code has been sent to ${maskEmail(targetEmail)}.`);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to resend OTP');
+      toast.error(err.message || 'Failed to resend OTP. Please wait and try again.');
     } finally {
       setOtpSending(false);
     }
   };
 
-  /* ─── OTP Digit Handlers ─── */
+  /* ─── OTP Digit Handlers (Exact 8-digit UX matching Login) ─── */
   const handleOtpInputChange = (index, value) => {
     const clean = value.replace(/\D/g, '').slice(-1);
     const newOtp = [...otpValue];
@@ -579,64 +607,87 @@ export default function Checkout() {
     if (otpError) setOtpError('');
 
     // Auto-focus next input
-    if (clean && index < 5) {
-      const nextInput = document.getElementById(`order-otp-box-${index + 1}`);
-      if (nextInput) nextInput.focus();
+    if (clean && index < OTP_LENGTH - 1) {
+      otpInputsRef.current[index + 1]?.focus();
+    }
+
+    // Auto-verify if all 8 digits filled
+    const filledDigits = newOtp.filter(Boolean).join('');
+    if (filledDigits.length === OTP_LENGTH && clean && !otpLoading) {
+      handleVerifyAndConfirmOrder(filledDigits);
     }
   };
 
   const handleOtpInputKeyDown = (index, e) => {
     if (e.key === 'Backspace' && !otpValue[index] && index > 0) {
-      const prevInput = document.getElementById(`order-otp-box-${index - 1}`);
-      if (prevInput) {
-        prevInput.focus();
-        const newOtp = [...otpValue];
-        newOtp[index - 1] = '';
-        setOtpValue(newOtp);
-      }
+      otpInputsRef.current[index - 1]?.focus();
+      const newOtp = [...otpValue];
+      newOtp[index - 1] = '';
+      setOtpValue(newOtp);
     }
   };
 
   const handleOtpInputPaste = (e) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
     if (!pasted) return;
     const digits = pasted.split('');
-    const newOtp = [...otpValue];
+    const newOtp = Array(OTP_LENGTH).fill('');
     digits.forEach((d, idx) => {
-      if (idx < 6) newOtp[idx] = d;
+      if (idx < OTP_LENGTH) newOtp[idx] = d;
     });
     setOtpValue(newOtp);
     if (otpError) setOtpError('');
-    const lastFilled = Math.min(digits.length, 5);
-    const targetInput = document.getElementById(`order-otp-box-${lastFilled}`);
-    if (targetInput) targetInput.focus();
+    const lastFilled = Math.min(digits.length, OTP_LENGTH - 1);
+    otpInputsRef.current[lastFilled]?.focus();
+
+    if (digits.length === OTP_LENGTH && !otpLoading) {
+      handleVerifyAndConfirmOrder(digits.join(''));
+    }
   };
 
   /* ─── Verify OTP & Execute Order Creation ─── */
-  const handleVerifyAndConfirmOrder = async () => {
-    const code = otpValue.join('').trim();
-    if (code.length !== 6) {
-      setOtpError('Please enter the complete 6-digit OTP code.');
+  const handleVerifyAndConfirmOrder = async (codeToVerify) => {
+    if (otpLoading) return;
+    const code = (codeToVerify || otpValue.join('')).trim();
+    if (!isValidOtp(code)) {
+      setOtpError(`Please enter the complete ${OTP_LENGTH}-digit OTP verification code.`);
       return;
     }
 
+    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
     setOtpLoading(true);
     setOtpError('');
 
     try {
-      // 1. Verify OTP with backend
-      const verifyRes = await orderAPI.verifyOtp({ phone: form.phone, otp: code });
-      if (!verifyRes.data?.verified && !verifyRes.data?.success) {
-        throw new Error(verifyRes.data?.error || 'Invalid OTP code.');
+      let verified = false;
+      // 1. Verify with Supabase Email OTP (exact mechanism from Login page)
+      try {
+        const verifyRes = await verifyOtp(targetEmail, code, false, false);
+        if (verifyRes?.success) verified = true;
+      } catch (authErr) {
+        console.warn('Supabase verifyOtp notice:', authErr.message);
+        // Fallback to backend verification if OTP was dispatched via backend
+        const backendRes = await orderAPI.verifyOtp({ email: targetEmail, phone: form.phone, otp: code });
+        if (backendRes.data?.verified || backendRes.data?.success) {
+          verified = true;
+        } else {
+          throw authErr;
+        }
       }
+
+      setOtpCountdown(0);
+      setShowOtpModal(false);
+      toast.success('Email OTP verified successfully! 🎉');
 
       // 2. Execute Order Creation with OTP confirmation
       await executeOrderCreation(code);
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || 'OTP verification failed.';
+      const errMsg = err.message || err.response?.data?.error || 'OTP verification failed. Please try again.';
       setOtpError(errMsg);
       toast.error(errMsg);
+      setOtpValue(Array(OTP_LENGTH).fill(''));
+      otpInputsRef.current[0]?.focus();
     } finally {
       setOtpLoading(false);
     }
@@ -705,12 +756,13 @@ export default function Checkout() {
         payment_method: paymentMethod === 'cod' ? 'cod' : 'razorpay',
         payment_status: 'pending',
         shipping_name: form.fullName,
-        shipping_email: form.email,
-        email: form.email,
+        shipping_email: (form.email || user?.email || '').trim().toLowerCase(),
+        email: (form.email || user?.email || '').trim().toLowerCase(),
         shipping_city: form.city,
         shipping_state: form.state,
         shipping_pincode: form.pinCode,
         otp: verifiedOtp || null,
+        email_otp_verified: true,
         items: items.map(i => ({
           product_id:    i.product.id,
           quantity:      i.quantity,
@@ -1390,10 +1442,10 @@ export default function Checkout() {
                     <div className="mt-4 px-4 py-3 bg-gold-500/10 border border-gold-500/30 rounded-xl flex items-start gap-2.5">
                       <HiShieldCheck className="w-5 h-5 text-gold-400 shrink-0 mt-0.5" />
                       <div className="text-xs text-gray-300 leading-relaxed">
-                        <span className="font-bold text-gold-300 block mb-0.5">Order Confirmation via OTP Required:</span>
+                        <span className="font-bold text-gold-300 block mb-0.5">Registered Email OTP Confirmation Required:</span>
                         {paymentMethod === 'cod'
-                          ? `For your security, a 6-digit confirmation OTP will be sent to +91 ${form.phone} and ${form.email} to confirm your Cash on Delivery (COD) order of ₹${finalTotal.toLocaleString()}.`
-                          : `For your security, a 6-digit confirmation OTP will be sent to +91 ${form.phone} and ${form.email} to confirm your order of ₹${finalTotal.toLocaleString()} before completing online payment.`}
+                          ? `For your security, an 8-digit confirmation OTP will be sent to your registered email (${maskEmail(form.email || user?.email)}) to confirm your Cash on Delivery (COD) order of ₹${finalTotal.toLocaleString()}.`
+                          : `For your security, an 8-digit confirmation OTP will be sent to your registered email (${maskEmail(form.email || user?.email)}) to confirm your order of ₹${finalTotal.toLocaleString()} before completing online payment.`}
                       </div>
                     </div>
                   </div>
@@ -1480,18 +1532,17 @@ export default function Checkout() {
               {/* Modal Header */}
               <div className="text-center mb-6">
                 <div className="w-16 h-16 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-gold-500/10">
-                  <HiKey className="w-8 h-8 text-gold-400" />
+                  <HiMail className="w-8 h-8 text-gold-400" />
                 </div>
                 <span className="text-xs uppercase tracking-widest text-gold-400 font-bold px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/20">
-                  Order Security Verification
+                  Email Security Verification
                 </span>
                 <h3 className="text-2xl font-serif font-bold text-white mt-2">
-                  Enter 6-Digit OTP
+                  Enter {OTP_LENGTH}-Digit OTP
                 </h3>
                 <p className="text-xs sm:text-sm text-gray-300 mt-2 max-w-sm mx-auto leading-relaxed">
-                  We have dispatched an OTP to{' '}
-                  <strong className="text-gold-400">+91 {form.phone}</strong>
-                  {form.email && <span> & <strong className="text-gold-400">{form.email}</strong></span>} to confirm your order of{' '}
+                  We have dispatched an {OTP_LENGTH}-digit confirmation code to your registered email{' '}
+                  <strong className="text-gold-400">{maskEmail(form.email || user?.email)}</strong> to confirm your order of{' '}
                   <strong className="text-white">₹{finalTotal.toLocaleString()}</strong> ({paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}).
                 </p>
               </div>
@@ -1508,7 +1559,7 @@ export default function Checkout() {
                   <button
                     type="button"
                     onClick={() => {
-                      const digits = demoOtpHint.split('').slice(0, 6);
+                      const digits = demoOtpHint.split('').slice(0, OTP_LENGTH);
                       setOtpValue(digits);
                       setOtpError('');
                     }}
@@ -1519,20 +1570,23 @@ export default function Checkout() {
                 </div>
               )}
 
-              {/* 6 Digit Input Boxes */}
-              <div className="flex justify-center items-center gap-2 sm:gap-3 mb-4">
+              {/* 8 Digit Segmented Input Boxes */}
+              <div className="flex justify-center items-center gap-1 sm:gap-1.5 mb-4" onPaste={handleOtpInputPaste}>
                 {otpValue.map((digit, index) => (
                   <input
                     key={index}
+                    ref={(el) => (otpInputsRef.current[index] = el)}
                     id={`order-otp-box-${index}`}
                     type="text"
                     inputMode="numeric"
-                    maxLength="1"
+                    pattern="[0-9]*"
+                    maxLength={1}
                     value={digit}
+                    aria-label={`Digit ${index + 1}`}
                     onChange={(e) => handleOtpInputChange(index, e.target.value)}
                     onKeyDown={(e) => handleOtpInputKeyDown(index, e)}
                     onPaste={handleOtpInputPaste}
-                    className="w-11 h-13 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-xl bg-dark-900 border-2 border-dark-600 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20 text-white outline-none transition-all"
+                    className="w-8 sm:w-11 h-11 sm:h-13 text-center text-base sm:text-xl font-bold font-mono bg-dark-900 border-2 border-dark-600 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30 text-gold-400 rounded-xl transition-all shrink-0 p-0"
                   />
                 ))}
               </div>
@@ -1544,10 +1598,13 @@ export default function Checkout() {
                 </p>
               )}
 
-              {/* Resend Timer */}
+              {/* Resend Timer matching Login page */}
               <div className="text-center text-xs text-gray-400 mb-6">
-                {!canResendOtp ? (
-                  <span>Resend code in <strong className="text-gold-400 font-mono">{otpCountdown}s</strong></span>
+                {!canResendOtp && otpCountdown > 0 ? (
+                  <span>
+                    Didn't receive the code?{' '}
+                    <span className="text-gold-400 font-mono font-medium">Resend OTP in {otpCountdown}s</span>
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -1555,7 +1612,7 @@ export default function Checkout() {
                     disabled={otpSending}
                     className="text-gold-400 hover:text-gold-300 font-semibold underline flex items-center gap-1 mx-auto cursor-pointer"
                   >
-                    <HiRefresh className="w-3.5 h-3.5" /> Resend OTP Code
+                    <HiRefresh className="w-3.5 h-3.5" /> Didn't receive the code? Resend OTP
                   </button>
                 )}
               </div>
@@ -1564,14 +1621,14 @@ export default function Checkout() {
               <div className="space-y-2.5">
                 <button
                   type="button"
-                  onClick={handleVerifyAndConfirmOrder}
-                  disabled={otpLoading || otpValue.join('').length !== 6}
+                  onClick={() => handleVerifyAndConfirmOrder()}
+                  disabled={otpLoading || otpValue.filter(Boolean).length !== OTP_LENGTH}
                   className="w-full btn-primary py-3.5 text-base font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer"
                 >
                   {otpLoading ? (
                     <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Verifying & Placing Order...</>
                   ) : (
-                    <><HiShieldCheck className="w-5 h-5" /> Confirm & Place Order</>
+                    <><HiShieldCheck className="w-5 h-5" /> Verify OTP & Confirm Order</>
                   )}
                 </button>
                 <button

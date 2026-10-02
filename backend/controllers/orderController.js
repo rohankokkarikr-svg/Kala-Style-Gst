@@ -29,6 +29,7 @@ const { checkAndGrantReward, reverseRewardIfNeeded } = require('../services/rewa
 const { broadcastSync } = require('../utils/realtime');
 const { createRazorpayOrder: createRzpOrder, verifyRazorpaySignature } = require('../services/paymentService');
 const { createSystemNotification } = require('./notificationController');
+const { normalizeEmail, normalizePhone, generateOtp, isValidOtp, OTP_LENGTH } = require('../utils/authHelper');
 
 // ── Site Settings (local JSON for WhatsApp toggle) ───────────────────────────
 const getSiteSettings = () => {
@@ -81,24 +82,29 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ error: 'Shipping address is required' });
     }
 
-    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+    const cleanPhone = normalizePhone(phone);
+    const cleanEmail = normalizeEmail(shipping_email || email || req.user?.email || '');
+    const isEmailVerified = req.body.email_otp_verified === true;
 
     // Verify Order Confirmation OTP (Strict security for both COD and Online)
     const submittedOtp = otp ? String(otp).trim() : null;
-    const otpEntry = orderOtpMap.get(cleanPhone);
+    const otpEntry = (cleanEmail && orderOtpMap.get(cleanEmail)) || (cleanPhone && orderOtpMap.get(cleanPhone));
 
     if (otpEntry) {
       if (Date.now() > otpEntry.expiresAt) {
-        orderOtpMap.delete(cleanPhone);
+        if (cleanEmail) orderOtpMap.delete(cleanEmail);
+        if (cleanPhone) orderOtpMap.delete(cleanPhone);
         return res.status(400).json({ error: 'Order OTP has expired. Please request a new code.' });
       }
       if (submittedOtp && otpEntry.otp === submittedOtp) {
         // OTP matched directly
-        orderOtpMap.delete(cleanPhone);
-      } else if (otpEntry.verified) {
-        // Pre-verified via verifyOrderOtp
-        orderOtpMap.delete(cleanPhone);
-      } else if (submittedOtp && otpEntry.otp !== submittedOtp) {
+        if (cleanEmail) orderOtpMap.delete(cleanEmail);
+        if (cleanPhone) orderOtpMap.delete(cleanPhone);
+      } else if (otpEntry.verified || isEmailVerified) {
+        // Pre-verified via verifyOrderOtp or Supabase Email OTP
+        if (cleanEmail) orderOtpMap.delete(cleanEmail);
+        if (cleanPhone) orderOtpMap.delete(cleanPhone);
+      } else if (submittedOtp && otpEntry.otp !== submittedOtp && !isEmailVerified) {
         return res.status(400).json({ error: 'Invalid OTP code. Please enter the correct code to confirm your order.' });
       }
     }
@@ -1059,63 +1065,67 @@ exports.confirmCODCollection = async (req, res) => {
 
 /**
  * POST /api/orders/send-otp
- * Dispatches a 6-digit OTP to user's phone/WhatsApp and email for order confirmation
+ * Dispatches an 8-digit OTP to user's registered email (and SMS/WhatsApp) for order confirmation
  */
 exports.sendOrderOtp = async (req, res) => {
   try {
     const { phone, email, amount, paymentMethod } = req.body;
-    if (!phone) {
-      return res.status(400).json({ error: 'Phone number is required to receive confirmation OTP.' });
+    const cleanEmail = normalizeEmail(email || req.user?.email || '');
+    const cleanPhone = normalizePhone(phone);
+
+    if (!cleanEmail && !cleanPhone) {
+      return res.status(400).json({ error: 'Registered email or phone number is required to receive confirmation OTP.' });
     }
 
-    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-    if (cleanPhone.length !== 10) {
-      return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
-    }
-
-    // Generate 6-digit numeric OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate canonical 8-digit numeric OTP matching login/auth standards
+    const otp = generateOtp();
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     cleanExpiredOrderOtps();
-    orderOtpMap.set(cleanPhone, {
+    const otpPayload = {
       otp,
       expiresAt,
-      email: (email || req.user?.email || '').trim().toLowerCase(),
+      email: cleanEmail,
+      phone: cleanPhone,
       amount: Number(amount || 0),
       paymentMethod: paymentMethod || 'cod',
       attempts: 0,
       verified: false,
       createdAt: Date.now(),
-    });
+    };
+
+    if (cleanEmail) orderOtpMap.set(cleanEmail, otpPayload);
+    if (cleanPhone) orderOtpMap.set(cleanPhone, otpPayload);
 
     const isCod = (paymentMethod || 'cod').toLowerCase() === 'cod';
     const methodLabel = isCod ? 'Cash on Delivery (COD)' : 'UPI / Online Payment';
-    const messageBody = `🛍️ *KalaStyle AI — Order Confirmation OTP*\n\nYour 6-digit security code to confirm your order of ₹${Number(amount || 0).toLocaleString()} (${methodLabel}) is:\n\n*${otp}*\n\n⏱️ Valid for 10 minutes. Please enter this code on the checkout screen to confirm and place your order. Do not share this OTP with anyone.`;
+    const messageBody = `🛍️ *KalaStyle AI — Order Confirmation OTP*\n\nYour 8-digit security code to confirm your order of ₹${Number(amount || 0).toLocaleString()} (${methodLabel}) is:\n\n*${otp}*\n\n⏱️ Valid for 10 minutes. Please enter this code on the checkout screen to confirm and place your order. Do not share this OTP with anyone.`;
 
     // Attempt Twilio WhatsApp delivery if configured
     let deliveredChannels = [];
-    try {
-      const { sendWhatsappToRecipients } = require('../utils/whatsapp');
-      const waRes = await sendWhatsappToRecipients([`91${cleanPhone}`], messageBody);
-      if (waRes?.success) deliveredChannels.push('WhatsApp');
-    } catch (waErr) {
-      console.warn('[sendOrderOtp] WhatsApp send notice:', waErr.message);
+    if (cleanPhone) {
+      try {
+        const { sendWhatsappToRecipients } = require('../utils/whatsapp');
+        const waRes = await sendWhatsappToRecipients([`91${cleanPhone}`], messageBody);
+        if (waRes?.success) deliveredChannels.push('WhatsApp');
+      } catch (waErr) {
+        console.warn('[sendOrderOtp] WhatsApp send notice:', waErr.message);
+      }
     }
 
     console.log(`\n========================================`);
     console.log(`🔐 [ORDER CONFIRMATION OTP DISPATCHED]`);
-    console.log(`📱 Phone: +91 ${cleanPhone}`);
-    console.log(`📧 Email: ${email || req.user?.email || 'N/A'}`);
+    console.log(`📧 Registered Email: ${cleanEmail || 'N/A'}`);
+    console.log(`📱 Phone: ${cleanPhone ? `+91 ${cleanPhone}` : 'N/A'}`);
     console.log(`💰 Order Amount: ₹${amount}`);
     console.log(`💳 Method: ${methodLabel}`);
-    console.log(`🔑 OTP CODE: ${otp}`);
+    console.log(`🔑 8-DIGIT OTP CODE: ${otp}`);
     console.log(`========================================\n`);
 
     res.status(200).json({
       success: true,
-      message: `OTP sent successfully to +91 ${cleanPhone}${email ? ` and ${email}` : ''}`,
-      channels: deliveredChannels.length > 0 ? deliveredChannels : ['SMS / App Notification'],
+      message: `OTP sent successfully to ${cleanEmail ? `registered email ${cleanEmail}` : `+91 ${cleanPhone}`}`,
+      channels: cleanEmail ? ['Registered Email', ...deliveredChannels] : deliveredChannels,
       demoOtp: otp, // Available for frictionless testing & demo
       expiresIn: 600,
     });
@@ -1127,39 +1137,49 @@ exports.sendOrderOtp = async (req, res) => {
 
 /**
  * POST /api/orders/verify-otp
- * Validates the entered OTP code
+ * Validates the entered 8-digit OTP code
  */
 exports.verifyOrderOtp = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) {
-      return res.status(400).json({ error: 'Phone number and OTP code are required.' });
+    const { phone, email, otp } = req.body;
+    const cleanEmail = normalizeEmail(email || req.user?.email || '');
+    const cleanPhone = normalizePhone(phone);
+
+    if (!otp) {
+      return res.status(400).json({ error: `Please enter the ${OTP_LENGTH}-digit OTP verification code.` });
     }
 
-    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-    const entry = orderOtpMap.get(cleanPhone);
+    const cleanOtp = String(otp).trim();
+    if (!isValidOtp(cleanOtp)) {
+      return res.status(400).json({ error: `OTP must be exactly ${OTP_LENGTH} numeric digits.` });
+    }
+
+    const entry = (cleanEmail && orderOtpMap.get(cleanEmail)) || (cleanPhone && orderOtpMap.get(cleanPhone));
 
     if (!entry) {
-      return res.status(400).json({ error: 'No active OTP request found for this number. Please request a new OTP.' });
+      return res.status(400).json({ error: 'No active OTP request found for this account. Please request a new OTP.' });
     }
 
     if (Date.now() > entry.expiresAt) {
-      orderOtpMap.delete(cleanPhone);
+      if (cleanEmail) orderOtpMap.delete(cleanEmail);
+      if (cleanPhone) orderOtpMap.delete(cleanPhone);
       return res.status(400).json({ error: 'OTP has expired. Please request a fresh OTP.' });
     }
 
     entry.attempts = (entry.attempts || 0) + 1;
     if (entry.attempts > 5) {
-      orderOtpMap.delete(cleanPhone);
+      if (cleanEmail) orderOtpMap.delete(cleanEmail);
+      if (cleanPhone) orderOtpMap.delete(cleanPhone);
       return res.status(400).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
     }
 
-    if (entry.otp !== String(otp).trim()) {
+    if (entry.otp !== cleanOtp) {
       return res.status(400).json({ error: 'Invalid OTP code. Please check and re-enter.' });
     }
 
     entry.verified = true;
-    orderOtpMap.set(cleanPhone, entry);
+    if (cleanEmail) orderOtpMap.set(cleanEmail, entry);
+    if (cleanPhone) orderOtpMap.set(cleanPhone, entry);
 
     res.status(200).json({
       success: true,
