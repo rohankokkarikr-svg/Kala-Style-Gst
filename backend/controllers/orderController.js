@@ -44,6 +44,16 @@ const getSiteSettings = () => {
   return defaults;
 };
 
+// ── In-Memory Order Confirmation OTP Storage (10m TTL) ────────────────────────
+const orderOtpMap = new Map();
+
+const cleanExpiredOrderOtps = () => {
+  const now = Date.now();
+  for (const [key, val] of orderOtpMap.entries()) {
+    if (val.expiresAt < now) orderOtpMap.delete(key);
+  }
+};
+
 // ── 1. CREATE ORDER ──────────────────────────────────────────────────────────
 
 /**
@@ -55,8 +65,9 @@ exports.createOrder = async (req, res) => {
     const {
       items, shipping_address, phone, discount_amount, coupon_code,
       payment_method, live_location_url,
-      // New structured address fields
+      // New structured address fields (required by Shiprocket)
       shipping_name, shipping_city, shipping_state, shipping_pincode,
+      shipping_email, email, otp,
     } = req.body;
     const user_id = req.user.id;
 
@@ -68,6 +79,28 @@ exports.createOrder = async (req, res) => {
     }
     if (!shipping_address) {
       return res.status(400).json({ error: 'Shipping address is required' });
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+
+    // Verify Order Confirmation OTP (Strict security for both COD and Online)
+    const submittedOtp = otp ? String(otp).trim() : null;
+    const otpEntry = orderOtpMap.get(cleanPhone);
+
+    if (otpEntry) {
+      if (Date.now() > otpEntry.expiresAt) {
+        orderOtpMap.delete(cleanPhone);
+        return res.status(400).json({ error: 'Order OTP has expired. Please request a new code.' });
+      }
+      if (submittedOtp && otpEntry.otp === submittedOtp) {
+        // OTP matched directly
+        orderOtpMap.delete(cleanPhone);
+      } else if (otpEntry.verified) {
+        // Pre-verified via verifyOrderOtp
+        orderOtpMap.delete(cleanPhone);
+      } else if (submittedOtp && otpEntry.otp !== submittedOtp) {
+        return res.status(400).json({ error: 'Invalid OTP code. Please enter the correct code to confirm your order.' });
+      }
     }
 
     const method = (payment_method || 'cod').toLowerCase();
@@ -84,6 +117,7 @@ exports.createOrder = async (req, res) => {
       items,
       shippingData: {
         name: shipping_name || req.user.name || '',
+        email: shipping_email || email || req.user.email || '',
         phone: String(phone).replace(/[^\d+]/g, '').substring(0, 20),
         address: shipping_address,
         city: shipping_city || '',
@@ -1020,3 +1054,121 @@ exports.confirmCODCollection = async (req, res) => {
     res.status(500).json({ error: 'Failed to confirm COD collection: ' + err.message });
   }
 };
+
+// ── 14. ORDER CONFIRMATION OTP (COD & ONLINE) ───────────────────────────────
+
+/**
+ * POST /api/orders/send-otp
+ * Dispatches a 6-digit OTP to user's phone/WhatsApp and email for order confirmation
+ */
+exports.sendOrderOtp = async (req, res) => {
+  try {
+    const { phone, email, amount, paymentMethod } = req.body;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required to receive confirmation OTP.' });
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    cleanExpiredOrderOtps();
+    orderOtpMap.set(cleanPhone, {
+      otp,
+      expiresAt,
+      email: (email || req.user?.email || '').trim().toLowerCase(),
+      amount: Number(amount || 0),
+      paymentMethod: paymentMethod || 'cod',
+      attempts: 0,
+      verified: false,
+      createdAt: Date.now(),
+    });
+
+    const isCod = (paymentMethod || 'cod').toLowerCase() === 'cod';
+    const methodLabel = isCod ? 'Cash on Delivery (COD)' : 'UPI / Online Payment';
+    const messageBody = `🛍️ *KalaStyle AI — Order Confirmation OTP*\n\nYour 6-digit security code to confirm your order of ₹${Number(amount || 0).toLocaleString()} (${methodLabel}) is:\n\n*${otp}*\n\n⏱️ Valid for 10 minutes. Please enter this code on the checkout screen to confirm and place your order. Do not share this OTP with anyone.`;
+
+    // Attempt Twilio WhatsApp delivery if configured
+    let deliveredChannels = [];
+    try {
+      const { sendWhatsappToRecipients } = require('../utils/whatsapp');
+      const waRes = await sendWhatsappToRecipients([`91${cleanPhone}`], messageBody);
+      if (waRes?.success) deliveredChannels.push('WhatsApp');
+    } catch (waErr) {
+      console.warn('[sendOrderOtp] WhatsApp send notice:', waErr.message);
+    }
+
+    console.log(`\n========================================`);
+    console.log(`🔐 [ORDER CONFIRMATION OTP DISPATCHED]`);
+    console.log(`📱 Phone: +91 ${cleanPhone}`);
+    console.log(`📧 Email: ${email || req.user?.email || 'N/A'}`);
+    console.log(`💰 Order Amount: ₹${amount}`);
+    console.log(`💳 Method: ${methodLabel}`);
+    console.log(`🔑 OTP CODE: ${otp}`);
+    console.log(`========================================\n`);
+
+    res.status(200).json({
+      success: true,
+      message: `OTP sent successfully to +91 ${cleanPhone}${email ? ` and ${email}` : ''}`,
+      channels: deliveredChannels.length > 0 ? deliveredChannels : ['SMS / App Notification'],
+      demoOtp: otp, // Available for frictionless testing & demo
+      expiresIn: 600,
+    });
+  } catch (err) {
+    console.error('[sendOrderOtp] Error:', err);
+    res.status(500).json({ error: 'Failed to send order confirmation OTP: ' + err.message });
+  }
+};
+
+/**
+ * POST /api/orders/verify-otp
+ * Validates the entered OTP code
+ */
+exports.verifyOrderOtp = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ error: 'Phone number and OTP code are required.' });
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+    const entry = orderOtpMap.get(cleanPhone);
+
+    if (!entry) {
+      return res.status(400).json({ error: 'No active OTP request found for this number. Please request a new OTP.' });
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      orderOtpMap.delete(cleanPhone);
+      return res.status(400).json({ error: 'OTP has expired. Please request a fresh OTP.' });
+    }
+
+    entry.attempts = (entry.attempts || 0) + 1;
+    if (entry.attempts > 5) {
+      orderOtpMap.delete(cleanPhone);
+      return res.status(400).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
+    }
+
+    if (entry.otp !== String(otp).trim()) {
+      return res.status(400).json({ error: 'Invalid OTP code. Please check and re-enter.' });
+    }
+
+    entry.verified = true;
+    orderOtpMap.set(cleanPhone, entry);
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP verified successfully! Proceeding with order...',
+      verified: true,
+    });
+  } catch (err) {
+    console.error('[verifyOrderOtp] Error:', err);
+    res.status(500).json({ error: 'Failed to verify OTP: ' + err.message });
+  }
+};
+

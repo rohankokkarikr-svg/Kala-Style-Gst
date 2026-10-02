@@ -9,7 +9,8 @@ import toast from 'react-hot-toast';
 import {
   HiShieldCheck, HiTruck, HiUser, HiPhone, HiLocationMarker,
   HiCheckCircle, HiArrowRight, HiArrowLeft, HiTag, HiExclamationCircle,
-  HiLockClosed, HiReceiptTax, HiCash, HiRefresh, HiMap, HiX, HiExternalLink, HiCreditCard
+  HiLockClosed, HiReceiptTax, HiCash, HiRefresh, HiMap, HiX, HiExternalLink, HiCreditCard,
+  HiMail, HiKey, HiSparkles
 } from 'react-icons/hi';
 
 /* ─── Field error ─── */
@@ -137,6 +138,7 @@ export default function Checkout() {
 
   const [form, setForm] = useState({
     fullName:     user?.name || '',
+    email:        user?.email || '',
     phone:        '',
     confirmPhone: '',
     address:      '',
@@ -145,6 +147,44 @@ export default function Checkout() {
     state:        '',
     pinCode:      '',
   });
+
+  // Sync user details when logged in
+  useEffect(() => {
+    if (user) {
+      setForm(prev => ({
+        ...prev,
+        fullName: prev.fullName || user.name || '',
+        email:    prev.email || user.email || '',
+      }));
+    }
+  }, [user]);
+
+  // ── Order Confirmation OTP States (Both COD & Online) ──
+  const [showOtpModal, setShowOtpModal]   = useState(false);
+  const [otpValue, setOtpValue]           = useState(['', '', '', '', '', '']); // 6-digit OTP
+  const [otpLoading, setOtpLoading]       = useState(false);
+  const [otpSending, setOtpSending]       = useState(false);
+  const [otpCountdown, setOtpCountdown]   = useState(60);
+  const [canResendOtp, setCanResendOtp]   = useState(false);
+  const [otpError, setOtpError]           = useState('');
+  const [demoOtpHint, setDemoOtpHint]     = useState('');
+
+  // OTP Countdown Timer
+  useEffect(() => {
+    let timer;
+    if (showOtpModal && otpCountdown > 0) {
+      timer = setInterval(() => {
+        setOtpCountdown(prev => {
+          if (prev <= 1) {
+            setCanResendOtp(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [showOtpModal, otpCountdown]);
 
   const [errors, setErrors] = useState({});
 
@@ -413,6 +453,10 @@ export default function Checkout() {
     if (!trimmed('fullName') || trimmed('fullName').length < 3)
       e.fullName = 'Enter your full name (at least 3 characters)';
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmed('email') || !emailRegex.test(trimmed('email')))
+      e.email = 'Valid email is required for Shiprocket courier tracking & digital invoice';
+
     const digits = form.phone.replace(/\D/g, '');
     if (digits.length !== 10) e.phone = 'Phone must be exactly 10 digits';
 
@@ -462,15 +506,150 @@ export default function Checkout() {
     }
   };
 
-  /* ─── Place Order ─── */
-  const handlePlaceOrder = async () => {
+  /* ─── Initiate Order Verification via OTP (Both COD & Online) ─── */
+  const handleInitiateOrderVerification = async () => {
+    if (!validateStep1()) {
+      setStep(1);
+      toast.error('Please complete all required delivery details before proceeding');
+      return;
+    }
+
+    setOtpSending(true);
+    setOtpError('');
+    try {
+      const res = await orderAPI.sendOtp({
+        phone: form.phone,
+        email: form.email,
+        amount: finalTotal,
+        paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
+      });
+
+      if (res.data?.demoOtp) {
+        setDemoOtpHint(res.data.demoOtp);
+      } else {
+        setDemoOtpHint('');
+      }
+
+      setOtpValue(['', '', '', '', '', '']);
+      setOtpCountdown(60);
+      setCanResendOtp(false);
+      setShowOtpModal(true);
+      toast.success(`Verification OTP dispatched to +91 ${form.phone}! 📩`);
+    } catch (err) {
+      const errMsg = err.response?.data?.error || 'Failed to dispatch verification OTP. Please try again.';
+      toast.error(errMsg);
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  /* ─── Resend OTP ─── */
+  const handleResendOrderOtp = async () => {
+    setOtpSending(true);
+    setOtpError('');
+    try {
+      const res = await orderAPI.sendOtp({
+        phone: form.phone,
+        email: form.email,
+        amount: finalTotal,
+        paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
+      });
+
+      if (res.data?.demoOtp) {
+        setDemoOtpHint(res.data.demoOtp);
+      }
+
+      setOtpValue(['', '', '', '', '', '']);
+      setOtpCountdown(60);
+      setCanResendOtp(false);
+      toast.success('A fresh 6-digit OTP code has been sent! 📲');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to resend OTP');
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  /* ─── OTP Digit Handlers ─── */
+  const handleOtpInputChange = (index, value) => {
+    const clean = value.replace(/\D/g, '').slice(-1);
+    const newOtp = [...otpValue];
+    newOtp[index] = clean;
+    setOtpValue(newOtp);
+    if (otpError) setOtpError('');
+
+    // Auto-focus next input
+    if (clean && index < 5) {
+      const nextInput = document.getElementById(`order-otp-box-${index + 1}`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  const handleOtpInputKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !otpValue[index] && index > 0) {
+      const prevInput = document.getElementById(`order-otp-box-${index - 1}`);
+      if (prevInput) {
+        prevInput.focus();
+        const newOtp = [...otpValue];
+        newOtp[index - 1] = '';
+        setOtpValue(newOtp);
+      }
+    }
+  };
+
+  const handleOtpInputPaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+    const digits = pasted.split('');
+    const newOtp = [...otpValue];
+    digits.forEach((d, idx) => {
+      if (idx < 6) newOtp[idx] = d;
+    });
+    setOtpValue(newOtp);
+    if (otpError) setOtpError('');
+    const lastFilled = Math.min(digits.length, 5);
+    const targetInput = document.getElementById(`order-otp-box-${lastFilled}`);
+    if (targetInput) targetInput.focus();
+  };
+
+  /* ─── Verify OTP & Execute Order Creation ─── */
+  const handleVerifyAndConfirmOrder = async () => {
+    const code = otpValue.join('').trim();
+    if (code.length !== 6) {
+      setOtpError('Please enter the complete 6-digit OTP code.');
+      return;
+    }
+
+    setOtpLoading(true);
+    setOtpError('');
+
+    try {
+      // 1. Verify OTP with backend
+      const verifyRes = await orderAPI.verifyOtp({ phone: form.phone, otp: code });
+      if (!verifyRes.data?.verified && !verifyRes.data?.success) {
+        throw new Error(verifyRes.data?.error || 'Invalid OTP code.');
+      }
+
+      // 2. Execute Order Creation with OTP confirmation
+      await executeOrderCreation(code);
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'OTP verification failed.';
+      setOtpError(errMsg);
+      toast.error(errMsg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  /* ─── Execute Order Creation ─── */
+  const executeOrderCreation = async (verifiedOtp) => {
     setLoading(true);
     try {
       let activeLat = liveLocation?.lat || (verifyResult?.lat ? parseFloat(verifyResult.lat) : null);
       let activeLng = liveLocation?.lng || (verifyResult?.lng ? parseFloat(verifyResult.lng) : null);
       let activeMapUrl = liveLocation?.mapUrl || (activeLat && activeLng ? `https://www.google.com/maps?q=${activeLat},${activeLng}` : null);
 
-      // If live GPS location was not yet captured, attempt a quick capture now
       if (!activeLat && navigator.geolocation) {
         try {
           const quickPos = await new Promise((resolve, reject) => {
@@ -526,9 +705,12 @@ export default function Checkout() {
         payment_method: paymentMethod === 'cod' ? 'cod' : 'razorpay',
         payment_status: 'pending',
         shipping_name: form.fullName,
+        shipping_email: form.email,
+        email: form.email,
         shipping_city: form.city,
         shipping_state: form.state,
         shipping_pincode: form.pinCode,
+        otp: verifiedOtp || null,
         items: items.map(i => ({
           product_id:    i.product.id,
           quantity:      i.quantity,
@@ -540,12 +722,15 @@ export default function Checkout() {
       const res = await orderAPI.create(orderData);
       const createdOrder = res.data;
 
+      setShowOtpModal(false);
+
       if (paymentMethod === 'cod') {
-        toast.success('Order placed successfully! 🎉');
+        toast.success('Order confirmed & placed successfully! 🎉');
         clearCart();
         
         setCodOrderSuccess({
           orderId: createdOrder.id,
+          orderNumber: createdOrder.order_number,
           total: finalTotal
         });
       } else {
@@ -566,6 +751,7 @@ export default function Checkout() {
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Failed to place order. Please try again.';
       toast.error(errMsg);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -706,34 +892,62 @@ export default function Checkout() {
                   transition={{ duration: 0.3 }}
                   className="space-y-6"
                 >
-                  {/* Personal Info */}
+                  {/* Personal Info - Shiprocket Delivery Requirements */}
                   <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 shadow-card">
-                    <div className="flex items-center gap-2 mb-5 pb-4 border-b border-dark-600">
-                      <div className="w-8 h-8 rounded-full bg-gold-500/10 border border-gold-500/20 flex items-center justify-center">
-                        <HiUser className="w-4 h-4 text-gold-400" />
+                    <div className="flex items-center justify-between mb-5 pb-4 border-b border-dark-600 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-gold-500/10 border border-gold-500/20 flex items-center justify-center">
+                          <HiUser className="w-4 h-4 text-gold-400" />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-bold text-white">Personal Information</h2>
+                          <p className="text-xs text-gray-400 mt-0.5">Required for Shiprocket courier label, invoice & live tracking</p>
+                        </div>
                       </div>
-                      <h2 className="text-base font-bold text-white">Personal Information</h2>
+                      <span className="text-[11px] font-semibold text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                        📦 Shiprocket Courier Data
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">Full Name *</label>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                          Full Name * <span className="text-gray-500 normal-case font-normal">(First & Last Name)</span>
+                        </label>
                         <input type="text" className={inputCls('fullName')} placeholder="e.g. Rohan Kumar"
                           value={form.fullName} onChange={e => setField('fullName', e.target.value)} />
                         <FieldError msg={errors.fullName} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                          Email Address * <span className="text-gray-500 normal-case font-normal">(for tracking & invoice)</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-3.5 text-gray-500 pointer-events-none">
+                            <HiMail className="w-4 h-4" />
+                          </span>
+                          <input type="email" className={`${inputCls('email')} pl-10`} placeholder="e.g. rohan@example.com"
+                            value={form.email} onChange={e => setField('email', e.target.value)} />
+                        </div>
+                        <FieldError msg={errors.email} />
                       </div>
                     </div>
                   </div>
 
                   {/* Phone */}
                   <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 shadow-card">
-                    <div className="flex items-center gap-2 mb-5 pb-4 border-b border-dark-600">
-                      <div className="w-8 h-8 rounded-full bg-gold-500/10 border border-gold-500/20 flex items-center justify-center">
-                        <HiPhone className="w-4 h-4 text-gold-400" />
+                    <div className="flex items-center justify-between mb-5 pb-4 border-b border-dark-600 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-gold-500/10 border border-gold-500/20 flex items-center justify-center">
+                          <HiPhone className="w-4 h-4 text-gold-400" />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-bold text-white">Phone Number</h2>
+                          <p className="text-xs text-gray-500 mt-0.5">Used for Order Confirmation OTP & courier delivery call</p>
+                        </div>
                       </div>
-                      <div>
-                        <h2 className="text-base font-bold text-white">Phone Number</h2>
-                        <p className="text-xs text-gray-500 mt-0.5">Must match to confirm and prevent fraudulent orders</p>
-                      </div>
+                      <span className="text-[11px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                        <HiShieldCheck className="w-3.5 h-3.5" /> OTP Verification Ready
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
@@ -1082,16 +1296,22 @@ export default function Checkout() {
                     <div className="divide-y divide-dark-600/50">
                       {[
                         { label: 'Full Name',    value: form.fullName },
+                        { label: 'Email',        value: form.email, badge: 'Shiprocket Live Tracking' },
                         { label: 'Mobile',       value: `+91 ${form.phone}` },
                         { label: 'Address',      value: form.address },
                         form.landmark && { label: 'Landmark', value: form.landmark },
                         { label: 'City',         value: form.city },
                         { label: 'State',        value: form.state },
                         { label: 'PIN Code',     value: form.pinCode },
-                      ].filter(Boolean).map(({ label, value }) => (
-                        <div key={label} className="flex gap-4 px-6 py-3">
-                          <span className="text-xs text-gray-500 uppercase tracking-wider w-28 shrink-0 pt-0.5">{label}</span>
-                          <span className="text-sm text-white font-medium">{value}</span>
+                      ].filter(Boolean).map(({ label, value, badge }) => (
+                        <div key={label} className="flex items-center gap-4 px-6 py-3">
+                          <span className="text-xs text-gray-500 uppercase tracking-wider w-28 shrink-0">{label}</span>
+                          <span className="text-sm text-white font-medium flex-1">{value}</span>
+                          {badge && (
+                            <span className="text-[10px] text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-0.5 rounded-full font-semibold">
+                              {badge}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1127,7 +1347,7 @@ export default function Checkout() {
                             </div>
                             <div>
                               <p className="font-bold text-sm text-white">Cash on Delivery (COD)</p>
-                              <p className="text-gray-400 text-xs mt-0.5">Pay in cash upon delivery</p>
+                              <p className="text-gray-400 text-xs mt-0.5">Pay in cash upon doorstep delivery</p>
                             </div>
                           </div>
                           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -1167,13 +1387,14 @@ export default function Checkout() {
                       </div>
                     </div>
 
-                    <div className="mt-4 px-4 py-3 bg-gold-500/5 border border-gold-500/10 rounded-xl flex items-start gap-2.5">
-                      <HiShieldCheck className="w-4 h-4 text-gold-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-gray-450 leading-relaxed">
+                    <div className="mt-4 px-4 py-3 bg-gold-500/10 border border-gold-500/30 rounded-xl flex items-start gap-2.5">
+                      <HiShieldCheck className="w-5 h-5 text-gold-400 shrink-0 mt-0.5" />
+                      <div className="text-xs text-gray-300 leading-relaxed">
+                        <span className="font-bold text-gold-300 block mb-0.5">Order Confirmation via OTP Required:</span>
                         {paymentMethod === 'cod'
-                          ? `You will pay ₹${finalTotal.toLocaleString()} in cash when your order is delivered.`
-                          : `Pay ₹${finalTotal.toLocaleString()} securely online via Razorpay Standard Checkout. 100% encrypted & verified.`}
-                      </p>
+                          ? `For your security, a 6-digit confirmation OTP will be sent to +91 ${form.phone} and ${form.email} to confirm your Cash on Delivery (COD) order of ₹${finalTotal.toLocaleString()}.`
+                          : `For your security, a 6-digit confirmation OTP will be sent to +91 ${form.phone} and ${form.email} to confirm your order of ₹${finalTotal.toLocaleString()} before completing online payment.`}
+                      </div>
                     </div>
                   </div>
 
@@ -1208,12 +1429,12 @@ export default function Checkout() {
                     <button type="button" onClick={() => setStep(1)} className="btn-outline flex items-center gap-2 px-6 py-4">
                       <HiArrowLeft className="w-4 h-4" /> Go Back
                     </button>
-                    <button type="button" onClick={handlePlaceOrder} disabled={loading}
+                    <button type="button" onClick={handleInitiateOrderVerification} disabled={loading || otpSending}
                       className="flex-1 btn-primary text-lg py-4 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100">
-                      {loading ? (
-                        <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Placing Order...</>
+                      {otpSending ? (
+                        <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Dispatching OTP...</>
                       ) : (
-                        <><HiShieldCheck className="w-5 h-5" /> Confirm & Place Order</>
+                        <><HiKey className="w-5 h-5" /> Verify OTP & Confirm Order</>
                       )}
                     </button>
                   </div>
@@ -1228,6 +1449,149 @@ export default function Checkout() {
           </div>
         </div>
       </div>
+
+      {/* ── Order Confirmation OTP Modal (COD & Online) ── */}
+      <AnimatePresence>
+        {showOtpModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              className="bg-dark-800 border border-gold-500/40 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl shadow-black relative overflow-hidden"
+            >
+              {/* Decorative Top Gold Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-gold-400 to-transparent" />
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowOtpModal(false)}
+                className="absolute top-5 right-5 text-gray-400 hover:text-white transition-colors"
+              >
+                <HiX className="w-5 h-5" />
+              </button>
+
+              {/* Modal Header */}
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-gold-500/10">
+                  <HiKey className="w-8 h-8 text-gold-400" />
+                </div>
+                <span className="text-xs uppercase tracking-widest text-gold-400 font-bold px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/20">
+                  Order Security Verification
+                </span>
+                <h3 className="text-2xl font-serif font-bold text-white mt-2">
+                  Enter 6-Digit OTP
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-300 mt-2 max-w-sm mx-auto leading-relaxed">
+                  We have dispatched an OTP to{' '}
+                  <strong className="text-gold-400">+91 {form.phone}</strong>
+                  {form.email && <span> & <strong className="text-gold-400">{form.email}</strong></span>} to confirm your order of{' '}
+                  <strong className="text-white">₹{finalTotal.toLocaleString()}</strong> ({paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}).
+                </p>
+              </div>
+
+              {/* Demo OTP Helper (Instant testing convenience) */}
+              {demoOtpHint && (
+                <div className="mb-5 p-3 rounded-xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gold-400">💡</span>
+                    <span className="text-gray-300">
+                      Test OTP Code: <strong className="text-gold-300 font-mono tracking-widest text-sm">{demoOtpHint}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const digits = demoOtpHint.split('').slice(0, 6);
+                      setOtpValue(digits);
+                      setOtpError('');
+                    }}
+                    className="text-gold-400 hover:text-gold-300 underline font-semibold ml-2 cursor-pointer"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
+              )}
+
+              {/* 6 Digit Input Boxes */}
+              <div className="flex justify-center items-center gap-2 sm:gap-3 mb-4">
+                {otpValue.map((digit, index) => (
+                  <input
+                    key={index}
+                    id={`order-otp-box-${index}`}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength="1"
+                    value={digit}
+                    onChange={(e) => handleOtpInputChange(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpInputKeyDown(index, e)}
+                    onPaste={handleOtpInputPaste}
+                    className="w-11 h-13 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-xl bg-dark-900 border-2 border-dark-600 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20 text-white outline-none transition-all"
+                  />
+                ))}
+              </div>
+
+              {otpError && (
+                <p className="text-center text-red-400 text-xs mb-3 flex items-center justify-center gap-1">
+                  <HiExclamationCircle className="w-4 h-4 shrink-0" />
+                  {otpError}
+                </p>
+              )}
+
+              {/* Resend Timer */}
+              <div className="text-center text-xs text-gray-400 mb-6">
+                {!canResendOtp ? (
+                  <span>Resend code in <strong className="text-gold-400 font-mono">{otpCountdown}s</strong></span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOrderOtp}
+                    disabled={otpSending}
+                    className="text-gold-400 hover:text-gold-300 font-semibold underline flex items-center gap-1 mx-auto cursor-pointer"
+                  >
+                    <HiRefresh className="w-3.5 h-3.5" /> Resend OTP Code
+                  </button>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  onClick={handleVerifyAndConfirmOrder}
+                  disabled={otpLoading || otpValue.join('').length !== 6}
+                  className="w-full btn-primary py-3.5 text-base font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer"
+                >
+                  {otpLoading ? (
+                    <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Verifying & Placing Order...</>
+                  ) : (
+                    <><HiShieldCheck className="w-5 h-5" /> Confirm & Place Order</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  className="w-full py-2.5 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancel / Edit Delivery Details
+                </button>
+              </div>
+
+              {/* Shiprocket Delivery Guarantee footer */}
+              <div className="mt-5 pt-4 border-t border-dark-700/60 flex items-center justify-center gap-2 text-[11px] text-gray-400 text-center">
+                <HiTruck className="w-4 h-4 text-emerald-400" />
+                <span>Automated Shiprocket courier dispatch upon OTP confirmation</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Loading Popup */}
       <AnimatePresence>

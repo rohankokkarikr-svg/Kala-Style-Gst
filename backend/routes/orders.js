@@ -9,6 +9,8 @@ const router = express.Router();
 const { protect, admin, artisan, artisanOnly, artisanOrAdmin } = require('../middleware/auth');
 const {
   createOrder,
+  sendOrderOtp,
+  verifyOrderOtp,
   getMyOrders,
   cancelOrder,
   switchToCOD,
@@ -25,6 +27,8 @@ const {
 } = require('../controllers/orderController');
 
 // ── Customer Routes ──────────────────────────────────────────────────────────
+router.post('/send-otp', protect, sendOrderOtp);
+router.post('/verify-otp', protect, verifyOrderOtp);
 router.post('/', protect, createOrder);
 router.post('/create', protect, createOrder);              // explicit alias
 router.post('/calculate-total', protect, calculateTotal); // price preview
