@@ -359,177 +359,134 @@ export default function ProductList() {
         </div>
       </div>
 
-      {/* Category Hero Banner */}
-      <div className="relative bg-dark-800 border-b border-dark-700 overflow-hidden">
-        {currentCategoryInfo ? (
-          <div className="relative min-h-[250px] sm:min-h-[310px] md:min-h-[370px] overflow-hidden flex items-center bg-dark-950">
-            {/* Background Video or Image */}
-            {activeVideoUrl ? (
-              <video
-                key={`cat-vid-${activeVideoUrl}`}
-                src={activeVideoUrl}
-                poster={activePosterImage}
-                autoPlay
-                loop
-                muted={isMuted}
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover object-center filter brightness-[1.05] contrast-[1.02]"
-              />
-            ) : (
-              <img
-                src={activePosterImage}
-                alt={currentCategoryInfo.name}
-                className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.02]"
-              />
-            )}
+      {/* Category Hero Banner Showcase */}
+      <div className="relative bg-gradient-to-b from-dark-950 via-dark-900 to-dark-950 border-b border-dark-700/80 overflow-hidden">
+        {/* Subtle decorative gold ambient glow at top */}
+        <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-gold-400/60 to-transparent pointer-events-none" />
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gold-500/5 blur-3xl pointer-events-none rounded-full" />
 
-            {/* Sound Toggle Button (when video is active) */}
-            {activeVideoUrl && (
-              <button
-                type="button"
-                onClick={() => setIsMuted(prev => !prev)}
-                className="absolute top-4 right-4 sm:bottom-4 sm:top-auto z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-950/80 hover:bg-dark-900 border border-gold-500/30 text-white text-xs font-medium backdrop-blur-md transition-all shadow-lg hover:border-gold-400 group"
-                title={isMuted ? "Unmute Artisan Video" : "Mute Video"}
-              >
-                {isMuted ? (
-                  <>
-                    <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover:scale-110 transition-transform" />
-                    <span className="hidden sm:inline">Unmute Video</span>
-                  </>
-                ) : (
-                  <>
-                    <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover:scale-110 transition-transform" />
-                    <span className="hidden sm:inline">Playing Sound</span>
-                  </>
-                )}
-              </button>
-            )}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 lg:py-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
+            
+            {/* 1. LEFT COLUMN: Clean, Professional Craft & Taxonomy Information (5 Columns) */}
+            <div className="lg:col-span-5 space-y-4 text-left z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-xs font-semibold uppercase tracking-widest">
+                <span>🇮🇳</span>
+                <span>Master Artisans & Heritage</span>
+                <HiSparkles className="w-3.5 h-3.5 text-gold-400" />
+              </div>
 
-            {/* Elegant soft gradient on left for text readability while leaving media vibrant */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/50 to-transparent w-full md:w-3/5 pointer-events-none" />
-            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
-
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-8 sm:py-12">
-              <div className="max-w-xl backdrop-blur-md bg-dark-950/60 sm:bg-dark-950/40 p-6 sm:p-8 rounded-3xl border border-gold-500/20 shadow-2xl shadow-black/80">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs uppercase tracking-widest text-gold-400 font-bold block">
-                    Indian Handicraft Collection
-                  </span>
-                  {activeVideoUrl && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/30 text-red-300 text-[10px] font-bold uppercase tracking-wider">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping inline-block" />
-                      Video
-                    </span>
-                  )}
-                </div>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight drop-shadow-md">
-                  {currentCategoryInfo.name}
-                  {activeSubcategory && activeSubcategory !== 'all' && (
-                    <span className="text-gold-400 text-2xl sm:text-3xl md:text-4xl font-light ml-2">
-                      / {activeSubcategory}
-                    </span>
+              <div>
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold text-white tracking-tight leading-tight">
+                  {currentCategoryInfo ? (
+                    <>
+                      {currentCategoryInfo.name}
+                      {activeSubcategory && activeSubcategory !== 'all' && (
+                        <span className="block text-gold-400 text-xl sm:text-2xl font-light mt-1">
+                          / {activeSubcategory}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      Explore <span className="text-gold-400">Indian Handicrafts</span>
+                    </>
                   )}
                 </h1>
-                <p className="text-gray-200 text-sm sm:text-base mt-2.5 leading-relaxed drop-shadow">
-                  {currentCategoryInfo.shortDesc || currentCategoryInfo.description || categoryBannerSettings?.subtitle}
+
+                <p className="text-gray-300 text-sm sm:text-base mt-3 leading-relaxed max-w-lg font-light">
+                  {currentCategoryInfo
+                    ? (currentCategoryInfo.shortDesc || currentCategoryInfo.description || categoryBannerSettings?.subtitle)
+                    : (settings?.categoryBanners?.all?.subtitle || 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.')
+                  }
                 </p>
-                <div className="flex flex-wrap items-center gap-3 mt-4 text-xs font-semibold text-gold-400">
-                  <span className="px-3.5 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
-                    {filteredAndSortedProducts.length} Artisanal Products Available
-                  </span>
-                  <span className="text-gray-400">•</span>
-                  <span className="text-gray-200">100% Certified Authentic</span>
-                </div>
+              </div>
+
+              {/* Trust & Craft Badges */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 pt-1 text-xs">
+                <span className="px-3 py-1 rounded-full bg-dark-800 border border-gold-500/30 text-gold-400 font-semibold shadow-sm">
+                  {filteredAndSortedProducts.length} Artisanal Products
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-800 border border-dark-600 text-gray-200 shadow-sm">
+                  <HiShieldCheck className="w-3.5 h-3.5 text-green-400" /> 100% Certified Authentic
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-800 border border-dark-600 text-gray-300 shadow-sm">
+                  Direct from Artisans
+                </span>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="relative min-h-[260px] sm:min-h-[320px] md:min-h-[390px] lg:min-h-[430px] overflow-hidden flex items-center bg-dark-950">
-            {/* Background Video or Image */}
-            {activeVideoUrl ? (
-              <video
-                key={`all-vid-${activeVideoUrl}`}
-                src={activeVideoUrl}
-                poster={activePosterImage}
-                autoPlay
-                loop
-                muted={isMuted}
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
-              />
-            ) : (
-              <img
-                src={activePosterImage}
-                alt="Explore Indian Handicrafts"
-                className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] transition-transform duration-1000 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
-                loading="eager"
-                onError={(e) => {
-                  e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
-                }}
-              />
-            )}
 
-            {/* Sound Toggle Button (when video is active) */}
-            {activeVideoUrl && (
-              <button
-                type="button"
-                onClick={() => setIsMuted(prev => !prev)}
-                className="absolute top-4 right-4 sm:bottom-4 sm:top-auto z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-dark-950/80 hover:bg-dark-900 border border-gold-500/30 text-white text-xs font-medium backdrop-blur-md transition-all shadow-lg hover:border-gold-400 group"
-                title={isMuted ? "Unmute Artisan Video" : "Mute Video"}
-              >
-                {isMuted ? (
-                  <>
-                    <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover:scale-110 transition-transform" />
-                    <span className="hidden sm:inline">Unmute Video</span>
-                  </>
+            {/* 2. RIGHT COLUMN: 100% Clear, Unobstructed Cinematic Video Showcase (7 Columns) */}
+            <div className="lg:col-span-7">
+              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[16/9] sm:aspect-[16/8.5] md:aspect-[16/8] lg:aspect-[16/9] bg-dark-950 border border-gold-500/30 shadow-2xl shadow-black/80 group">
+                {activeVideoUrl ? (
+                  <video
+                    key={`showcase-vid-${activeVideoUrl}`}
+                    src={activeVideoUrl}
+                    poster={activePosterImage}
+                    autoPlay
+                    loop
+                    muted={isMuted}
+                    playsInline
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
+                  />
                 ) : (
-                  <>
-                    <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover:scale-110 transition-transform" />
-                    <span className="hidden sm:inline">Playing Sound</span>
-                  </>
+                  <img
+                    src={activePosterImage}
+                    alt={currentCategoryInfo ? currentCategoryInfo.name : "Indian Handicrafts"}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
+                    onError={(e) => {
+                      e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
+                    }}
+                  />
                 )}
-              </button>
-            )}
 
-            {/* Soft left-side directional gradient: keeps text crisp while leaving center & right crafts 100% luminous */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-transparent w-full md:w-3/5 pointer-events-none" />
-            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
+                {/* Subtle luxury edge vignette */}
+                <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none rounded-2xl sm:rounded-3xl" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 pointer-events-none" />
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-8 sm:py-12">
-              <div className="max-w-xl backdrop-blur-md bg-dark-950/60 sm:bg-dark-950/40 p-6 sm:p-8 rounded-3xl border border-gold-500/20 shadow-2xl shadow-black/80">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/20 border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-widest mb-3 backdrop-blur-sm">
-                  <span>🇮🇳</span>
-                  <span>Master Artisans & Heritage</span>
-                  <HiSparkles className="w-3.5 h-3.5 text-gold-400" />
-                  {activeVideoUrl && (
-                    <span className="ml-1 px-1.5 py-0.2 rounded bg-red-500/30 text-red-300 text-[9px] font-bold">
-                      VIDEO
+                {/* Top Badge: Live Video indicator */}
+                <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-20 flex items-center gap-2">
+                  {activeVideoUrl ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-950/80 backdrop-blur-md border border-red-500/40 text-white text-[11px] font-bold shadow-lg">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block" />
+                      <span className="uppercase tracking-wider">Artisan Workshop Live</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-950/80 backdrop-blur-md border border-dark-600 text-gray-300 text-[11px] font-medium shadow-lg">
+                      <span>Artisan Heritage Gallery</span>
                     </span>
                   )}
                 </div>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight leading-tight drop-shadow-lg">
-                  Explore <span className="text-gold-400">Indian Handicrafts</span>
-                </h1>
-                <p className="text-gray-100 text-sm sm:text-base mt-3 leading-relaxed drop-shadow max-w-lg">
-                  {settings?.categoryBanners?.all?.subtitle || 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.'}
-                </p>
-                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5 text-xs font-semibold text-gray-300">
-                  <span className="px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
-                    {filteredAndSortedProducts.length} Curated Products
-                  </span>
-                  <span className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-dark-600 text-gray-200 shadow-sm">
-                    <HiShieldCheck className="w-3.5 h-3.5 text-green-400" /> 100% Certified Authentic
-                  </span>
-                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-dark-600 text-gray-200 shadow-sm">
-                    Direct from Artisans
-                  </span>
-                </div>
+
+                {/* Bottom Sound & Control Pill */}
+                {activeVideoUrl && (
+                  <div className="absolute bottom-3 sm:bottom-4 right-3 sm:right-4 z-20 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsMuted(prev => !prev)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-dark-950/85 hover:bg-dark-900 border border-gold-500/40 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-xl hover:border-gold-400 group/btn"
+                      title={isMuted ? "Unmute Audio" : "Mute Audio"}
+                    >
+                      {isMuted ? (
+                        <>
+                          <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover/btn:scale-110 transition-transform" />
+                          <span>Sound Off</span>
+                        </>
+                      ) : (
+                        <>
+                          <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover/btn:scale-110 transition-transform" />
+                          <span className="text-gold-300">Sound On</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
+
           </div>
-        )}
+        </div>
       </div>
 
       {/* Main Content Area */}
