@@ -332,19 +332,23 @@ export default function ProductList() {
       {/* Category Hero Banner */}
       <div className="relative bg-dark-800 border-b border-dark-700 overflow-hidden">
         {currentCategoryInfo ? (
-          <div className="relative h-64 sm:h-80 overflow-hidden flex items-center">
+          <div className="relative min-h-[250px] sm:min-h-[310px] md:min-h-[370px] overflow-hidden flex items-center bg-dark-950">
             <img
               src={currentCategoryInfo.bannerImage || currentCategoryInfo.image}
               alt={currentCategoryInfo.name}
-              className="absolute inset-0 w-full h-full object-cover opacity-30 scale-105"
+              className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.02]"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-dark-950 via-dark-950/80 to-transparent" />
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full">
-              <div className="max-w-2xl">
+            {/* Elegant soft gradient on left for text readability while leaving image vibrant */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/50 to-transparent w-full md:w-3/5 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
+
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-8 sm:py-12">
+              <div className="max-w-xl backdrop-blur-md bg-dark-950/60 sm:bg-dark-950/40 p-6 sm:p-8 rounded-3xl border border-gold-500/20 shadow-2xl shadow-black/80">
                 <span className="text-xs uppercase tracking-widest text-gold-400 font-bold mb-2 block">
                   Indian Handicraft Collection
                 </span>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight">
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight drop-shadow-md">
                   {currentCategoryInfo.name}
                   {activeSubcategory && activeSubcategory !== 'all' && (
                     <span className="text-gold-400 text-2xl sm:text-3xl md:text-4xl font-light ml-2">
@@ -352,57 +356,57 @@ export default function ProductList() {
                     </span>
                   )}
                 </h1>
-                <p className="text-gray-300 text-sm sm:text-base mt-2.5 leading-relaxed">
+                <p className="text-gray-200 text-sm sm:text-base mt-2.5 leading-relaxed drop-shadow">
                   {currentCategoryInfo.shortDesc}
                 </p>
-                <div className="flex items-center gap-3 mt-4 text-xs font-semibold text-gold-400">
-                  <span className="px-3 py-1 rounded-full bg-gold-500/15 border border-gold-500/30">
+                <div className="flex flex-wrap items-center gap-3 mt-4 text-xs font-semibold text-gold-400">
+                  <span className="px-3.5 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
                     {filteredAndSortedProducts.length} Artisanal Products Available
                   </span>
-                  <span>•</span>
-                  <span>100% Certified Authentic</span>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-200">100% Certified Authentic</span>
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="relative min-h-[220px] sm:min-h-[280px] md:min-h-[320px] overflow-hidden flex items-center bg-dark-950 border-b border-dark-700">
-            {/* Background Image with subtle zoom & luxury contrast */}
+          <div className="relative min-h-[260px] sm:min-h-[320px] md:min-h-[390px] lg:min-h-[430px] overflow-hidden flex items-center bg-dark-950">
+            {/* Background Image - Rich, clear artisan photography */}
             <img
               src="/images/explore_handicrafts_banner.jpg"
               alt="Explore Indian Handicrafts"
-              className="absolute inset-0 w-full h-full object-cover object-center scale-105 transition-transform duration-1000 ease-out hover:scale-110"
+              className="absolute inset-0 w-full h-full object-cover object-[center_60%] sm:object-[center_55%] transition-transform duration-1000 ease-out hover:scale-[1.02] filter brightness-[1.05] contrast-[1.03] saturate-[1.10]"
               loading="eager"
               onError={(e) => {
                 e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
               }}
             />
-            {/* Multi-tier dark gradient overlay for optimal readability */}
-            <div className="absolute inset-0 bg-gradient-to-r from-dark-950 via-dark-950/85 to-dark-950/40" />
-            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/90 via-transparent to-dark-950/40" />
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/40 to-transparent" />
+            {/* Soft left-side directional gradient: keeps text crisp while leaving center & right crafts 100% luminous */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-transparent w-full md:w-3/5 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-dark-950/20 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-10 sm:py-14">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/15 border border-gold-500/30 text-gold-400 text-xs font-semibold uppercase tracking-widest mb-3 backdrop-blur-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 w-full py-8 sm:py-12">
+              <div className="max-w-xl backdrop-blur-md bg-dark-950/60 sm:bg-dark-950/40 p-6 sm:p-8 rounded-3xl border border-gold-500/20 shadow-2xl shadow-black/80">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/20 border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-widest mb-3 backdrop-blur-sm">
                   <span>🇮🇳</span>
                   <span>Master Artisans & Heritage</span>
                   <HiSparkles className="w-3.5 h-3.5 text-gold-400" />
                 </div>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight leading-tight drop-shadow-md">
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-white tracking-tight leading-tight drop-shadow-lg">
                   Explore <span className="text-gold-400">Indian Handicrafts</span>
                 </h1>
-                <p className="text-gray-200 text-sm sm:text-base mt-3 leading-relaxed drop-shadow max-w-xl">
+                <p className="text-gray-100 text-sm sm:text-base mt-3 leading-relaxed drop-shadow max-w-lg">
                   Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.
                 </p>
-                <div className="flex flex-wrap items-center gap-3 mt-5 text-xs font-semibold text-gray-300">
-                  <span className="px-3 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-dark-600 text-gold-400">
+                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5 text-xs font-semibold text-gray-300">
+                  <span className="px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-gold-500/30 text-gold-400 shadow-sm">
                     {filteredAndSortedProducts.length} Curated Products
                   </span>
-                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-dark-600 text-gray-200">
+                  <span className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-dark-600 text-gray-200 shadow-sm">
                     <HiShieldCheck className="w-3.5 h-3.5 text-green-400" /> 100% Certified Authentic
                   </span>
-                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-900/80 backdrop-blur-md border border-dark-600 text-gray-200">
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-dark-900/85 backdrop-blur-md border border-dark-600 text-gray-200 shadow-sm">
                     Direct from Artisans
                   </span>
                 </div>
