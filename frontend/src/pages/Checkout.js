@@ -502,11 +502,11 @@ export default function Checkout() {
     setCouponApplying(true);
     try {
       const response = await couponAPI.validate(codeUpper);
-      const { discount_type, discount_value } = response.data;
+      const { discount_type, discount_value, message } = response.data;
       setDiscountType(discount_type);
       setAppliedDiscount(discount_value || 0);
       setIsCouponApplied(true);
-      toast.success('Coupon applied! 🎉');
+      toast.success(message || 'Coupon applied! 🎉');
     } catch (err) {
       setCouponError(err.response?.data?.error || 'Invalid or expired coupon code');
       setAppliedDiscount(0);

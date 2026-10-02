@@ -60,6 +60,9 @@ const DEFAULT_DISCOUNT_BANNER = {
   buttonText: 'Grab the Deal',
   buttonLink: '/products',
   isActive: true,
+  is_active: true,
+  targetAudience: 'all',
+  selectedUserEmails: [],
 };
 
 const DEFAULT_CATEGORY_BANNERS = {
@@ -193,6 +196,20 @@ exports.getSettings = async (req, res) => {
       // Storage fallback
     }
 
+    let cloudDiscountBanner = null;
+    try {
+      const { data: dbData, error: dbErr } = await supabase.storage
+        .from('site-config')
+        .download('discount_banner.json');
+      if (dbData && !dbErr) {
+        const text = await dbData.text();
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          cloudDiscountBanner = parsed;
+        }
+      }
+    } catch (_) {}
+
     try {
       const { data: catData, error: catErr } = await supabase.storage
         .from('site-config')
@@ -210,6 +227,24 @@ exports.getSettings = async (req, res) => {
     const { data: supaData } = await safeQuery(() =>
       supabase.from('platform_settings').select('*').eq('id', 'main').single()
     );
+
+    const rawBanner = cloudDiscountBanner || supaData?.discount_banner || supaData?.discountBanner || local.discountBanner || DEFAULT_DISCOUNT_BANNER;
+    const isBannerActive = rawBanner.isActive !== undefined 
+      ? Boolean(rawBanner.isActive) 
+      : (rawBanner.is_active !== undefined ? Boolean(rawBanner.is_active) : true);
+
+    const normalizedDiscountBanner = {
+      ...DEFAULT_DISCOUNT_BANNER,
+      ...rawBanner,
+      isActive: isBannerActive,
+      is_active: isBannerActive,
+      code: (rawBanner.code || 'KALA30').trim().toUpperCase(),
+      discountPercentage: Number(rawBanner.discountPercentage) || 30,
+      targetAudience: rawBanner.targetAudience || rawBanner.target_audience || 'all',
+      selectedUserEmails: Array.isArray(rawBanner.selectedUserEmails)
+        ? rawBanner.selectedUserEmails
+        : (Array.isArray(rawBanner.selected_user_emails) ? rawBanner.selected_user_emails : [])
+    };
 
     const merged = {
       ...DEFAULT_SETTINGS,
@@ -232,7 +267,7 @@ exports.getSettings = async (req, res) => {
             : ((Array.isArray(supaData?.hero_slides) && supaData.hero_slides.length > 0)
                 ? supaData.hero_slides
                 : DEFAULT_HERO_SLIDES)),
-      discountBanner: supaData?.discount_banner || supaData?.discountBanner || local.discountBanner || DEFAULT_DISCOUNT_BANNER,
+      discountBanner: normalizedDiscountBanner,
       categoryBanners: (cloudCategoryBanners && typeof cloudCategoryBanners === 'object')
         ? { ...DEFAULT_CATEGORY_BANNERS, ...cloudCategoryBanners }
         : ((local.categoryBanners && typeof local.categoryBanners === 'object')
@@ -273,8 +308,23 @@ async function applySettingsUpdate(updates = {}) {
     ...(updates.maintenanceMode !== undefined ? { maintenanceMode: updates.maintenanceMode, maintenance_mode: updates.maintenanceMode } : {}),
     ...(updates.heroSlides ? { heroSlides: updates.heroSlides, hero_slides: updates.heroSlides } : {}),
     ...(updates.hero_slides ? { hero_slides: updates.hero_slides, heroSlides: updates.hero_slides } : {}),
-    ...(updates.discountBanner ? { discountBanner: updates.discountBanner, discount_banner: updates.discountBanner } : {}),
-    ...(updates.discount_banner ? { discount_banner: updates.discount_banner, discountBanner: updates.discount_banner } : {}),
+    ...(updates.discountBanner || updates.discount_banner ? (() => {
+      const raw = updates.discountBanner || updates.discount_banner;
+      const isBannerActive = raw.isActive !== undefined ? Boolean(raw.isActive) : (raw.is_active !== undefined ? Boolean(raw.is_active) : true);
+      const normalizedDiscountBanner = {
+        ...(current.discountBanner || DEFAULT_DISCOUNT_BANNER),
+        ...raw,
+        isActive: isBannerActive,
+        is_active: isBannerActive,
+        code: (raw.code || 'KALA30').trim().toUpperCase(),
+        discountPercentage: Number(raw.discountPercentage !== undefined ? raw.discountPercentage : raw.discount_percentage) || 30,
+        targetAudience: raw.targetAudience || raw.target_audience || 'all',
+        selectedUserEmails: Array.isArray(raw.selectedUserEmails)
+          ? raw.selectedUserEmails
+          : (Array.isArray(raw.selected_user_emails) ? raw.selected_user_emails : [])
+      };
+      return { discountBanner: normalizedDiscountBanner, discount_banner: normalizedDiscountBanner };
+    })() : {}),
     ...(updates.categoryBanners ? { categoryBanners: { ...(current.categoryBanners || DEFAULT_CATEGORY_BANNERS), ...updates.categoryBanners } } : {}),
     ...(updates.delivery_fee !== undefined ? { delivery_fee: Number(updates.delivery_fee) || 0 } : {}),
     ...(updates.free_delivery_above !== undefined ? { free_delivery_above: Number(updates.free_delivery_above) || 0 } : {}),
@@ -321,6 +371,27 @@ async function applySettingsUpdate(updates = {}) {
     } catch (storageErr) {
       console.warn('Failed to upload category_banners.json to Supabase storage:', storageErr.message);
     }
+  }
+
+  // Persist discount banner to Supabase Storage 'site-config' bucket for permanent cloud persistence
+  const activeDiscountBanner = normalizedUpdates.discountBanner;
+  if (activeDiscountBanner && typeof activeDiscountBanner === 'object') {
+    try {
+      await supabase.storage
+        .from('site-config')
+        .upload('discount_banner.json', Buffer.from(JSON.stringify(activeDiscountBanner, null, 2)), {
+          contentType: 'application/json',
+          upsert: true,
+        });
+    } catch (storageErr) {
+      console.warn('Failed to upload discount_banner.json to Supabase storage:', storageErr.message);
+    }
+
+    try {
+      await supabase
+        .from('platform_settings')
+        .upsert([{ id: 'main', discount_banner: activeDiscountBanner, updated_at: new Date().toISOString() }]);
+    } catch (_) {}
   }
 
   // Persist only valid columns to Supabase platform_settings to avoid schema errors

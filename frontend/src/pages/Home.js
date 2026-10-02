@@ -10,11 +10,13 @@ import Testimonials from '../components/Testimonials';
 import Footer from '../components/Footer';
 import { productAPI, artisanAPI } from '../services/api';
 import { useSettings, DEFAULT_DISCOUNT_BANNER } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import { apiCache } from '../utils/apiCache';
 import toast from 'react-hot-toast';
 
 export default function Home() {
   const { settings } = useSettings();
+  const { user } = useAuth();
   const cachedFeatured = apiCache.getSync('/products/featured?{}');
   const cachedArtisans = apiCache.getSync('/artisans?{}');
 
@@ -26,6 +28,33 @@ export default function Home() {
   const [loading, setLoading] = useState(() => initialFeatured.length === 0);
 
   const discountBanner = settings?.discountBanner || DEFAULT_DISCOUNT_BANNER;
+
+  const shouldShowBanner = React.useMemo(() => {
+    const isAct = discountBanner.isActive !== undefined 
+      ? Boolean(discountBanner.isActive) 
+      : (discountBanner.is_active !== undefined ? Boolean(discountBanner.is_active) : true);
+
+    if (!isAct) return false;
+
+    const audience = discountBanner.targetAudience || discountBanner.target_audience || 'all';
+
+    if (audience === 'all') return true;
+
+    if (audience === 'logged_in') return Boolean(user);
+
+    if (audience === 'new_users') {
+      return !user || (user.orderCount === 0 || user.orders_count === 0);
+    }
+
+    if (audience === 'specific') {
+      if (!user?.email) return false;
+      const rawEmails = discountBanner.selectedUserEmails || discountBanner.selected_user_emails || [];
+      const emailList = (Array.isArray(rawEmails) ? rawEmails : String(rawEmails).split(',')).map(e => e.trim().toLowerCase());
+      return emailList.includes(user.email.toLowerCase());
+    }
+
+    return true;
+  }, [discountBanner, user]);
 
   const fetchData = React.useCallback(async (isBackground = false) => {
     if (!isBackground && initialFeatured.length === 0) setLoading(true);
@@ -194,7 +223,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-      {discountBanner.isActive && (
+      {shouldShowBanner && (
         <section className="bg-gradient-to-r from-dark-800 via-dark-700 to-dark-800 border-y border-dark-600">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-8">
             <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="flex flex-col sm:flex-row items-center justify-between gap-4">

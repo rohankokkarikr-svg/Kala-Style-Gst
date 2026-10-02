@@ -74,6 +74,9 @@ export const DEFAULT_DISCOUNT_BANNER = {
   buttonText: 'Grab the Deal',
   buttonLink: '/products',
   isActive: true,
+  is_active: true,
+  targetAudience: 'all',
+  selectedUserEmails: [],
 };
 
 export const DEFAULT_CATEGORY_BANNERS = {
@@ -167,7 +170,21 @@ export const SettingsProvider = ({ children }) => {
           ...DEFAULT_SETTINGS,
           ...parsed,
           heroSlides: Array.isArray(parsed.heroSlides) && parsed.heroSlides.length > 0 ? parsed.heroSlides : DEFAULT_HERO_SLIDES,
-          discountBanner: parsed.discountBanner ? { ...DEFAULT_DISCOUNT_BANNER, ...parsed.discountBanner } : DEFAULT_DISCOUNT_BANNER,
+          discountBanner: (() => {
+            if (!parsed.discountBanner && !parsed.discount_banner) return DEFAULT_DISCOUNT_BANNER;
+            const b = parsed.discountBanner || parsed.discount_banner;
+            const isAct = b.isActive !== undefined ? Boolean(b.isActive) : (b.is_active !== undefined ? Boolean(b.is_active) : true);
+            return {
+              ...DEFAULT_DISCOUNT_BANNER,
+              ...b,
+              isActive: isAct,
+              is_active: isAct,
+              code: (b.code || 'KALA30').trim().toUpperCase(),
+              discountPercentage: Number(b.discountPercentage !== undefined ? b.discountPercentage : b.discount_percentage) || 30,
+              targetAudience: b.targetAudience || b.target_audience || 'all',
+              selectedUserEmails: Array.isArray(b.selectedUserEmails) ? b.selectedUserEmails : (Array.isArray(b.selected_user_emails) ? b.selected_user_emails : [])
+            };
+          })(),
           categoryBanners: { ...DEFAULT_CATEGORY_BANNERS, ...(parsed.categoryBanners || {}) },
           delivery_fee: 0,
           free_delivery_above: 0,
@@ -207,6 +224,18 @@ export const SettingsProvider = ({ children }) => {
         const catData = await catRes.json();
         if (catData && typeof catData === 'object') {
           cloudCategoryBanners = catData;
+        }
+      }
+    } catch (_) {}
+
+    let cloudDiscountBanner = null;
+    try {
+      const discountBannersCdnUrl = 'https://fwuhlhaadhhveuljsqbh.supabase.co/storage/v1/object/public/site-config/discount_banner.json?t=' + Date.now();
+      const dbRes = await fetch(discountBannersCdnUrl);
+      if (dbRes.ok) {
+        const dbData = await dbRes.json();
+        if (dbData && typeof dbData === 'object') {
+          cloudDiscountBanner = dbData;
         }
       }
     } catch (_) {}
@@ -253,6 +282,26 @@ export const SettingsProvider = ({ children }) => {
           ? { ...DEFAULT_CATEGORY_BANNERS, ...loadedData.categoryBanners }
           : DEFAULT_CATEGORY_BANNERS);
 
+    const rawDiscountBanner = cloudDiscountBanner || loadedData?.discountBanner || loadedData?.discount_banner;
+    let activeDiscountBanner = DEFAULT_DISCOUNT_BANNER;
+    if (rawDiscountBanner && typeof rawDiscountBanner === 'object') {
+      const isAct = rawDiscountBanner.isActive !== undefined 
+        ? Boolean(rawDiscountBanner.isActive) 
+        : (rawDiscountBanner.is_active !== undefined ? Boolean(rawDiscountBanner.is_active) : true);
+      activeDiscountBanner = {
+        ...DEFAULT_DISCOUNT_BANNER,
+        ...rawDiscountBanner,
+        isActive: isAct,
+        is_active: isAct,
+        code: (rawDiscountBanner.code || 'KALA30').trim().toUpperCase(),
+        discountPercentage: Number(rawDiscountBanner.discountPercentage !== undefined ? rawDiscountBanner.discountPercentage : rawDiscountBanner.discount_percentage) || 30,
+        targetAudience: rawDiscountBanner.targetAudience || rawDiscountBanner.target_audience || 'all',
+        selectedUserEmails: Array.isArray(rawDiscountBanner.selectedUserEmails) 
+          ? rawDiscountBanner.selectedUserEmails 
+          : (Array.isArray(rawDiscountBanner.selected_user_emails) ? rawDiscountBanner.selected_user_emails : [])
+      };
+    }
+
     const merged = {
       ...DEFAULT_SETTINGS,
       ...(loadedData || {}),
@@ -264,9 +313,7 @@ export const SettingsProvider = ({ children }) => {
       contact_phone: loadedData?.contact_phone || loadedData?.supportPhone || DEFAULT_SETTINGS.supportPhone,
       heroSlides: activeHeroSlides,
       categoryBanners: activeCategoryBanners,
-      discountBanner: loadedData?.discountBanner || loadedData?.discount_banner
-        ? { ...DEFAULT_DISCOUNT_BANNER, ...(loadedData?.discountBanner || loadedData?.discount_banner) }
-        : DEFAULT_DISCOUNT_BANNER,
+      discountBanner: activeDiscountBanner,
       delivery_fee: loadedData?.delivery_fee !== undefined ? Number(loadedData.delivery_fee) : 0,
       free_delivery_above: loadedData?.free_delivery_above !== undefined ? Number(loadedData.free_delivery_above) : 0,
       shipping_estimated_days: loadedData?.shipping_estimated_days || DEFAULT_SETTINGS.shipping_estimated_days,
@@ -348,9 +395,26 @@ export const SettingsProvider = ({ children }) => {
             heroSlides: Array.isArray(incoming.heroSlides || incoming.hero_slides) && (incoming.heroSlides || incoming.hero_slides).length > 0
               ? (incoming.heroSlides || incoming.hero_slides)
               : prev.heroSlides,
-            discountBanner: (incoming.discountBanner || incoming.discount_banner)
-              ? { ...prev.discountBanner, ...(incoming.discountBanner || incoming.discount_banner) }
-              : prev.discountBanner,
+            discountBanner: (() => {
+              const incBanner = incoming.discountBanner || incoming.discount_banner;
+              if (!incBanner) return prev.discountBanner;
+              const isAct = incBanner.isActive !== undefined 
+                ? Boolean(incBanner.isActive) 
+                : (incBanner.is_active !== undefined ? Boolean(incBanner.is_active) : true);
+              return {
+                ...DEFAULT_DISCOUNT_BANNER,
+                ...prev.discountBanner,
+                ...incBanner,
+                isActive: isAct,
+                is_active: isAct,
+                code: (incBanner.code || prev.discountBanner?.code || 'KALA30').trim().toUpperCase(),
+                discountPercentage: Number(incBanner.discountPercentage !== undefined ? incBanner.discountPercentage : (incBanner.discount_percentage || prev.discountBanner?.discountPercentage || 30)) || 30,
+                targetAudience: incBanner.targetAudience || incBanner.target_audience || prev.discountBanner?.targetAudience || 'all',
+                selectedUserEmails: Array.isArray(incBanner.selectedUserEmails) 
+                  ? incBanner.selectedUserEmails 
+                  : (Array.isArray(incBanner.selected_user_emails) ? incBanner.selected_user_emails : (prev.discountBanner?.selectedUserEmails || []))
+              };
+            })(),
             categoryBanners: (incoming.categoryBanners || incoming.category_banners)
               ? { ...prev.categoryBanners, ...(incoming.categoryBanners || incoming.category_banners) }
               : prev.categoryBanners,

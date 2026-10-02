@@ -123,37 +123,104 @@ exports.spinWheel = async (req, res) => {
 exports.validateCoupon = async (req, res) => {
   try {
     const { code } = req.body;
-    const userId = req.user.id;
+    const user = req.user || null;
+    const userId = user?.id || null;
 
     if (!code) {
       return res.status(400).json({ error: 'Coupon code is required' });
     }
 
-    const { data: coupon, error: couponError } = await supabase
+    const cleanCode = code.trim().toUpperCase();
+
+    // 1. Check against the Storefront Discount Banner Promotional Code
+    try {
+      const { readSettings } = require('./settingsController');
+      const settings = readSettings();
+      const banner = settings?.discountBanner;
+
+      if (banner && (banner.code || '').trim().toUpperCase() === cleanCode) {
+        const isBannerActive = banner.isActive !== undefined ? Boolean(banner.isActive) : (banner.is_active !== undefined ? Boolean(banner.is_active) : true);
+        
+        if (!isBannerActive) {
+          return res.status(400).json({ error: 'This discount promotional code is currently inactive or has ended.' });
+        }
+
+        const audience = banner.targetAudience || banner.target_audience || 'all';
+
+        if (audience === 'logged_in' && !user) {
+          return res.status(401).json({ error: 'Please sign in to your account to redeem this exclusive member discount code.' });
+        }
+
+        if (audience === 'new_users') {
+          if (user) {
+            const { count } = await supabase
+              .from('orders')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', user.id);
+            if (count && count > 0) {
+              return res.status(403).json({ error: 'This promotional code is reserved exclusively for first-time buyers on their first order.' });
+            }
+          }
+        }
+
+        if (audience === 'specific') {
+          const rawEmails = banner.selectedUserEmails || banner.selected_user_emails || [];
+          const emailList = (Array.isArray(rawEmails) ? rawEmails : String(rawEmails).split(',')).map(e => e.trim().toLowerCase());
+          
+          if (!user || !emailList.includes((user.email || '').toLowerCase())) {
+            return res.status(403).json({ error: 'This exclusive discount code is valid only for selected accounts.' });
+          }
+        }
+
+        const discountPct = Number(banner.discountPercentage !== undefined ? banner.discountPercentage : banner.discount_percentage) || 30;
+        return res.json({
+          success: true,
+          discount_type: 'percentage',
+          discount_value: discountPct,
+          code: banner.code,
+          message: `${discountPct}% discount code ${banner.code} applied successfully!`
+        });
+      }
+    } catch (bannerErr) {
+      console.warn('Discount banner promo check warning:', bannerErr.message);
+    }
+
+    // 2. Check user spin & reward coupons in database
+    let query = supabase
       .from('coupons')
       .select('*')
-      .eq('code', code.trim().toUpperCase())
-      .eq('is_used', false)
-      .single();
+      .eq('code', cleanCode)
+      .eq('is_used', false);
+
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data: coupon, error: couponError } = await query.single();
 
     if (couponError || !coupon) {
       return res.status(404).json({ error: 'Invalid or expired coupon code' });
     }
 
-    // Check if it belongs to the user
-    if (coupon.user_id !== userId) {
-      return res.status(403).json({ error: 'This coupon code does not belong to you' });
+    // Check if it belongs to another user
+    if (coupon.user_id && userId && coupon.user_id !== userId) {
+      return res.status(403).json({ error: 'This coupon code does not belong to your account' });
+    }
+
+    if (coupon.user_id && !userId) {
+      return res.status(401).json({ error: 'Please sign in to redeem this personal coupon.' });
     }
 
     // Check expiry
-    if (new Date(coupon.expiry_date) < new Date()) {
+    if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
       return res.status(400).json({ error: 'Coupon code has expired' });
     }
 
     res.json({
       success: true,
       discount_type: coupon.discount_type,
-      discount_value: coupon.discount_value
+      discount_value: coupon.discount_value,
+      code: coupon.code
     });
 
   } catch (error) {
