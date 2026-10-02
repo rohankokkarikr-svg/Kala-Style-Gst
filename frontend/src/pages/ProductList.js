@@ -16,7 +16,8 @@ import {
   HiChevronDown,
   HiShieldCheck,
   HiVolumeUp,
-  HiVolumeOff
+  HiVolumeOff,
+  HiArrowRight
 } from 'react-icons/hi';
 
 export default function ProductList() {
@@ -359,130 +360,144 @@ export default function ProductList() {
         </div>
       </div>
 
-      {/* Category Hero Banner Showcase */}
-      <div className="relative bg-gradient-to-b from-dark-950 via-dark-900 to-dark-950 border-b border-dark-700/80 overflow-hidden">
-        {/* Subtle decorative gold ambient glow at top */}
-        <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-gold-400/60 to-transparent pointer-events-none" />
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gold-500/5 blur-3xl pointer-events-none rounded-full" />
+      {/* Official Hero Section Video Ad Banner */}
+      <div className="relative w-full overflow-hidden bg-black select-none border-b border-dark-700 min-h-[420px] sm:min-h-[460px] md:min-h-[500px] flex items-center">
+        {/* Background Video / Media Canvas */}
+        <div className="absolute inset-0 w-full h-full overflow-hidden">
+          {activeVideoUrl ? (
+            <video
+              key={`banner-ad-video-${activeVideoUrl}`}
+              src={activeVideoUrl}
+              poster={activePosterImage}
+              autoPlay
+              loop
+              muted={isMuted}
+              playsInline
+              className="w-full h-full object-cover object-center"
+            />
+          ) : (
+            <img
+              src={activePosterImage}
+              alt={currentCategoryInfo ? currentCategoryInfo.name : "Indian Handicrafts"}
+              className="w-full h-full object-cover object-center"
+              onError={(e) => {
+                e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
+              }}
+            />
+          )}
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 lg:py-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
+          {/* Cinematic Commercial Gradient Overlays (Never blocks the video on the right, keeps typography 100% crisp on the left) */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 sm:via-black/55 to-black/20 md:to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-dark-950 via-transparent to-black/50 pointer-events-none" />
+
+          {/* Luxury gold shimmer highlight lines */}
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-gold-400 to-transparent pointer-events-none" />
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold-500/30 to-transparent pointer-events-none" />
+        </div>
+
+        {/* Top-Right Sponsored/Ad Tag Pill */}
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 pointer-events-none">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white/80 text-[10px] sm:text-xs font-semibold tracking-widest uppercase shadow-lg">
+            <span>FEATURED CAMPAIGN</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-gold-400" />
+          </span>
+        </div>
+
+        {/* Bottom-Right Audio Control Pill */}
+        {activeVideoUrl && (
+          <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-20">
+            <button
+              type="button"
+              onClick={() => setIsMuted(prev => !prev)}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/60 hover:bg-black/90 border border-white/20 hover:border-gold-400 text-white text-xs font-medium backdrop-blur-md transition-all shadow-xl group cursor-pointer"
+              title={isMuted ? "Unmute Audio" : "Mute Audio"}
+            >
+              {isMuted ? (
+                <>
+                  <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover:scale-110 transition-transform" />
+                  <span className="hidden sm:inline">Unmute Audio</span>
+                </>
+              ) : (
+                <>
+                  <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover:scale-110 transition-transform" />
+                  <span className="text-gold-300 font-semibold">Sound On</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Banner Content Container (Clean, Elegant Editorial Ad Typography floating over the cinema gradient) */}
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-10 sm:py-14 md:py-16">
+          <div className="max-w-2xl text-left">
             
-            {/* 1. LEFT COLUMN: Clean, Professional Craft & Taxonomy Information (5 Columns) */}
-            <div className="lg:col-span-5 space-y-4 text-left z-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/30 text-gold-400 text-xs font-semibold uppercase tracking-widest">
-                <span>🇮🇳</span>
-                <span>Master Artisans & Heritage</span>
-                <HiSparkles className="w-3.5 h-3.5 text-gold-400" />
-              </div>
-
-              <div>
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold text-white tracking-tight leading-tight">
-                  {currentCategoryInfo ? (
-                    <>
-                      {currentCategoryInfo.name}
-                      {activeSubcategory && activeSubcategory !== 'all' && (
-                        <span className="block text-gold-400 text-xl sm:text-2xl font-light mt-1">
-                          / {activeSubcategory}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      Explore <span className="text-gold-400">Indian Handicrafts</span>
-                    </>
-                  )}
-                </h1>
-
-                <p className="text-gray-300 text-sm sm:text-base mt-3 leading-relaxed max-w-lg font-light">
-                  {currentCategoryInfo
-                    ? (currentCategoryInfo.shortDesc || currentCategoryInfo.description || categoryBannerSettings?.subtitle)
-                    : (settings?.categoryBanners?.all?.subtitle || 'Browse handloom textiles, home décor, brass jewelry, pottery, and folk art handcrafted with generations of heritage.')
-                  }
-                </p>
-              </div>
-
-              {/* Trust & Craft Badges */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 pt-1 text-xs">
-                <span className="px-3 py-1 rounded-full bg-dark-800 border border-gold-500/30 text-gold-400 font-semibold shadow-sm">
-                  {filteredAndSortedProducts.length} Artisanal Products
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-800 border border-dark-600 text-gray-200 shadow-sm">
-                  <HiShieldCheck className="w-3.5 h-3.5 text-green-400" /> 100% Certified Authentic
-                </span>
-                <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-800 border border-dark-600 text-gray-300 shadow-sm">
-                  Direct from Artisans
-                </span>
-              </div>
+            {/* Ad Campaign Header Badge */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gold-500/20 border border-gold-400/60 text-gold-300 text-xs font-bold uppercase tracking-[0.2em] backdrop-blur-md shadow-lg shadow-gold-500/10 mb-4 sm:mb-5">
+              <span>🇮🇳</span>
+              <span>Master Artisans & Heritage</span>
+              <HiSparkles className="w-3.5 h-3.5 text-gold-400 ml-0.5" />
             </div>
 
-            {/* 2. RIGHT COLUMN: 100% Clear, Unobstructed Cinematic Video Showcase (7 Columns) */}
-            <div className="lg:col-span-7">
-              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[16/9] sm:aspect-[16/8.5] md:aspect-[16/8] lg:aspect-[16/9] bg-dark-950 border border-gold-500/30 shadow-2xl shadow-black/80 group">
-                {activeVideoUrl ? (
-                  <video
-                    key={`showcase-vid-${activeVideoUrl}`}
-                    src={activeVideoUrl}
-                    poster={activePosterImage}
-                    autoPlay
-                    loop
-                    muted={isMuted}
-                    playsInline
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
-                  />
-                ) : (
-                  <img
-                    src={activePosterImage}
-                    alt={currentCategoryInfo ? currentCategoryInfo.name : "Indian Handicrafts"}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
-                    onError={(e) => {
-                      e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
-                    }}
-                  />
-                )}
-
-                {/* Subtle luxury edge vignette */}
-                <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none rounded-2xl sm:rounded-3xl" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 pointer-events-none" />
-
-                {/* Top Badge: Live Video indicator */}
-                <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-20 flex items-center gap-2">
-                  {activeVideoUrl ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-950/80 backdrop-blur-md border border-red-500/40 text-white text-[11px] font-bold shadow-lg">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block" />
-                      <span className="uppercase tracking-wider">Artisan Workshop Live</span>
+            {/* Campaign Headline */}
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-serif font-bold text-white tracking-tight leading-[1.12] drop-shadow-2xl">
+              {currentCategoryInfo ? (
+                <>
+                  {currentCategoryInfo.name}
+                  {activeSubcategory && activeSubcategory !== 'all' ? (
+                    <span className="block text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-400 to-amber-200 text-2xl sm:text-4xl lg:text-5xl font-light mt-1.5 drop-shadow">
+                      / {activeSubcategory}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-950/80 backdrop-blur-md border border-dark-600 text-gray-300 text-[11px] font-medium shadow-lg">
-                      <span>Artisan Heritage Gallery</span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-400 to-amber-200 ml-2">
+                      Collection
                     </span>
                   )}
-                </div>
+                </>
+              ) : (
+                <>
+                  Explore <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-400 to-amber-200">Indian Handicrafts</span>
+                </>
+              )}
+            </h1>
 
-                {/* Bottom Sound & Control Pill */}
-                {activeVideoUrl && (
-                  <div className="absolute bottom-3 sm:bottom-4 right-3 sm:right-4 z-20 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsMuted(prev => !prev)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-dark-950/85 hover:bg-dark-900 border border-gold-500/40 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-xl hover:border-gold-400 group/btn"
-                      title={isMuted ? "Unmute Audio" : "Mute Audio"}
-                    >
-                      {isMuted ? (
-                        <>
-                          <HiVolumeOff className="w-4 h-4 text-gold-400 group-hover/btn:scale-110 transition-transform" />
-                          <span>Sound Off</span>
-                        </>
-                      ) : (
-                        <>
-                          <HiVolumeUp className="w-4 h-4 text-gold-400 animate-pulse group-hover/btn:scale-110 transition-transform" />
-                          <span className="text-gold-300">Sound On</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
+            {/* Compelling Ad Tagline */}
+            <p className="text-gray-200 text-sm sm:text-base md:text-lg mt-4 leading-relaxed max-w-xl font-light drop-shadow-lg">
+              {currentCategoryInfo
+                ? (currentCategoryInfo.shortDesc || currentCategoryInfo.description || categoryBannerSettings?.subtitle)
+                : (settings?.categoryBanners?.all?.subtitle || 'Generations of master heritage hand-woven and crafted into timeless luxury. 100% certified authentic directly from artisan clusters.')
+              }
+            </p>
+
+            {/* Ad Feature Trust Pills */}
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-6 text-xs sm:text-sm font-medium">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-gold-500/40 text-gold-300 shadow-md">
+                <HiShieldCheck className="w-4 h-4 text-green-400" /> 100% Certified Authentic
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-gray-200 shadow-md">
+                🏷️ Direct Artisan Pricing
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-gray-200 shadow-md">
+                🚚 Free Express Shipping
+              </span>
+            </div>
+
+            {/* Ad Action Row (CTA Button) */}
+            <div className="flex flex-wrap items-center gap-4 sm:gap-5 mt-7 sm:mt-8">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('products-catalog-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="inline-flex items-center gap-2.5 px-7 py-3 rounded-full bg-gradient-to-r from-gold-500 via-gold-400 to-gold-600 hover:from-gold-400 hover:to-gold-300 text-dark-950 font-bold text-sm tracking-wide shadow-xl shadow-gold-500/25 hover:shadow-gold-500/40 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Shop Collection</span>
+                <HiArrowRight className="w-4 h-4 text-dark-950" />
+              </button>
+              
+              <span className="text-gray-300 text-xs sm:text-sm font-medium">
+                <strong className="text-gold-400 font-semibold">{filteredAndSortedProducts.length}</strong> items curated
+              </span>
             </div>
 
           </div>
@@ -490,7 +505,7 @@ export default function ProductList() {
       </div>
 
       {/* Main Content Area */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
+      <div id="products-catalog-section" className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
         {/* Results count & Sort Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-dark-800 p-4 rounded-2xl border border-dark-700 mb-6">
           <div className="flex items-center gap-3">
