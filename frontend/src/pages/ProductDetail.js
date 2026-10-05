@@ -195,7 +195,7 @@ export default function ProductDetail() {
   const totalReviewsCount = productReviews.length;
   const avgRating = totalReviewsCount > 0
     ? (productReviews.reduce((s, r) => s + Number(r.rating || 5), 0) / totalReviewsCount).toFixed(1)
-    : (product?.rating ? Number(product.rating).toFixed(1) : '5.0');
+    : (product?.rating && Number(product?.reviews_count) > 0 ? Number(product.rating).toFixed(1) : null);
 
   const ratingCounts = useMemo(() => {
     const c = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -205,7 +205,7 @@ export default function ProductDetail() {
 
   const ratingBars = [5,4,3,2,1].map(stars => {
     const count = ratingCounts[stars] || 0;
-    const pct = totalReviewsCount > 0 ? Math.round((count / totalReviewsCount) * 100) : (stars === 5 ? 100 : 0);
+    const pct = totalReviewsCount > 0 ? Math.round((count / totalReviewsCount) * 100) : 0;
     return { stars, pct, count };
   });
 
@@ -458,13 +458,23 @@ export default function ProductDetail() {
 
             {/* Rating row */}
             <div className="flex items-center gap-3 flex-wrap">
-              <StarRow rating={avgRating} />
-              <span className="text-sm font-bold text-white">{avgRating}</span>
-              <button type="button"
-                onClick={() => reviewsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="text-xs text-gold-400 hover:text-gold-300 underline cursor-pointer">
-                ({totalReviewsCount} review{totalReviewsCount !== 1 ? 's' : ''})
-              </button>
+              {avgRating ? (
+                <>
+                  <StarRow rating={avgRating} />
+                  <span className="text-sm font-bold text-white">{avgRating}</span>
+                  <button type="button"
+                    onClick={() => reviewsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="text-xs text-gold-400 hover:text-gold-300 underline cursor-pointer">
+                    ({totalReviewsCount || product.reviews_count || 0} review{(totalReviewsCount || product.reviews_count) !== 1 ? 's' : ''})
+                  </button>
+                </>
+              ) : (
+                <button type="button"
+                  onClick={() => setReviewModalOpen(true)}
+                  className="text-xs text-gold-400 hover:text-gold-300 underline cursor-pointer">
+                  No reviews yet · Be the first to review
+                </button>
+              )}
               <span className="text-dark-600">·</span>
               <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
                 <HiCheckCircle className="w-3.5 h-3.5" /> 100% Authentic Handcraft
@@ -714,11 +724,15 @@ export default function ProductDetail() {
           <div className="md:col-span-4">
             <div className="p-6 rounded-2xl bg-dark-800/70 border border-dark-700 sticky top-24">
               <div className="text-center mb-5">
-                <div className="text-5xl font-bold text-white">{avgRating}</div>
-                <div className="flex items-center justify-center mt-2 mb-1">
-                  <StarRow rating={avgRating} size="w-5 h-5" />
-                </div>
-                <p className="text-xs text-gray-500">Based on {totalReviewsCount} verified review{totalReviewsCount !== 1 ? 's' : ''}</p>
+                <div className="text-4xl font-bold text-white">{avgRating || '—'}</div>
+                {avgRating ? (
+                  <div className="flex items-center justify-center mt-2 mb-1">
+                    <StarRow rating={avgRating} size="w-5 h-5" />
+                  </div>
+                ) : (
+                  <p className="text-xs text-gold-400 mt-2">No reviews yet</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">Based on {totalReviewsCount} customer review{totalReviewsCount !== 1 ? 's' : ''}</p>
               </div>
               <div className="space-y-2">
                 {ratingBars.map(b => (
@@ -751,16 +765,22 @@ export default function ProductDetail() {
                         {(rev.customer_name || 'C')[0]}
                       </div>
                       <div>
-                        <h4 className="font-semibold text-white text-sm">{rev.customer_name || 'Verified Customer'}</h4>
-                        <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
-                          <HiCheckCircle className="w-3 h-3" /> Verified Buyer
-                        </span>
+                        <h4 className="font-semibold text-white text-sm">{rev.customer_name || 'Customer'}</h4>
+                        {rev.is_verified_buyer ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                            <HiBadgeCheck className="w-3 h-3" /> Verified Buyer
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
+                            Community Reviewer
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <StarRow rating={Math.min(5, Math.max(1, Number(rev.rating) || 5))} size="w-4 h-4" />
                       <span className="text-[10px] text-gray-500">
-                        {rev.created_at ? new Date(rev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Verified Review'}
+                        {rev.created_at ? new Date(rev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                       </span>
                     </div>
                   </div>

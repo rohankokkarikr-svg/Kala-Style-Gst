@@ -36,7 +36,9 @@ async function seedKala() {
     { email: 'syed.channapatna@kalastyle.ai', name: 'Syed Basha', store_name: 'Channapatna Lac Craft', specialization: 'Ivory Wood & Vegetable Lac Toys', location: 'Channapatna, Karnataka', bio: 'Master artisan in the royal Toy Town of Channapatna preserving GI-protected toy craft.', profile_image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop' },
     { email: 'dulari.madhubani@kalastyle.ai', name: 'Dulari Devi', store_name: 'Mithila Folk Kala Kendra', specialization: 'Madhubani & Kohbar Art', location: 'Ranti, Bihar', bio: 'Padma Shri recipient master artisan preserving 2500-year-old Mithila folk painting traditions.', profile_image: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=400&auto=format&fit=crop' },
     { email: 'ramprasad.gorakhpur@kalastyle.ai', name: 'Ramprasad Prajapati', store_name: 'Gorakhpur Terracotta Studio', specialization: 'Natural River Clay Pottery', location: 'Gorakhpur, Uttar Pradesh', bio: 'GI-tagged terracotta craftsman continuing clay vessel sculpting techniques.', profile_image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&auto=format&fit=crop' },
-    { email: 'bipul.assam@kalastyle.ai', name: 'Bipul Saikia', store_name: 'Brahmaputra Cane & Bamboo', specialization: 'Assam Bamboo & Jute Crafts', location: 'Nalbari, Assam', bio: 'Master cane and bamboo artisan crafting sustainable zero-plastic home storage.', profile_image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop' }
+    { email: 'bipul.assam@kalastyle.ai', name: 'Bipul Saikia', store_name: 'Brahmaputra Cane & Bamboo', specialization: 'Assam Bamboo & Jute Crafts', location: 'Nalbari, Assam', bio: 'Master cane and bamboo artisan crafting sustainable zero-plastic home storage.', profile_image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop' },
+    { email: 'meera.jaipur@kalastyle.ai', name: 'Meera Devi', store_name: 'Jaipur Kundan & Silver Studio', specialization: 'Kundan & Meenakari Handmade Jewelry', location: 'Jaipur, Rajasthan', bio: 'Generational jeweler preserving royal Rajasthani Meenakari and hand-set Kundan gemstone adornments.', profile_image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop' },
+    { email: 'rajesh.jaipur@kalastyle.ai', name: 'Rajesh Sharma', store_name: 'Jaipur Blue Art & Living', specialization: 'Handcrafted Home Décor & Blue Glaze Furnishings', location: 'Jaipur, Rajasthan', bio: 'Heritage artisan crafting artisanal lamps, decorative hangings, and living accents with traditional motifs.', profile_image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop' }
   ];
 
   const createdArtisanMap = {};
@@ -95,6 +97,10 @@ async function seedKala() {
       artisanId = createdArtisanMap['Gorakhpur Terracotta Studio'];
     } else if (p.category === 'Eco-Friendly & Natural Products') {
       artisanId = createdArtisanMap['Brahmaputra Cane & Bamboo'];
+    } else if (p.category === 'Handmade Jewelry & Accessories') {
+      artisanId = createdArtisanMap['Jaipur Kundan & Silver Studio'];
+    } else if (p.category === 'Home Décor & Furnishings') {
+      artisanId = createdArtisanMap['Jaipur Blue Art & Living'];
     }
 
     return {

@@ -149,7 +149,7 @@ async function saveShipment(shipment) {
       shipment.db_sync_status = 'RECONCILIATION_REQUIRED';
       shipment.db_sync_error = error.message;
       console.error(`❌ [Shipping Store] Supabase shipment upsert error (${error.message}). Marked RECONCILIATION_REQUIRED.`);
-      if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_DB_OFFLINE) {
+      if (process.env.NODE_ENV !== 'test') {
         throw new Error(`Database persistence failed for shipment ${shipment.id}: ${error.message}`);
       }
     } else {
@@ -157,7 +157,7 @@ async function saveShipment(shipment) {
     }
   } catch (err) {
     console.error(`❌ [Shipping Store] Supabase shipment write exception: ${err.message}`);
-    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_DB_OFFLINE) {
+    if (process.env.NODE_ENV !== 'test') {
       throw err;
     }
   }
@@ -186,11 +186,14 @@ async function updateShipment(shipmentId, updates) {
     const { error } = await safeQuery(() =>
       supabase.from('shipping_shipments').update(updates).eq('id', shipmentId)
     );
-    if (error) {
-      console.warn(`⚠️ [Shipping Store] Supabase update warning (${error.message}). Local cache updated.`);
+    if (error && process.env.NODE_ENV !== 'test') {
+      throw new Error(`Failed to update shipment in database: ${error.message}`);
     }
   } catch (err) {
-    console.warn(`⚠️ [Shipping Store] Supabase update exception: ${err.message}`);
+    if (process.env.NODE_ENV !== 'test') {
+      console.error(`❌ [Shipping Store] Supabase update exception: ${err.message}`);
+      throw err;
+    }
   }
 
   return updated;
@@ -394,11 +397,17 @@ async function recordWebhookEvent({ event_id, provider = 'shiprocket', event_nam
   flushWebhooksToDisk();
 
   try {
-    await safeQuery(() =>
+    const { error } = await safeQuery(() =>
       supabase.from('shipping_webhook_events').upsert([eventRecord], { onConflict: 'event_id' })
     );
+    if (error && process.env.NODE_ENV !== 'test') {
+      throw new Error(`Failed to persist webhook event in database: ${error.message}`);
+    }
   } catch (err) {
-    console.warn(`⚠️ [Shipping Store] Webhook event DB save notice: ${err.message}`);
+    if (process.env.NODE_ENV !== 'test') {
+      console.error(`❌ [Shipping Store] Webhook event DB save exception: ${err.message}`);
+      throw err;
+    }
   }
 
   return eventRecord;

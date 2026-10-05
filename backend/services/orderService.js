@@ -141,14 +141,11 @@ exports.createMasterOrder = async ({
   const deliveryFee = await calculateDeliveryFee(subtotal);
   const settings = await getEcomSettings();
 
-  // 3. COD validation
+  // 3. COD validation (No maximum limit — users can place COD orders of any amount)
   if (paymentMethod === 'cod') {
     if (!settings.cod_enabled) return { error: 'Cash on Delivery is currently unavailable' };
-    if (subtotal < settings.cod_min_order_value) {
+    if (settings.cod_min_order_value && subtotal < settings.cod_min_order_value) {
       return { error: `Minimum order value for COD is ₹${settings.cod_min_order_value}` };
-    }
-    if (subtotal > settings.cod_max_order_value) {
-      return { error: `Maximum order value for COD is ₹${settings.cod_max_order_value}` };
     }
   }
 
@@ -643,7 +640,7 @@ exports.confirmCODCollection = async (orderIdOrNumber, confirmedBy = 'admin', op
         items: orderItems || [],
       };
 
-      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
       await sendOrderWhatsappNotification(targetAdminPhone, codPaidOrder, customerName);
       console.log(`[confirmCODCollection] ✅ Real-time COD Paid WhatsApp alert dispatched for order ${order.id}`);
     } catch (waErr) {

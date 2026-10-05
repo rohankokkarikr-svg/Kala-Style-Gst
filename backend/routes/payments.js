@@ -32,7 +32,12 @@ const { broadcastSync } = require('../utils/realtime');
  * Recalculates all cart prices server-side, creates master & artisan sub-orders in DB,
  * initializes Razorpay order, and returns public payment details.
  */
-router.post('/create-order', protect, async (req, res) => {
+/**
+ * Create Order Handler
+ * Calculates all cart prices server-side, validates inventory & customer data,
+ * initializes Razorpay order with server-calculated price, and records internal order.
+ */
+const createOrderHandler = async (req, res) => {
   try {
     const {
       items,
@@ -45,7 +50,11 @@ router.post('/create-order', protect, async (req, res) => {
       coupon_code,
       live_location_url,
     } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required to create an order' });
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Order items are required' });
@@ -129,54 +138,97 @@ router.post('/create-order', protect, async (req, res) => {
     console.error('[create-order] Error:', err.message);
     res.status(500).json({ error: 'Internal server error while creating payment order' });
   }
-});
+};
 
-// ─── 2. PAYMENT VERIFICATION (Client-side callback verification) ──────────────
 /**
- * POST /api/payments/verify
- * Authenticated customer endpoint called right after customer completes checkout popup.
- * Verifies HMAC-SHA256 signature server-side using timing-safe comparison.
+ * Verify Payment Handler
+ * Confirms authenticated buyer, internal order, payment-to-order mapping,
+ * exact amount & currency, HMAC-SHA256 signature, and idempotency.
  */
-router.post('/verify', protect, async (req, res) => {
+const verifyPaymentHandler = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderId } = req.body;
-
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: 'Missing payment verification parameters' });
-    }
-
-    // 1. Verify HMAC-SHA256 signature using timingSafeEqual
-    const isValid = verifyRazorpaySignature(
+    const {
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
+      orderId,
+      order_id,
+      payment_id,
+      signature
+    } = req.body;
+
+    const finalOrderId = razorpay_order_id || order_id;
+    const finalPaymentId = razorpay_payment_id || payment_id;
+    const finalSignature = razorpay_signature || signature;
+    const targetInternalOrderId = orderId || req.body.order_id_internal;
+
+    if (!finalOrderId || !finalPaymentId || !finalSignature) {
+      return res.status(400).json({
+        error: 'Missing payment verification parameters: razorpay_order_id, razorpay_payment_id, and razorpay_signature are required'
+      });
+    }
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Authentication required to verify payment' });
+    }
+
+    // 1. Verify HMAC-SHA256 signature using timing-safe comparison
+    const isValid = verifyRazorpaySignature(
+      finalOrderId,
+      finalPaymentId,
+      finalSignature
     );
 
     if (!isValid) {
-      console.warn(`[verify] Invalid payment signature for order: ${orderId}`);
+      console.warn(`[verify] Invalid payment signature for order: ${targetInternalOrderId || finalOrderId}`);
       return res.status(400).json({ error: 'Payment signature verification failed' });
     }
 
-    // 2. Fetch order to verify ownership
+    // 2. Fetch order to verify ownership and internal record
     let query = supabase.from('orders').select('*');
-    if (orderId) {
-      query = query.eq('id', orderId);
+    if (targetInternalOrderId) {
+      query = query.eq('id', targetInternalOrderId);
     } else {
-      query = query.eq('razorpay_order_id', razorpay_order_id);
+      query = query.eq('razorpay_order_id', finalOrderId);
     }
 
     const { data: order, error: orderErr } = await query.maybeSingle();
 
     if (orderErr || !order) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: 'Target order not found' });
     }
 
-    // Verify user authorization (must be buyer or admin)
+    // Security check: Confirm authenticated buyer (must be buyer or admin)
     if (order.user_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized to verify this order payment' });
+      return res.status(403).json({ error: 'Unauthorized: You are not authorized to verify payment for this order' });
     }
 
-    // Idempotency check: if already verified and marked paid, return success
+    // Security check: Confirm payment-to-order mapping
+    if (order.razorpay_order_id && order.razorpay_order_id !== finalOrderId) {
+      return res.status(400).json({ error: 'Payment signature does not correspond to target order' });
+    }
+
+    // Security check: Confirm exact amount and currency against internal order
+    const expectedPaise = Math.max(100, Math.round(Number(order.total_amount) * 100));
+    try {
+      const paymentInfo = await getPaymentDetails(finalPaymentId);
+      if (paymentInfo && paymentInfo.success && paymentInfo.payment) {
+        const p = paymentInfo.payment;
+        if (p.order_id && p.order_id !== finalOrderId) {
+          return res.status(400).json({ error: 'Payment does not correspond to specified Razorpay order' });
+        }
+        if (p.amount !== undefined && Number(p.amount) !== expectedPaise) {
+          return res.status(400).json({ error: `Payment amount mismatch: expected ${expectedPaise} paise, received ${p.amount} paise` });
+        }
+        if (p.currency && p.currency.toUpperCase() !== 'INR') {
+          return res.status(400).json({ error: `Payment currency mismatch: expected INR, received ${p.currency}` });
+        }
+      }
+    } catch (rzpErr) {
+      console.warn('[verify] Payment details lookup warning:', rzpErr.message);
+    }
+
+    // Idempotency check: if already verified and marked paid, return success immediately
     if (order.payment_status === 'paid') {
       return res.json({
         success: true,
@@ -195,9 +247,9 @@ router.post('/verify', protect, async (req, res) => {
         payment_status: 'paid',
         order_status: 'confirmed',
         status: 'confirmed',
-        razorpay_order_id,
-        razorpay_payment_id,
-        razorpay_signature,
+        razorpay_order_id: finalOrderId,
+        razorpay_payment_id: finalPaymentId,
+        razorpay_signature: finalSignature,
         updated_at: now,
       })
       .eq('id', order.id);
@@ -206,8 +258,8 @@ router.post('/verify', protect, async (req, res) => {
     await supabase
       .from('payments')
       .update({
-        provider_order_id: razorpay_order_id,
-        provider_payment_id: razorpay_payment_id,
+        provider_order_id: finalOrderId,
+        provider_payment_id: finalPaymentId,
         status: 'paid',
         signature_verified: true,
         paid_at: now,
@@ -228,7 +280,7 @@ router.post('/verify', protect, async (req, res) => {
     broadcastSync('PAYMENTS_UPDATED', {
       orderId: order.id,
       status: 'paid',
-      razorpay_payment_id,
+      razorpay_payment_id: finalPaymentId,
     });
     broadcastSync('ORDERS_UPDATED', {
       orderId: order.id,
@@ -242,7 +294,7 @@ router.post('/verify', protect, async (req, res) => {
       const { emitEvent } = require('../ai/aiEventBus');
       emitEvent('PAYMENT_UPDATED', 'payment', order.id, {
         status: 'paid',
-        payment_id: razorpay_payment_id,
+        payment_id: finalPaymentId,
         order_number: order.order_number,
       });
     } catch (e) { }
@@ -264,7 +316,7 @@ router.post('/verify', protect, async (req, res) => {
         .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
         .eq('id', order.id)
         .single();
-      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+      const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
       await sendOrderWhatsappNotification(
         targetAdminPhone,
         { ...(fullOrder || order), payment_status: 'paid' },
@@ -278,12 +330,18 @@ router.post('/verify', protect, async (req, res) => {
       success: true,
       message: 'Payment verified successfully',
       orderId: order.id,
+      order_id: finalOrderId,
+      payment_id: finalPaymentId,
     });
   } catch (err) {
     console.error('[verify] Verification exception:', err.message);
     res.status(500).json({ error: 'Payment verification error: ' + err.message });
   }
-});
+};
+
+router.post('/create-order', protect, createOrderHandler);
+router.post('/verify', protect, verifyPaymentHandler);
+router.post('/verify-payment', protect, verifyPaymentHandler);
 
 // ─── 3. WEBHOOK (Idempotent Server-to-Server Event Processing) ────────────────
 /**
@@ -394,7 +452,7 @@ router.post('/webhook', async (req, res) => {
               .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
               .eq('id', order.id)
               .single();
-            const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+            const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
             await sendOrderWhatsappNotification(
               targetAdminPhone,
               { ...(fullOrder || order), payment_status: 'paid', razorpay_payment_id: razorpayPaymentId },
@@ -714,161 +772,14 @@ router.post('/initialize-order', protect, async (req, res) => {
   }
 });
 
-// ─── 6. DIRECT / STANDALONE RAZORPAY ENDPOINTS ─────────────────────────────
-/**
- * Direct Razorpay order creation
- * Request: { amount (paise), currency, receipt, notes }
- * Return: { order_id, amount, currency, key_id }
- * Validates: amount >= 100 paise
- */
-const createOrderDirect = async (req, res) => {
-  try {
-    const { amount, currency = 'INR', receipt, notes } = req.body;
-
-    if (!amount) {
-      return res.status(400).json({ error: 'amount is required (in paise)' });
-    }
-
-    const amountInPaise = Math.round(Number(amount));
-    if (isNaN(amountInPaise) || amountInPaise < 100) {
-      return res.status(400).json({ error: 'Amount must be at least 100 paise (₹1)' });
-    }
-
-    const rzpResult = await createRazorpayOrder(
-      amountInPaise,
-      receipt || `rcpt_${Date.now()}`,
-      notes || {},
-      true // isPaise = true
-    );
-
-    if (!rzpResult.success) {
-      console.error('[create-order-direct] Razorpay error:', rzpResult.error);
-      return res.status(500).json({ error: rzpResult.error || 'Failed to create Razorpay order' });
-    }
-
-    const order = rzpResult.order;
-    res.status(200).json({
-      order_id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      key_id: rzpResult.key_id || process.env.RAZORPAY_KEY_ID || '',
-    });
-  } catch (err) {
-    console.error('[create-order-direct] Exception:', err.message);
-    res.status(500).json({ error: 'Internal server error while creating Razorpay order' });
-  }
-};
-
-/**
- * Direct Razorpay signature verification
- * Request: { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderId }
- * Algorithm: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
- * Returns success only if signatures match
- */
-const verifyPaymentDirect = async (req, res) => {
-  try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      order_id,
-      payment_id,
-      signature,
-      orderId,
-    } = req.body;
-
-    const finalOrderId = razorpay_order_id || order_id;
-    const finalPaymentId = razorpay_payment_id || payment_id;
-    const finalSignature = razorpay_signature || signature;
-
-    if (!finalOrderId || !finalPaymentId || !finalSignature) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required parameters: razorpay_order_id, razorpay_payment_id, and razorpay_signature are required',
-      });
-    }
-
-    const isValid = verifyRazorpaySignature(finalOrderId, finalPaymentId, finalSignature);
-
-    if (!isValid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Signature verification failed',
-      });
-    }
-
-    // If orderId is provided, verify order mapping before updating
-    const targetOrderId = orderId || req.body.order_id_internal;
-    if (targetOrderId) {
-      try {
-        const { data: matchedOrder } = await supabase
-          .from('orders')
-          .select('id, razorpay_order_id, payment_status')
-          .eq('id', targetOrderId)
-          .maybeSingle();
-
-        if (!matchedOrder) {
-          return res.status(404).json({ success: false, error: 'Target order not found' });
-        }
-
-        // Security check: Ensure payment belongs to this order
-        if (matchedOrder.razorpay_order_id && matchedOrder.razorpay_order_id !== finalOrderId) {
-          return res.status(403).json({ success: false, error: 'Payment signature does not correspond to target order' });
-        }
-
-        const now = new Date().toISOString();
-        await supabase
-          .from('orders')
-          .update({
-            payment_status: 'paid',
-            order_status: 'confirmed',
-            status: 'confirmed',
-            razorpay_order_id: finalOrderId,
-            razorpay_payment_id: finalPaymentId,
-            razorpay_signature: finalSignature,
-            updated_at: now,
-          })
-          .eq('id', targetOrderId);
-
-        await supabase
-          .from('payments')
-          .update({
-            provider_order_id: finalOrderId,
-            provider_payment_id: finalPaymentId,
-            status: 'paid',
-            signature_verified: true,
-            paid_at: now,
-            updated_at: now,
-          })
-          .eq('order_id', targetOrderId);
-
-        await supabase
-          .from('artisan_orders')
-          .update({ status: 'pending', updated_at: now })
-          .eq('order_id', targetOrderId);
-
-        broadcastSync('PAYMENTS_UPDATED', { orderId: targetOrderId, status: 'paid' });
-        broadcastSync('ORDERS_UPDATED', { orderId: targetOrderId, order_status: 'confirmed' });
-      } catch (dbErr) {
-        console.warn('[verify-payment-direct] DB sync error:', dbErr.message);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Payment verified successfully',
-      order_id: finalOrderId,
-      payment_id: finalPaymentId,
-    });
-  } catch (err) {
-    console.error('[verify-payment-direct] Exception:', err.message);
-    res.status(500).json({ success: false, error: 'Internal server error during verification' });
-  }
-};
-
-router.post('/verify-payment', verifyPaymentDirect);
+// ─── 6. SECURED DIRECT / STANDALONE RAZORPAY ENDPOINTS ─────────────────────
+// Legacy aliases secured with strict authentication, server-side pricing, and verification
+const createOrderDirect = createOrderHandler;
+const verifyPaymentDirect = verifyPaymentHandler;
 
 module.exports = router;
+module.exports.createOrderHandler = createOrderHandler;
+module.exports.verifyPaymentHandler = verifyPaymentHandler;
 module.exports.createOrderDirect = createOrderDirect;
 module.exports.verifyPaymentDirect = verifyPaymentDirect;
 

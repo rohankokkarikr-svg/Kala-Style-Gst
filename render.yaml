@@ -13,17 +13,17 @@ services:
       - key: NODE_ENV
         value: production
       - key: SUPABASE_URL
-        value: https://fwuhlhaadhhveuljsqbh.supabase.co
+        sync: false
       - key: CLOUDINARY_CLOUD_NAME
-        value: dcmmxmikz
+        sync: false
       - key: CLOUDINARY_API_KEY
-        value: "149393542854794"
+        sync: false
       - key: TWILIO_WHATSAPP_FROM
         value: "+14155238886"
       - key: RAZORPAY_KEY_ID
-        value: rzp_live_TgKmH9jZyyQY6M
+        sync: false
       - key: RAZORPAY_KEY_SECRET
-        value: 2KT4MT3WvfuaX3eeYpUkUlkI
+        sync: false
       # Shiprocket Production Logistics Configuration
       - key: SHIPPING_PROVIDER
         value: shiprocket
@@ -58,16 +58,16 @@ services:
     staticPublishPath: build
     envVars:
       - key: REACT_APP_SUPABASE_URL
-        value: https://fwuhlhaadhhveuljsqbh.supabase.co
+        sync: false
       - key: REACT_APP_SUPABASE_ANON_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3ODkzODYsImV4cCI6MjEwNDM2NTM4Nn0.1sz1xgfYWGv0Ad6kCZ6KgAcYGJZG2eX0sn3o91nNlJ8
+        sync: false
       - key: REACT_APP_LOCATIONIQ_API_KEY
-        value: pk.f2bad577bd835e11c81ffd571d5c353b
+        sync: false
       - key: CI
         value: "false"
-      # Razorpay public key for checkout — must match RAZORPAY_KEY_ID in backend envVars above
+      # Razorpay public key for checkout — managed in dashboard
       - key: REACT_APP_RAZORPAY_KEY_ID
-        value: rzp_live_TgKmH9jZyyQY6M
+        sync: false
       # Managed in the dashboard so you can customize the backend URL if name changes
       - key: REACT_APP_API_URL
         sync: false

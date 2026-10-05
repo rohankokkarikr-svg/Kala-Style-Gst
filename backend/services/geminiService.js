@@ -137,6 +137,10 @@ function getClient() {
  * Sends prompt to Gemini with automatic retry for transient errors and fallback across models.
  */
 async function generateText(prompt, retries = 2) {
+  if (process.env.NODE_ENV === 'test' || process.env.MOCK_AI === 'true') {
+    return 'Mock AI generation response for testing purposes.';
+  }
+
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured in backend environment variables.');
@@ -193,6 +197,10 @@ async function generateText(prompt, retries = 2) {
  * Parses base64 data URIs or fetches remote image URLs, then sends to Gemini Vision.
  */
 async function analyzeImage(imageUrl, prompt) {
+  if (process.env.NODE_ENV === 'test' || process.env.MOCK_AI === 'true') {
+    return 'Mock image analysis: handcrafted artisan product.';
+  }
+
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured in backend environment variables.');

@@ -136,7 +136,7 @@ const DEFAULT_SETTINGS = {
   shipping_estimated_days: '3 - 5 Business Days',
   cod_enabled: true,
   cod_min_order_value: 100,
-  cod_max_order_value: 5000,
+  cod_max_order_value: null,
 };
 
 const supabase = require('../config/supabase');
@@ -278,7 +278,7 @@ exports.getSettings = async (req, res) => {
       shipping_estimated_days: supaData?.shipping_estimated_days || local.shipping_estimated_days || DEFAULT_SETTINGS.shipping_estimated_days,
       cod_enabled: supaData?.cod_enabled !== undefined ? Boolean(supaData.cod_enabled) : (local.cod_enabled !== undefined ? Boolean(local.cod_enabled) : DEFAULT_SETTINGS.cod_enabled),
       cod_min_order_value: supaData?.cod_min_order_value !== undefined ? Number(supaData.cod_min_order_value) : (local.cod_min_order_value !== undefined ? Number(local.cod_min_order_value) : DEFAULT_SETTINGS.cod_min_order_value),
-      cod_max_order_value: supaData?.cod_max_order_value !== undefined ? Number(supaData.cod_max_order_value) : (local.cod_max_order_value !== undefined ? Number(local.cod_max_order_value) : DEFAULT_SETTINGS.cod_max_order_value),
+      cod_max_order_value: null, // Unlimited — no maximum cap on COD orders
     };
 
     res.json(merged);
@@ -410,11 +410,19 @@ async function applySettingsUpdate(updates = {}) {
   }
 
   try {
-    await supabase
-      .from('platform_settings')
-      .upsert([platformPayload]);
+    const { error: dbErr } = await safeQuery(() =>
+      supabase
+        .from('platform_settings')
+        .upsert([platformPayload])
+    );
+    if (dbErr && process.env.NODE_ENV !== 'test') {
+      throw new Error(`Failed to persist settings to database: ${dbErr.message}`);
+    }
   } catch (e) {
-    console.warn('Failed to upsert to Supabase platform_settings:', e.message);
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('Failed to upsert to Supabase platform_settings:', e.message);
+      throw e;
+    }
   }
 
   // Broadcast live to all devices (desktop, phone, tablet)

@@ -115,7 +115,7 @@ export default function TermsAndConditions() {
                 <h2 className="text-xl sm:text-2xl font-serif font-bold text-white">1. Acceptance of Terms</h2>
               </div>
               <p className="text-sm text-gray-300 leading-relaxed">
-                By browsing, registering, placing an order, or listing crafts on <strong>KalaStyle AI</strong> (operated under KalaStyle GST / Style Heaven), you signify your unconditional agreement to be bound by these Terms and Conditions and our Privacy Policy.
+                By browsing, registering, placing an order, or listing crafts on <strong>KalaStyle AI</strong> (operated as KalaStyle AI; [Legal corporate entity name, registered office address, and GSTIN registration details are subject to verification and confirmation by business owner / accountant]), you signify your unconditional agreement to be bound by these Terms and Conditions and our Privacy Policy.
               </p>
               <p className="text-sm text-gray-400 leading-relaxed">
                 These terms constitute an electronic record in accordance with the Information Technology Act, 2000 and applicable consumer protection rules. If you do not agree to all terms, please refrain from using our marketplace.

@@ -22,4 +22,8 @@ backend/.env.*
 *.rar
 *.7z
 backend/data/*.json
+*.log
+logs/
+temp_package_staging/
+credentials*
 

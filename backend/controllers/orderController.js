@@ -173,7 +173,7 @@ exports.createOrder = async (req, res) => {
           .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
           .eq('id', order.id)
           .single();
-        const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917349083982';
+        const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917676558335';
         const wsRes = await sendOrderWhatsappNotification(
           targetAdminPhone, fullOrder || order, req.user?.name || 'Customer'
         );
@@ -1113,20 +1113,38 @@ exports.sendOrderOtp = async (req, res) => {
       }
     }
 
+    // Attempt Supabase email delivery if registered email is provided
+    if (cleanEmail) {
+      try {
+        const { error: sbEmailErr } = await supabase.auth.signInWithOtp({
+          email: cleanEmail,
+          options: {
+            shouldCreateUser: false,
+          },
+        });
+        if (sbEmailErr) {
+          console.warn('[sendOrderOtp] Supabase email dispatch notice:', sbEmailErr.message);
+        } else {
+          deliveredChannels.push('Registered Email');
+        }
+      } catch (sbErr) {
+        console.warn('[sendOrderOtp] Supabase email dispatch notice:', sbErr.message);
+      }
+    }
+
     console.log(`\n========================================`);
     console.log(`🔐 [ORDER CONFIRMATION OTP DISPATCHED]`);
     console.log(`📧 Registered Email: ${cleanEmail || 'N/A'}`);
     console.log(`📱 Phone: ${cleanPhone ? `+91 ${cleanPhone}` : 'N/A'}`);
     console.log(`💰 Order Amount: ₹${amount}`);
     console.log(`💳 Method: ${methodLabel}`);
-    console.log(`🔑 8-DIGIT OTP CODE: ${otp}`);
+    console.log(`📡 Channels: ${deliveredChannels.join(', ') || 'Email dispatch'}`);
     console.log(`========================================\n`);
 
     res.status(200).json({
       success: true,
       message: `OTP sent successfully to ${cleanEmail ? `registered email ${cleanEmail}` : `+91 ${cleanPhone}`}`,
       channels: cleanEmail ? ['Registered Email', ...deliveredChannels] : deliveredChannels,
-      demoOtp: otp, // Available for frictionless testing & demo
       expiresIn: 600,
     });
   } catch (err) {

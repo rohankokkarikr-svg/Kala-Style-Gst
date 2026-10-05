@@ -150,7 +150,7 @@ const DEFAULT_SETTINGS = {
   shipping_estimated_days: '3 - 5 Business Days',
   cod_enabled: true,
   cod_min_order_value: 100,
-  cod_max_order_value: 5000,
+  cod_max_order_value: null,
 };
 
 const SettingsContext = createContext({
@@ -191,7 +191,7 @@ export const SettingsProvider = ({ children }) => {
           shipping_estimated_days: parsed.shipping_estimated_days || '3 - 5 Business Days',
           cod_enabled: parsed.cod_enabled !== undefined ? Boolean(parsed.cod_enabled) : true,
           cod_min_order_value: parsed.cod_min_order_value !== undefined ? Number(parsed.cod_min_order_value) : 100,
-          cod_max_order_value: parsed.cod_max_order_value !== undefined ? Number(parsed.cod_max_order_value) : 5000,
+          cod_max_order_value: parsed.cod_max_order_value !== undefined ? (parsed.cod_max_order_value ? Number(parsed.cod_max_order_value) : null) : null,
         };
       }
     } catch {}

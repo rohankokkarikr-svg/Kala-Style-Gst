@@ -14,31 +14,66 @@ const invalidateCache = () => {
 };
 exports.invalidateCache = invalidateCache;
 
-// Canonical category mappings (slugs, variations, and lowercase names -> exact DB category name)
+// Canonical category mappings (slugs, variations, URL-encoded names, and lowercase names -> exact DB category name)
 const CATEGORY_MAP = {
+  // Handloom & Textiles
   'handloom-textiles': 'Handloom & Textiles',
   'handloom & textiles': 'Handloom & Textiles',
+  'handloom and textiles': 'Handloom & Textiles',
+  'handloom': 'Handloom & Textiles',
   'textiles': 'Handloom & Textiles',
+
+  // Home Décor & Furnishings
   'home-decor-furnishings': 'Home Décor & Furnishings',
   'home-decor': 'Home Décor & Furnishings',
   'home decor & furnishings': 'Home Décor & Furnishings',
+  'home decor and furnishings': 'Home Décor & Furnishings',
   'home décor & furnishings': 'Home Décor & Furnishings',
+  'home décor and furnishings': 'Home Décor & Furnishings',
+  'home decor': 'Home Décor & Furnishings',
+  'home décor': 'Home Décor & Furnishings',
+  'homedecor': 'Home Décor & Furnishings',
+
+  // Handmade Jewelry & Accessories
   'handmade-jewelry-accessories': 'Handmade Jewelry & Accessories',
+  'handmade-jewelry': 'Handmade Jewelry & Accessories',
   'handmade jewelry & accessories': 'Handmade Jewelry & Accessories',
+  'handmade jewelry and accessories': 'Handmade Jewelry & Accessories',
+  'handmade jewelry': 'Handmade Jewelry & Accessories',
   'jewelry': 'Handmade Jewelry & Accessories',
+  'jewellery': 'Handmade Jewelry & Accessories',
+  'accessories': 'Handmade Jewelry & Accessories',
+
+  // Pottery & Terracotta
   'pottery-terracotta': 'Pottery & Terracotta',
   'pottery & terracotta': 'Pottery & Terracotta',
+  'pottery and terracotta': 'Pottery & Terracotta',
   'pottery': 'Pottery & Terracotta',
+  'terracotta': 'Pottery & Terracotta',
+
+  // Wooden Handicrafts
   'wooden-handicrafts': 'Wooden Handicrafts',
   'wooden handicrafts': 'Wooden Handicrafts',
   'woodcraft': 'Wooden Handicrafts',
+  'wooden': 'Wooden Handicrafts',
+  'woodwork': 'Wooden Handicrafts',
+
+  // Traditional Paintings & Wall Art
   'traditional-paintings-wall-art': 'Traditional Paintings & Wall Art',
-  'traditional paintings & wall art': 'Traditional Paintings & Wall Art',
   'traditional-paintings': 'Traditional Paintings & Wall Art',
+  'traditional paintings & wall art': 'Traditional Paintings & Wall Art',
+  'traditional paintings and wall art': 'Traditional Paintings & Wall Art',
+  'traditional paintings': 'Traditional Paintings & Wall Art',
   'paintings': 'Traditional Paintings & Wall Art',
+  'wall art': 'Traditional Paintings & Wall Art',
+
+  // Eco-Friendly & Natural Products
   'eco-friendly-natural-products': 'Eco-Friendly & Natural Products',
   'eco-friendly & natural products': 'Eco-Friendly & Natural Products',
+  'eco-friendly and natural products': 'Eco-Friendly & Natural Products',
   'eco-friendly': 'Eco-Friendly & Natural Products',
+  'eco friendly': 'Eco-Friendly & Natural Products',
+  'natural products': 'Eco-Friendly & Natural Products',
 };
 
 exports.getCategories = async (req, res) => {
@@ -95,18 +130,21 @@ exports.getProducts = async (req, res) => {
       }
 
       if (category && category !== 'all') {
-        const cleanCat = category.trim().toLowerCase();
-        const canonical = CATEGORY_MAP[cleanCat];
+        let cleanCat = category.trim();
+        try { cleanCat = decodeURIComponent(cleanCat); } catch (_) {}
+        cleanCat = cleanCat.trim().toLowerCase();
+        const canonical = CATEGORY_MAP[cleanCat] || CATEGORY_MAP[cleanCat.replace(/\s+/g, '-')];
         if (canonical) {
           query = query.eq('category', canonical);
         } else {
           // If not in canonical map, search category or subcategory
-          query = query.or(`category.ilike.%${category.trim()}%,subcategory.ilike.%${category.trim()}%`);
+          query = query.or(`category.ilike.%${cleanCat}%,subcategory.ilike.%${cleanCat}%`);
         }
       }
 
       if (subcategory && subcategory !== 'all') {
-        const cleanSub = subcategory.trim();
+        let cleanSub = subcategory.trim();
+        try { cleanSub = decodeURIComponent(cleanSub); } catch (_) {}
         query = query.ilike('subcategory', `%${cleanSub}%`);
       }
 
@@ -148,6 +186,15 @@ exports.getProducts = async (req, res) => {
     if (!artisan_id) {
       filteredData = filteredData.filter(p => !p.is_hidden && (p.status === 'approved' || !p.status));
     }
+
+    // Exclude any legacy demo menswear products if present in DB
+    const DEMO_KEYWORDS = ['t-shirt', 'jean', 'sweatpant', 'hoodie', 'mens jacket', 'casual trouser'];
+    filteredData = filteredData.filter(p => {
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      const isDemo = DEMO_KEYWORDS.some(k => cat.includes(k) || (name.includes(k) && !cat.includes('handloom') && !cat.includes('textile')));
+      return !isDemo;
+    });
 
     if (isBasicRequest && filteredData.length > 0) {
       productCache.all = { data: filteredData, timestamp: Date.now() };
@@ -236,9 +283,29 @@ exports.getProductById = async (req, res) => {
         data.artisan_bio = parsed.bio || data.artisan_bio;
         data.artisan_type = parsed.artisan_type || data.artisan_type || 'Artisan';
         data.artisan_specialization = parsed.specialization || data.artisan_specialization;
-        if (parsed.years_of_experience) {
-          data.years_of_experience = parsed.years_of_experience;
+      } else {
+        data.artisan_name = data.artisan_name || 'Master Craftsman (Artisan Guild)';
+        data.artisan_location = data.artisan_location || 'India';
+        data.artisan_type = data.artisan_type || 'Artisan';
+      }
+
+      // Ensure rating and review counts strictly agree with approved reviews
+      try {
+        const { data: revStats } = await supabase
+          .from('reviews')
+          .select('rating')
+          .eq('product_id', data.id)
+          .eq('is_approved', true);
+        if (revStats && revStats.length > 0) {
+          const sum = revStats.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+          data.rating = Number((sum / revStats.length).toFixed(1));
+          data.reviews_count = revStats.length;
+        } else {
+          data.rating = null;
+          data.reviews_count = 0;
         }
+      } catch (revErr) {
+        console.warn('Review stats agreement check notice:', revErr.message);
       }
 
       return res.json(data);
@@ -434,7 +501,9 @@ exports.uploadProductImage = async (req, res) => {
     const { cloudinary } = require('../config/cloudinary');
     let imageUrl = null;
 
-    if (req.file && req.file.buffer) {
+    if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
+      imageUrl = 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
+    } else if (req.file && req.file.buffer) {
       const mime = req.file.mimetype || 'image/jpeg';
       const base64Data = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
       const uploadRes = await cloudinary.uploader.upload(base64Data, {
@@ -478,7 +547,9 @@ exports.uploadDirect = async (req, res) => {
     const { cloudinary } = require('../config/cloudinary');
     let imageUrl = null;
 
-    if (req.file && req.file.buffer) {
+    if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
+      imageUrl = 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
+    } else if (req.file && req.file.buffer) {
       const mime = req.file.mimetype || 'image/jpeg';
       const base64Data = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
       const uploadRes = await cloudinary.uploader.upload(base64Data, {

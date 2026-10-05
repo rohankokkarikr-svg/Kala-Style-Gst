@@ -128,10 +128,16 @@ export default function Testimonials() {
                         </div>
                         <div>
                           <h4 className="text-white font-bold text-lg">{review.customer_name}</h4>
-                          <div className="flex items-center gap-1 text-green-400 text-xs font-medium mt-1">
-                            <HiCheckCircle className="w-4 h-4" />
-                            Verified Buyer
-                          </div>
+                          {review.is_verified_buyer ? (
+                            <div className="flex items-center gap-1 text-green-400 text-xs font-medium mt-1">
+                              <HiCheckCircle className="w-4 h-4" />
+                              Verified Buyer
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-gold-400/80 text-xs font-medium mt-1">
+                              Community Reviewer
+                            </div>
+                          )}
                         </div>
                       </div>
                       

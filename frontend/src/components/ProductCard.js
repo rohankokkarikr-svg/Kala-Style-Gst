@@ -77,23 +77,24 @@ export default function ProductCard({ product }) {
   return (
     <>
       <div className="group bg-dark-800 rounded-2xl overflow-hidden border border-dark-600 hover:border-gold-500/50 transition-all duration-300 hover:shadow-gold hover:shadow-gold/15 flex flex-col justify-between relative">
-        {/* Clickable Image & Badges */}
-        <Link to={`/products/${id}`} className="block relative aspect-[4/5] overflow-hidden bg-dark-700">
-          <img
-            src={mainImage || 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg'}
-            alt={name}
-            loading="lazy"
-            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-            onError={(e) => {
-              e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
-            }}
-          />
+        {/* Media Container with Separated, Accessible Controls */}
+        <div className="relative aspect-[4/5] overflow-hidden bg-dark-700">
+          <Link to={`/products/${id}`} className="block w-full h-full" aria-label={`View details for ${displayName}`}>
+            <img
+              src={mainImage || 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg'}
+              alt={displayName}
+              loading="lazy"
+              className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+              onError={(e) => {
+                e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+              }}
+            />
+            {/* Gradient Overlay on Hover */}
+            <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+          </Link>
 
-          {/* Gradient Overlay on Hover */}
-          <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-
-          {/* Top Badges */}
-          <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
+          {/* Top Badges (Left) */}
+          <div className="absolute top-2.5 left-2.5 z-10 pointer-events-none">
             {discount ? (
               <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white rounded-md shadow-md">
                 🔥 {discount}% OFF
@@ -103,37 +104,44 @@ export default function ProductCard({ product }) {
                 🇮🇳 Handmade
               </span>
             )}
+          </div>
 
-            {/* Wishlist Button (Interactive) */}
+          {/* Wishlist Button (Interactive & Accessible, not inside Link) */}
+          <div className="absolute top-2.5 right-2.5 z-20">
             <button
+              type="button"
               onClick={handleWishlistToggle}
-              className={`p-2 rounded-full backdrop-blur-md transition-all shadow-md pointer-events-auto ${
+              className={`p-2 rounded-full backdrop-blur-md transition-all shadow-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-gold-400 ${
                 isFavorited
                   ? 'bg-red-500 text-white'
                   : 'bg-dark-900/80 text-gray-300 hover:text-red-400 hover:bg-dark-900'
               }`}
-              aria-label="Toggle Wishlist"
+              aria-label={isFavorited ? `Remove ${displayName} from Wishlist` : `Add ${displayName} to Wishlist`}
             >
               <HiHeart className={`w-4 h-4 ${isFavorited ? 'fill-current' : ''}`} />
             </button>
           </div>
 
-          {/* Quick View Button (Slides in on hover) */}
-          <button
-            onClick={handleOpenQuickView}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-dark-900/90 hover:bg-gold-500 text-white hover:text-dark-900 font-semibold px-4 py-2 rounded-full text-xs flex items-center gap-1.5 shadow-xl border border-dark-600 hover:border-gold-400 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-300 z-10"
-          >
-            <HiEye className="w-4 h-4" />
-            <span>Quick View</span>
-          </button>
+          {/* Quick View Button (Center - Accessible on hover & keyboard focus) */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto">
+            <button
+              type="button"
+              onClick={handleOpenQuickView}
+              className="bg-dark-900/90 hover:bg-gold-500 text-white hover:text-dark-900 font-semibold px-4 py-2 rounded-full text-xs flex items-center gap-1.5 shadow-xl border border-dark-600 hover:border-gold-400 opacity-0 group-hover:opacity-100 focus:opacity-100 scale-90 group-hover:scale-100 focus:scale-100 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gold-400 cursor-pointer pointer-events-auto"
+              aria-label={`Quick view ${displayName}`}
+            >
+              <HiEye className="w-4 h-4" />
+              <span>Quick View</span>
+            </button>
+          </div>
 
           {/* Out of Stock Overlay */}
           {(is_in_stock === false || (stock_quantity !== undefined && stock_quantity <= 0)) && (
-            <span className="absolute bottom-3 left-3 right-3 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-600/90 text-white text-center rounded-lg shadow-lg z-10">
+            <span className="absolute bottom-3 left-3 right-3 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-600/90 text-white text-center rounded-lg shadow-lg z-10 pointer-events-none">
               Out of Stock
             </span>
           )}
-        </Link>
+        </div>
 
         {/* Product Details */}
         <div className="p-4 flex-1 flex flex-col justify-between">
@@ -151,7 +159,7 @@ export default function ProductCard({ product }) {
             </div>
 
             {/* Product Title */}
-            <Link to={`/products/${id}`}>
+            <Link to={`/products/${id}`} aria-label={displayName}>
               <h3 className="font-medium text-sm text-gray-100 group-hover:text-gold-400 transition-colors line-clamp-1 font-serif">
                 {displayName}
               </h3>
@@ -162,25 +170,32 @@ export default function ProductCard({ product }) {
               {displayDesc}
             </p>
 
-            {/* Rating Stars */}
-            <div className="flex items-center gap-1.5 mt-2">
-              <div className="flex items-center text-gold-400">
-                {[...Array(5)].map((_, i) => (
-                  <HiStar
-                    key={i}
-                    className={`w-3.5 h-3.5 ${
-                      i < Math.floor(rating || 4.8) ? 'text-gold-400' : 'text-gray-600'
-                    }`}
-                  />
-                ))}
+            {/* Rating Stars (strictly reflect real data without fabricating ratings) */}
+            {review_count > 0 && rating ? (
+              <div className="flex items-center gap-1.5 mt-2" aria-label={`Rated ${rating} out of 5 stars based on ${review_count} reviews`}>
+                <div className="flex items-center text-gold-400">
+                  {[...Array(5)].map((_, i) => (
+                    <HiStar
+                      key={i}
+                      className={`w-3.5 h-3.5 ${
+                        i < Math.floor(Number(rating)) ? 'text-gold-400' : 'text-gray-600'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs font-semibold text-gray-300">
+                  {Number(rating).toFixed(1)}
+                </span>
+                <span className="text-[11px] text-gray-500">
+                  ({review_count})
+                </span>
               </div>
-              <span className="text-xs font-semibold text-gray-300">
-                {rating ? Number(rating).toFixed(1) : '4.8'}
-              </span>
-              <span className="text-[11px] text-gray-500">
-                ({review_count || 42})
-              </span>
-            </div>
+            ) : (
+              <div className="flex items-center gap-1 mt-2 text-[11px] text-gray-400">
+                <span className="text-gold-500/80">✦</span>
+                <span>Authentic Handicraft</span>
+              </div>
+            )}
           </div>
 
           {/* Pricing & Add to Cart Footer */}

@@ -583,11 +583,11 @@ export default function PaymentGateway() {
                 </div>
 
                 <div className="bg-dark-900 border border-dark-600 p-3 rounded-xl flex items-center justify-between">
-                  <span className="font-mono text-xs text-gold-400 select-all">styleheaven@upi</span>
+                  <span className="font-mono text-xs text-gold-400 select-all">kalastyle@upi</span>
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText('styleheaven@upi');
+                      navigator.clipboard.writeText('kalastyle@upi');
                       toast.success('UPI ID copied to clipboard!');
                     }}
                     className="text-xs text-gray-400 hover:text-white flex items-center gap-1 cursor-pointer bg-dark-700 px-2.5 py-1 rounded-lg"
@@ -597,7 +597,7 @@ export default function PaymentGateway() {
                 </div>
 
                 <a
-                  href={`upi://pay?pa=styleheaven@upi&pn=KalaStyle%20AI&am=${orderTotal}&tr=${order?.order_number || orderId}&tn=Order%20Payment&cu=INR`}
+                  href={`upi://pay?pa=kalastyle@upi&pn=KalaStyle%20AI&am=${orderTotal}&tr=${order?.order_number || orderId}&tn=Order%20Payment&cu=INR`}
                   className="w-full py-3 bg-gradient-luxury text-dark-900 font-bold text-xs rounded-xl flex items-center justify-center gap-2"
                 >
                   Open in UPI App (GPay / PhonePe / Paytm) 📱

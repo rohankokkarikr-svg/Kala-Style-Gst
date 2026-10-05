@@ -28,6 +28,7 @@ fs.mkdirSync(stagingDir, { recursive: true });
 const IGNORED_NAMES = new Set([
   'node_modules',
   '.git',
+  '.git_old',
   'build',
   '.cache',
   '.vscode',
@@ -35,6 +36,11 @@ const IGNORED_NAMES = new Set([
   '.gemini',
   'temp_package_staging',
   'KalaStyle_AI_Project.zip',
+  'kala-style-gst-complete.zip',
+  'shipments.json',
+  'site_settings.json',
+  'webhook_events.json',
+  'whatsapp_logs.json',
 ]);
 
 const IGNORED_EXTENSIONS = new Set([
@@ -43,10 +49,38 @@ const IGNORED_EXTENSIONS = new Set([
   '.zip',
   '.tar',
   '.gz',
+  '.7z',
+  '.rar',
+  '.pem',
+  '.key',
 ]);
 
 function shouldIgnore(entryName, fullPath) {
   if (IGNORED_NAMES.has(entryName)) return true;
+
+  // Exclude all .env files except explicit .env.example
+  if (entryName === '.env' || (entryName.startsWith('.env') && !entryName.endsWith('.example')) || entryName.endsWith('.env')) {
+    return true;
+  }
+
+  // Exclude credentials, secret tokens, customer logs, webhook dumps
+  const lower = entryName.toLowerCase();
+  if (
+    lower.includes('credential') || 
+    lower.includes('secret') || 
+    lower.includes('webhook_payload') || 
+    lower.includes('customer_log') ||
+    lower.includes('whatsapp_log')
+  ) {
+    return true;
+  }
+
+  // Exclude operational json data in backend/data/
+  const normalizedPath = fullPath.replace(/\\/g, '/');
+  if (normalizedPath.includes('/backend/data/') && entryName.endsWith('.json')) {
+    return true;
+  }
+
   const ext = path.extname(entryName).toLowerCase();
   if (IGNORED_EXTENSIONS.has(ext)) return true;
   return false;

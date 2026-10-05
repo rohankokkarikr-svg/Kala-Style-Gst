@@ -14,7 +14,7 @@ const DEFAULTS = {
   delivery_fee: 0,
   free_delivery_above: 0,
   cod_enabled: true,
-  cod_max_order_value: 5000,
+  cod_max_order_value: null, // Unlimited — no maximum cap on COD orders
   cod_min_order_value: 100,
   cancellation_window_hours: 12,
   reward_eligible_count: 8,
@@ -41,7 +41,7 @@ async function getEcomSettings() {
       .maybeSingle();
 
     if (data) {
-      _cached = { ...DEFAULTS, ...data };
+      _cached = { ...DEFAULTS, ...data, cod_max_order_value: null };
       _cachedAt = now;
       return _cached;
     }

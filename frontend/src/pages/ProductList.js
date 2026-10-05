@@ -26,6 +26,7 @@ export default function ProductList() {
   const [loading, setLoading] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [videoFailed, setVideoFailed] = useState(false);
   const { currentLang, currentLangMeta } = useLanguage();
   const { settings } = useSettings();
 
@@ -364,7 +365,7 @@ export default function ProductList() {
       <div className="relative w-full overflow-hidden bg-black select-none border-b border-dark-700 min-h-[420px] sm:min-h-[460px] md:min-h-[500px] flex items-center">
         {/* Background Video / Media Canvas */}
         <div className="absolute inset-0 w-full h-full overflow-hidden">
-          {activeVideoUrl ? (
+          {activeVideoUrl && !videoFailed ? (
             <video
               key={`banner-ad-video-${activeVideoUrl}`}
               src={activeVideoUrl}
@@ -374,6 +375,7 @@ export default function ProductList() {
               muted={isMuted}
               playsInline
               className="w-full h-full object-cover object-center"
+              onError={() => setVideoFailed(true)}
             />
           ) : (
             <img
@@ -381,7 +383,10 @@ export default function ProductList() {
               alt={currentCategoryInfo ? currentCategoryInfo.name : "Indian Handicrafts"}
               className="w-full h-full object-cover object-center"
               onError={(e) => {
-                e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048623/kalastyle-artisan-marketplace/lzc4iz6pi8bmvgh5zl9b.jpg';
+                if (!e.target.dataset.fallbackApplied) {
+                  e.target.dataset.fallbackApplied = 'true';
+                  e.target.src = '/images/explore_handicrafts_banner.jpg';
+                }
               }}
             />
           )}

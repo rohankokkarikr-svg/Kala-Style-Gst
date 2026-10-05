@@ -57,7 +57,7 @@ async function reverseGeocode(lat, lng) {
 
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&email=support@styleheaven.com`,
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&email=support@kalastyle.ai`,
       { headers: { 'Accept-Language': 'en' } }
     );
     if (res.ok) {
@@ -112,7 +112,7 @@ async function forwardGeocode(query) {
   }
 
   const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=1&countrycodes=in&email=support@styleheaven.com`,
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=1&countrycodes=in&email=support@kalastyle.ai`,
     { headers: { 'Accept-Language': 'en' } }
   );
   if (!res.ok) throw new Error('Forward geocode failed');
@@ -176,7 +176,7 @@ export default function Checkout() {
   const [otpCountdown, setOtpCountdown]   = useState(60);
   const [canResendOtp, setCanResendOtp]   = useState(false);
   const [otpError, setOtpError]           = useState('');
-  const [demoOtpHint, setDemoOtpHint]     = useState('');
+  const [lastOtpEmail, setLastOtpEmail]   = useState('');
   const otpInputsRef                      = useRef([]);
 
   // OTP Countdown Timer
@@ -532,26 +532,20 @@ export default function Checkout() {
       return;
     }
 
+    // If an OTP was already dispatched to this exact email within the active 60s window,
+    // don't spam Supabase (avoiding 429 rate limits) - simply re-open the modal so the user can enter it
+    if (lastOtpEmail === targetEmail && otpCountdown > 0) {
+      setShowOtpModal(true);
+      toast.info(`Verification code already sent to ${maskEmail(targetEmail)}. Please check your inbox.`);
+      return;
+    }
+
     setOtpSending(true);
     setOtpError('');
     try {
-      // 1. Dispatch 8-digit OTP to user's registered email using Supabase Auth (same as in Login page)
-      try {
-        await sendOtp(targetEmail);
-      } catch (authErr) {
-        console.warn('Supabase email OTP dispatch notice:', authErr.message);
-        // Fallback to backend order OTP dispatch
-        const res = await orderAPI.sendOtp({
-          phone: form.phone,
-          email: targetEmail,
-          amount: finalTotal,
-          paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
-        });
-        if (res.data?.demoOtp) {
-          setDemoOtpHint(res.data.demoOtp);
-        }
-      }
-
+      // Dispatch 8-digit OTP to user's registered email using Supabase Auth (same as in Login/Signup)
+      await sendOtp(targetEmail);
+      setLastOtpEmail(targetEmail);
       setOtpValue(Array(OTP_LENGTH).fill(''));
       setOtpCountdown(60);
       setCanResendOtp(false);
@@ -559,7 +553,13 @@ export default function Checkout() {
       toast.success(`Verification OTP dispatched to ${maskEmail(targetEmail)}! 📩`);
     } catch (err) {
       const errMsg = err.message || err.response?.data?.error || 'Failed to dispatch verification OTP. Please try again.';
-      toast.error(errMsg);
+      if (errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('limit') || errMsg.toLowerCase().includes('too many')) {
+        setLastOtpEmail(targetEmail);
+        setShowOtpModal(true);
+        toast.info(`An OTP was recently sent to ${maskEmail(targetEmail)}. Please check your inbox or wait for the timer to resend.`);
+      } else {
+        toast.error(errMsg);
+      }
     } finally {
       setOtpSending(false);
     }
@@ -572,21 +572,8 @@ export default function Checkout() {
     setOtpSending(true);
     setOtpError('');
     try {
-      try {
-        await sendOtp(targetEmail);
-      } catch (authErr) {
-        console.warn('Supabase resend email OTP notice:', authErr.message);
-        const res = await orderAPI.sendOtp({
-          phone: form.phone,
-          email: targetEmail,
-          amount: finalTotal,
-          paymentMethod: paymentMethod === 'cod' ? 'cod' : 'razorpay',
-        });
-        if (res.data?.demoOtp) {
-          setDemoOtpHint(res.data.demoOtp);
-        }
-      }
-
+      await sendOtp(targetEmail);
+      setLastOtpEmail(targetEmail);
       setOtpValue(Array(OTP_LENGTH).fill(''));
       setOtpCountdown(60);
       setCanResendOtp(false);
@@ -661,7 +648,7 @@ export default function Checkout() {
 
     try {
       let verified = false;
-      // 1. Verify with Supabase Email OTP (exact mechanism from Login page)
+      // 1. Verify with Supabase Email OTP (exact mechanism from Login & Signup pages)
       try {
         const verifyRes = await verifyOtp(targetEmail, code, false, false);
         if (verifyRes?.success) verified = true;
@@ -683,7 +670,7 @@ export default function Checkout() {
       // 2. Execute Order Creation with OTP confirmation
       await executeOrderCreation(code);
     } catch (err) {
-      const errMsg = err.message || err.response?.data?.error || 'OTP verification failed. Please try again.';
+      const errMsg = err.message || err.response?.data?.error || 'Invalid OTP code. Please check your email and try again.';
       setOtpError(errMsg);
       toast.error(errMsg);
       setOtpValue(Array(OTP_LENGTH).fill(''));
@@ -1546,29 +1533,6 @@ export default function Checkout() {
                   <strong className="text-white">₹{finalTotal.toLocaleString()}</strong> ({paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}).
                 </p>
               </div>
-
-              {/* Demo OTP Helper (Instant testing convenience) */}
-              {demoOtpHint && (
-                <div className="mb-5 p-3 rounded-xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gold-400">💡</span>
-                    <span className="text-gray-300">
-                      Test OTP Code: <strong className="text-gold-300 font-mono tracking-widest text-sm">{demoOtpHint}</strong>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const digits = demoOtpHint.split('').slice(0, OTP_LENGTH);
-                      setOtpValue(digits);
-                      setOtpError('');
-                    }}
-                    className="text-gold-400 hover:text-gold-300 underline font-semibold ml-2 cursor-pointer"
-                  >
-                    Auto-fill
-                  </button>
-                </div>
-              )}
 
               {/* 8 Digit Segmented Input Boxes */}
               <div className="flex justify-center items-center gap-1 sm:gap-1.5 mb-4" onPaste={handleOtpInputPaste}>

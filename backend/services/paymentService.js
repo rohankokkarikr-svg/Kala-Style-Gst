@@ -29,7 +29,7 @@ const getRazorpay = () => {
 };
 
 // Merchant UPI ID for direct UPI transfers (fallback)
-const MERCHANT_UPI_ID = process.env.MERCHANT_UPI_ID || 'styleheaven@upi';
+const MERCHANT_UPI_ID = process.env.MERCHANT_UPI_ID || 'kalastyle@upi';
 const MERCHANT_NAME = process.env.MERCHANT_NAME || 'KalaStyle AI Artisan Marketplace';
 
 

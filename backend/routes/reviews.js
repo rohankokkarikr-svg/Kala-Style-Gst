@@ -3,15 +3,18 @@ const router = express.Router();
 const reviewController = require('../controllers/reviewController');
 const { protect, admin, optionalProtect } = require('../middleware/auth');
 
-// Public
+const { reviewLimiter } = require('../middleware/rateLimiter');
+
+// Public: Get only approved reviews
 router.get('/', reviewController.getApprovedReviews);
 
-// Review submission (authenticated or guest with name)
-router.post('/', optionalProtect, reviewController.submitReview);
+// Review submission with spam rate limiter and real product validation
+router.post('/', reviewLimiter, optionalProtect, reviewController.submitReview);
 
-// Admin
+// Admin moderation
 router.get('/admin', protect, admin, reviewController.getAllReviews);
 router.patch('/:id/approve', protect, admin, reviewController.approveReview);
+router.put('/:id/approve', protect, admin, reviewController.approveReview);
 router.delete('/:id', protect, admin, reviewController.deleteReview);
 
 module.exports = router;

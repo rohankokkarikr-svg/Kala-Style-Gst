@@ -236,7 +236,7 @@ exports.buildOrderWhatsappText = buildOrderWhatsappText;
  * Sends a WhatsApp notification to Admin & Customer when a new order is placed (COD or UPI or Prepaid).
  */
 exports.sendOrderWhatsappNotification = async (adminPhone, order, customerName) => {
-  const effectiveAdminPhone = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+  const effectiveAdminPhone = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
   const messageBody = buildOrderWhatsappText(order, customerName);
   const recipients = [effectiveAdminPhone];
   if (order.phone && String(order.phone) !== String(effectiveAdminPhone)) {
@@ -262,7 +262,7 @@ exports.sendArtisanUtrSubmittedNotification = async (artisanPhone, artisanStore,
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
   const cleanRef = refNo || extractRefNo(order);
-  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
 
   const messageBody = `🟡 *[REAL-TIME ALERT: UPI PAYMENT SUBMITTED - PENDING VERIFICATION]*
 ========================================
@@ -307,7 +307,7 @@ ${itemsText || '• Handcrafted item'}
  * Sends a WhatsApp notification to Admin & Customer when UPI Ref. No. / UTR is submitted (fallback).
  */
 exports.sendRefNoSubmittedWhatsappNotification = async (adminPhone, order, customerName) => {
-  const effectiveAdmin = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+  const effectiveAdmin = adminPhone || process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
   return await exports.sendArtisanUtrSubmittedNotification(effectiveAdmin, 'Admin', order, customerName);
 };
 
@@ -321,7 +321,7 @@ exports.sendPaymentVerifiedWhatsappNotification = async (artisanPhone, order, cu
 
   const itemsCount = (order.items || []).reduce((s, i) => s + (i.quantity || 1), 0);
   const paymentId = order.razorpay_payment_id || extractRefNo(order);
-  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917349083982';
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || '917676558335';
 
   const messageBody = `🟢 *[REAL-TIME ALERT: RAZORPAY PAYMENT RECEIVED / PAID]*
 ========================================

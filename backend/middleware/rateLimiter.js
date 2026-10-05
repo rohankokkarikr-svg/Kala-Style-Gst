@@ -81,6 +81,24 @@ const generalLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateL
   legacyHeaders: false,
 });
 
+// Public AI endpoints (translate, smart search)
+const aiPublicLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateLimit({
+  windowMs: envInt('AI_PUBLIC_WINDOW_MS', 60 * 1000),
+  max: envInt('AI_PUBLIC_RATE_MAX', 30),
+  message: { error: 'Too many AI requests. Please slow down and try again in a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Reviews spam prevention
+const reviewLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateLimit({
+  windowMs: envInt('REVIEW_RATE_WINDOW_MS', 60 * 60 * 1000),
+  max: envInt('REVIEW_RATE_MAX', 5),
+  message: { error: 'Review submission limit reached. Please wait before submitting another review.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Keep aiLimiter as alias for backward compatibility with existing routes
 const aiLimiter = agentChatLimiter;
 
@@ -89,6 +107,8 @@ module.exports = {
   aiLimiter,
   agentChatLimiter,
   adminAiLimiter,
+  aiPublicLimiter,
+  reviewLimiter,
   orderLimiter,
   uploadLimiter,
   spinLimiter,

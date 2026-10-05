@@ -25,13 +25,15 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const finalName = (reviewerName || user?.name || 'Verified Buyer').trim();
+    const finalName = (reviewerName || user?.name || '').trim();
     if (!finalName) return toast.error('Please enter your name');
     if (!reviewText.trim()) return toast.error('Please write your review message');
+    if (reviewText.trim().length < 10) return toast.error('Please write at least 10 characters in your review');
 
     setSubmitting(true);
     try {
       const newReviewData = {
+        product_id: product?.id,
         customer_name: finalName,
         product_name: targetProductName,
         rating,
@@ -40,15 +42,15 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
       };
       
       const res = await reviewAPI.submit(newReviewData);
-      const savedReview = res?.data || {
+      const savedReview = res?.data?.review || res?.data || {
         ...newReviewData,
         id: 'rev-' + Date.now(),
         created_at: new Date().toISOString(),
-        is_approved: true
+        is_approved: false
       };
       
-      toast.success('Thank you! Your review is now live.');
-      if (onReviewSubmitted) {
+      toast.success('Thank you! Your review has been submitted for moderation.');
+      if (onReviewSubmitted && savedReview.is_approved) {
         onReviewSubmitted(savedReview);
       }
       setReviewText('');

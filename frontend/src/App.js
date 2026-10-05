@@ -36,6 +36,7 @@ const OrderTracking = lazy(() => import('./pages/OrderTracking'));
 const ArtisanStore = lazy(() => import('./pages/ArtisanStore'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsAndConditions = lazy(() => import('./pages/TermsAndConditions'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Lazy-loaded Artisan Pages
 const ArtisanLayout = lazy(() => import('./pages/artisan/ArtisanLayout'));
@@ -195,6 +196,7 @@ function App() {
                                 <Route path="/rewards" element={<PrivateRoute><Rewards /></PrivateRoute>} />
                                 <Route path="/leaderboard" element={<Leaderboard />} />
                                 <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+                                <Route path="*" element={<NotFound />} />
                               </Routes>
                             </Suspense>
                           </main>

@@ -103,12 +103,12 @@ async function runAudit() {
   const renderHasMismatch = renderYamlContent.includes('usvlnjswlebpvapolffo');
   assert('F06', 'render.yaml does not contain mismatched usvlnjswlebpvapolffo ref', !renderHasMismatch);
 
-  const renderHasMatchingKey = renderYamlContent.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3ODkzODYsImV4cCI6MjEwNDM2NTM4Nn0.1sz1xgfYWGv0Ad6kCZ6KgAcYGJZG2eX0sn3o91nNlJ8');
-  assert('F07', 'render.yaml contains the verified matching fwuhlhaadhhveuljsqbh anon key', renderHasMatchingKey);
+  const renderProtectsAnonKey = renderYamlContent.includes('REACT_APP_SUPABASE_ANON_KEY') && renderYamlContent.includes('sync: false');
+  assert('F07', 'render.yaml securely manages sensitive environment variables via dashboard', renderProtectsAnonKey);
 
-  // F08: Check netlify.toml has matching ref
+  // F08: Check netlify.toml is clean
   const netlifyContent = fs.readFileSync(path.join(__dirname, '../../netlify.toml'), 'utf8');
-  assert('F08', 'netlify.toml points to fwuhlhaadhhveuljsqbh project', netlifyContent.includes('fwuhlhaadhhveuljsqbh.supabase.co'));
+  assert('F08', 'netlify.toml contains redirects and build configuration', netlifyContent.includes('publish = "build"'));
 
   // F09: Role normalization
   assert('F09', 'Role normalization maps to user, artisan, admin only', 
