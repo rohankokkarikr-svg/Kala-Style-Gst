@@ -380,7 +380,7 @@ export default function Profile() {
                 <span className="text-3xl">🎨</span>
                 <div>
                   <h3 className="text-base font-bold text-white">Master Artisan Studio</h3>
-                  <p className="text-xs text-gray-300 mt-0.5">Digitize handloom collections, AI photography, and audio pricing.</p>
+                  <p className="text-xs text-gray-300 mt-0.5">Digitize handloom collections, smart catalog generation, and audio pricing.</p>
                 </div>
               </div>
               <Link

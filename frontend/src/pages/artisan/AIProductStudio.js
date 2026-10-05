@@ -16,7 +16,6 @@ const STEPS = [
   { id: 'price',       label: 'Price Suggestion',   icon: '💰' },
   { id: 'translate',   label: 'Multilingual',       icon: '🌐' },
   { id: 'publish',     label: 'Publish',            icon: '🚀' },
-  { id: 'ai_images',   label: 'AI Photos',          icon: '🎨' },
 ];
 
 const SEVEN_CATEGORIES = [
@@ -107,12 +106,6 @@ export default function AIProductStudio() {
 
   // Step 7 — Publish
   const [isPublishing, setIsPublishing] = useState(false);
-
-  // Step 8 — AI Image Generation
-  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState([]);
-  const [imageGenProgress, setImageGenProgress] = useState(0);
-  const [publishedProductId, setPublishedProductId] = useState(null);
 
   // Dynamic Categories from Admin updates
   const [availableCategories, setAvailableCategories] = useState(SEVEN_CATEGORIES);
@@ -353,22 +346,6 @@ export default function AIProductStudio() {
       const chosenArtisan = artisansList.find(a => a.id === targetArtisanId);
       const targetArtisanName = chosenArtisan?.store_name || user?.artisan_profile?.store_name || user?.name;
 
-      let initialImages = [finalUrl].filter(Boolean);
-      if (finalUrl && finalUrl.includes('/image/upload/')) {
-        initialImages = [
-          finalUrl,
-          finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
-          finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
-          finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto/'),
-          finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
-        ];
-      }
-
-      const tagsList = catalog.suggestedTags?.split(',').map(t => t.trim()).filter(Boolean) || [];
-      if (initialImages.length > 0) {
-        tagsList.push(`__IMAGES__:${JSON.stringify(initialImages)}`);
-      }
-
       const productData = {
         name:           catalog.productName,
         description:    catalog.fullDescription || catalog.shortDescription,
@@ -378,9 +355,8 @@ export default function AIProductStudio() {
         subcategory:    catalog.subcategory,
         material:       catalog.materials,
         style:          catalog.craftTechnique,
-        tags:           tagsList,
+        tags:           catalog.suggestedTags?.split(',').map(t => t.trim()).filter(Boolean),
         image_url:      finalUrl || '',
-        images:         initialImages,
         sizes:          ['Free Size'],
         stock_quantity: 10,
         artisan_id:     targetArtisanId,
@@ -395,87 +371,8 @@ export default function AIProductStudio() {
         detail: { payload: { action: 'create' } }
       }));
 
-      const productId = createdProduct?.id;
-      setPublishedProductId(productId);
-      toast.success(isDraft ? 'Saved as draft!' : 'Product submitted! Now generating AI photos... 🎨');
-
-      // ── Advance to Step 8: AI Image Generation ──
-      if (!isDraft && finalUrl) {
-        setStep(7);
-        setIsGeneratingImages(true);
-        setImageGenProgress(8);
-
-        // Animate progress bar during generation
-        const progressTimer = setInterval(() => {
-          setImageGenProgress(prev => prev < 90 ? prev + 12 : prev);
-        }, 500);
-
-        try {
-          const { data: imgResult } = await aiAPI.generateProductImages({
-            image_url:        finalUrl,
-            product_name:     catalog.productName,
-            category:         catalog.category,
-            material:         catalog.materials,
-            craft_technique:  catalog.craftTechnique,
-            product_id:       productId,
-          });
-
-          clearInterval(progressTimer);
-          setImageGenProgress(100);
-          let imgs = imgResult?.images || [];
-
-          // If backend returned fewer than 5 images and finalUrl is Cloudinary, complete the 5 styles client-side
-          if (imgs.length < 5 && finalUrl && finalUrl.includes('/image/upload/')) {
-            const clientStyles = [
-              finalUrl,
-              finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.5,e_sharpen:110,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
-            ];
-            imgs = clientStyles;
-            if (productId) {
-              productAPI.update(productId, { images: clientStyles }).catch(() => {});
-            }
-          }
-
-          setGeneratedImages(imgs.length > 0 ? imgs : [finalUrl]);
-
-          if (imgs.length > 1) {
-            toast.success(`🌟 ${imgs.length} professional styled product photos generated!`);
-          } else {
-            toast('📸 Product saved with master photo.');
-          }
-        } catch (imgErr) {
-          clearInterval(progressTimer);
-          setImageGenProgress(100);
-          console.warn('Image generation notice:', imgErr.message);
-
-          // Client-side fallback: generate 5 distinct styles directly from Cloudinary URL
-          if (finalUrl && finalUrl.includes('/image/upload/')) {
-            const fallbackStyles = [
-              finalUrl,
-              finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.5,e_sharpen:110,f_auto,q_auto/'),
-              finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
-            ];
-            setGeneratedImages(fallbackStyles);
-            if (productId) {
-              productAPI.update(productId, { images: fallbackStyles }).catch(() => {});
-            }
-            toast.success('🌟 5 professional styled product photos created!');
-          } else {
-            setGeneratedImages(finalUrl ? [finalUrl] : []);
-            toast('Product published! Master photo saved.');
-          }
-        } finally {
-          setIsGeneratingImages(false);
-        }
-      } else {
-        // Draft or no image: navigate away immediately
-        navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products');
-      }
+      toast.success(isDraft ? 'Saved as draft! 📁' : 'Product published successfully! 🚀');
+      navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products');
     } catch (err) {
       console.error('Publish error:', err);
       toast.error('Publish failed. Please try again.');
@@ -933,112 +830,6 @@ export default function AIProductStudio() {
           <button onClick={() => setStep(5)} className="text-gray-500 hover:text-gray-300 text-sm flex items-center gap-1 transition-colors">
             <HiChevronLeft className="w-4 h-4" /> Back to translations
           </button>
-        </div>
-      )}
-
-      {/* ── STEP 8: AI Image Generation ── */}
-      {step === 7 && (
-        <div className="card p-8 space-y-8 text-center">
-          {isGeneratingImages ? (
-            <>
-              <div className="space-y-3">
-                <div className="flex items-center justify-center gap-3 mb-2">
-                  <span className="text-3xl animate-bounce">🎨</span>
-                  <h2 className="text-xl font-serif font-bold text-white">AI is Generating Your Product Photos</h2>
-                </div>
-                <p className="text-gray-400 text-sm max-w-md mx-auto">
-                  Gemini Imagen AI is creating <strong className="text-gold-400">3–4 professional product photos</strong> — studio shot, lifestyle photo, close-up detail, and festive background. This takes about 60–90 seconds.
-                </p>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="max-w-md mx-auto space-y-2">
-                <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                  <span>Generating photos via AI...</span>
-                  <span className="text-gold-400 font-bold">{imageGenProgress}%</span>
-                </div>
-                <div className="h-3 bg-dark-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-gold-600 via-gold-400 to-gold-300 rounded-full transition-all duration-700 ease-out"
-                    style={{ width: `${imageGenProgress}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[10px] text-gray-600 mt-1">
-                  <span>📸 Studio shot</span>
-                  <span>🌿 Lifestyle</span>
-                  <span>🔍 Detail</span>
-                  <span>✨ Festive</span>
-                </div>
-              </div>
-
-              {/* Spinning loader */}
-              <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
-                <div className="w-5 h-5 border-2 border-gold-500/30 border-t-gold-400 rounded-full animate-spin" />
-                <span>Please don't close this page while photos are being created...</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center justify-center gap-3 mb-2">
-                  <span className="text-3xl">🌟</span>
-                  <h2 className="text-xl font-serif font-bold text-white">AI Photos Generated!</h2>
-                </div>
-                <p className="text-gray-400 text-sm">
-                  {generatedImages.length > 1
-                    ? `${generatedImages.length} professional product photos were created and saved to your product in different styles.`
-                    : 'Your product has been published successfully.'}
-                </p>
-              </div>
-
-              {/* Image Gallery Preview (5 styled product photos of the same item) */}
-              {generatedImages.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 max-w-2xl mx-auto">
-                  {generatedImages.map((img, idx) => {
-                    const badgeInfo = [
-                      { label: 'Your Photo', badge: 'bg-dark-900/90 text-gold-400 border border-gold-500/40' },
-                      { label: '📸 Studio Shot', badge: 'bg-dark-900/90 text-blue-300 border border-blue-500/40' },
-                      { label: '🌿 Lifestyle', badge: 'bg-dark-900/90 text-emerald-300 border border-emerald-500/40' },
-                      { label: '🔍 Detail Shot', badge: 'bg-dark-900/90 text-purple-300 border border-purple-500/40' },
-                      { label: '✨ Festive', badge: 'bg-dark-900/90 text-amber-300 border border-amber-500/40' },
-                    ][idx] || { label: `Style ${idx + 1}`, badge: 'bg-dark-900/90 text-gold-400 border border-gold-500/40' };
-
-                    return (
-                      <div key={idx} className={`relative rounded-xl overflow-hidden aspect-square border-2 ${idx === 0 ? 'border-gold-500 shadow-md shadow-gold-500/10' : 'border-dark-600'}`}>
-                        <img src={img} alt={badgeInfo.label} className="w-full h-full object-cover" />
-                        <span className={`absolute bottom-1 left-1 right-1 text-[9px] font-bold text-center py-0.5 rounded backdrop-blur-sm ${badgeInfo.badge}`}>
-                          {badgeInfo.label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                {publishedProductId && (
-                  <button
-                    onClick={() => navigate(`/products/${publishedProductId}`)}
-                    className="btn-primary px-8 py-3 flex items-center justify-center gap-2"
-                  >
-                    <HiCheck className="w-5 h-5" /> View Product Page
-                  </button>
-                )}
-                <button
-                  onClick={() => navigate(user?.role === 'admin' ? '/admin/products' : '/artisan/products')}
-                  className={publishedProductId ? 'btn-secondary px-6 py-3' : 'btn-primary px-8 py-3 flex items-center justify-center gap-2'}
-                >
-                  Manage Products
-                </button>
-                <button
-                  onClick={() => navigate('/')}
-                  className="btn-secondary px-6 py-3"
-                >
-                  Marketplace
-                </button>
-              </div>
-            </>
-          )}
         </div>
       )}
     </div>

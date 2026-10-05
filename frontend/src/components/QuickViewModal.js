@@ -8,7 +8,6 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import LanguageSelector from './LanguageSelector';
 import toast from 'react-hot-toast';
-import { extractProductImages, PRODUCT_IMAGE_STYLES, FALLBACK_STYLED_IMAGES } from '../pages/ProductDetail';
 
 export default function QuickViewModal({ product, isOpen, onClose }) {
   const [selectedImage, setSelectedImage] = useState('');
@@ -67,7 +66,9 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
     ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
     : null);
 
-  const imagesList = extractProductImages(product);
+  const imagesList = product.images && product.images.length > 0
+    ? product.images
+    : [product.image_url || product.image].filter(Boolean);
 
   const isFavorited = isInWishlist(product.id);
 
@@ -141,35 +142,18 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
 
               {/* Thumbnails */}
               {imagesList.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {imagesList.map((img, idx) => {
-                    const styleMeta = PRODUCT_IMAGE_STYLES[idx % PRODUCT_IMAGE_STYLES.length];
-                    const isSelected = (selectedImage === img) || (!selectedImage && idx === 0);
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedImage(img)}
-                        title={styleMeta?.label}
-                        className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
-                          isSelected ? 'border-gold-500 ring-2 ring-gold-500/40 shadow-md' : 'border-dark-700 opacity-60 hover:opacity-100'
-                        }`}
-                      >
-                        <img
-                          src={img}
-                          alt={styleMeta?.label || `Thumbnail ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = FALLBACK_STYLED_IMAGES[idx % FALLBACK_STYLED_IMAGES.length];
-                          }}
-                        />
-                        <div className={`absolute bottom-0 inset-x-0 px-0.5 text-[7px] font-bold text-center truncate backdrop-blur-md ${
-                          isSelected ? 'bg-gold-500 text-dark-950' : 'bg-dark-950/80 text-gray-300'
-                        }`}>
-                          {styleMeta?.icon} {styleMeta?.label}
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="flex gap-2.5 overflow-x-auto pb-1">
+                  {imagesList.map((img, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedImage(img)}
+                      className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
+                        selectedImage === img ? 'border-gold-500 ring-2 ring-gold-500/30' : 'border-dark-600 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
