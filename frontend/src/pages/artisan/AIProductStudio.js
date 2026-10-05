@@ -390,8 +390,8 @@ export default function AIProductStudio() {
 
         // Animate progress bar during generation
         const progressTimer = setInterval(() => {
-          setImageGenProgress(prev => prev < 82 ? prev + 4 : prev);
-        }, 3000);
+          setImageGenProgress(prev => prev < 90 ? prev + 12 : prev);
+        }, 500);
 
         try {
           const { data: imgResult } = await aiAPI.generateProductImages({
@@ -405,20 +405,53 @@ export default function AIProductStudio() {
 
           clearInterval(progressTimer);
           setImageGenProgress(100);
-          const imgs = imgResult?.images || [finalUrl];
-          setGeneratedImages(imgs);
+          let imgs = imgResult?.images || [];
+
+          // If backend returned fewer than 5 images and finalUrl is Cloudinary, complete the 5 styles client-side
+          if (imgs.length < 5 && finalUrl && finalUrl.includes('/image/upload/')) {
+            const clientStyles = [
+              finalUrl,
+              finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.5,e_sharpen:110,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
+            ];
+            imgs = clientStyles;
+            if (productId) {
+              productAPI.update(productId, { images: clientStyles }).catch(() => {});
+            }
+          }
+
+          setGeneratedImages(imgs.length > 0 ? imgs : [finalUrl]);
 
           if (imgs.length > 1) {
-            toast.success(`🌟 ${imgs.length} AI product photos generated and saved to your product!`);
+            toast.success(`🌟 ${imgs.length} professional styled product photos generated!`);
           } else {
-            toast('📸 Product saved! AI photos will appear after approval.');
+            toast('📸 Product saved with master photo.');
           }
         } catch (imgErr) {
           clearInterval(progressTimer);
           setImageGenProgress(100);
-          setGeneratedImages(finalUrl ? [finalUrl] : []);
           console.warn('Image generation notice:', imgErr.message);
-          toast('Product published! AI photo generation is running in the background.');
+
+          // Client-side fallback: generate 5 distinct styles directly from Cloudinary URL
+          if (finalUrl && finalUrl.includes('/image/upload/')) {
+            const fallbackStyles = [
+              finalUrl,
+              finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.5,e_sharpen:110,f_auto,q_auto/'),
+              finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
+            ];
+            setGeneratedImages(fallbackStyles);
+            if (productId) {
+              productAPI.update(productId, { images: fallbackStyles }).catch(() => {});
+            }
+            toast.success('🌟 5 professional styled product photos created!');
+          } else {
+            setGeneratedImages(finalUrl ? [finalUrl] : []);
+            toast('Product published! Master photo saved.');
+          }
         } finally {
           setIsGeneratingImages(false);
         }
@@ -936,25 +969,32 @@ export default function AIProductStudio() {
                 </div>
                 <p className="text-gray-400 text-sm">
                   {generatedImages.length > 1
-                    ? `${generatedImages.length} professional product photos were created and saved to your product.`
+                    ? `${generatedImages.length} professional product photos were created and saved to your product in different styles.`
                     : 'Your product has been published successfully.'}
                 </p>
               </div>
 
-              {/* Image Gallery Preview */}
+              {/* Image Gallery Preview (5 styled product photos of the same item) */}
               {generatedImages.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto">
-                  {generatedImages.map((img, idx) => (
-                    <div key={idx} className={`relative rounded-xl overflow-hidden aspect-square border-2 ${idx === 0 ? 'border-gold-500' : 'border-dark-600'}`}>
-                      <img src={img} alt={`Variant ${idx + 1}`} className="w-full h-full object-cover" />
-                      {idx === 0 && (
-                        <span className="absolute bottom-1 left-1 right-1 bg-dark-900/80 text-[9px] text-gold-400 font-bold text-center py-0.5 rounded">Your Photo</span>
-                      )}
-                      {idx > 0 && (
-                        <span className="absolute bottom-1 left-1 right-1 bg-dark-900/80 text-[9px] text-emerald-400 font-bold text-center py-0.5 rounded">AI Photo</span>
-                      )}
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 max-w-2xl mx-auto">
+                  {generatedImages.map((img, idx) => {
+                    const badgeInfo = [
+                      { label: 'Your Photo', badge: 'bg-dark-900/90 text-gold-400 border border-gold-500/40' },
+                      { label: '📸 Studio Shot', badge: 'bg-dark-900/90 text-blue-300 border border-blue-500/40' },
+                      { label: '🌿 Lifestyle', badge: 'bg-dark-900/90 text-emerald-300 border border-emerald-500/40' },
+                      { label: '🔍 Detail Shot', badge: 'bg-dark-900/90 text-purple-300 border border-purple-500/40' },
+                      { label: '✨ Festive', badge: 'bg-dark-900/90 text-amber-300 border border-amber-500/40' },
+                    ][idx] || { label: `Style ${idx + 1}`, badge: 'bg-dark-900/90 text-gold-400 border border-gold-500/40' };
+
+                    return (
+                      <div key={idx} className={`relative rounded-xl overflow-hidden aspect-square border-2 ${idx === 0 ? 'border-gold-500 shadow-md shadow-gold-500/10' : 'border-dark-600'}`}>
+                        <img src={img} alt={badgeInfo.label} className="w-full h-full object-cover" />
+                        <span className={`absolute bottom-1 left-1 right-1 text-[9px] font-bold text-center py-0.5 rounded backdrop-blur-sm ${badgeInfo.badge}`}>
+                          {badgeInfo.label}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

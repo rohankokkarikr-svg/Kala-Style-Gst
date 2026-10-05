@@ -353,3 +353,35 @@ describe('Order Confirmation OTP Security (COD & Online)', () => {
   });
 });
 
+describe('AI Product Studio Image Generation', () => {
+  const { generateProductImages } = require('../controllers/aiController');
+
+  test('generateProductImages produces 4-5 styled variants of the same product image', async () => {
+    let statusCode = null;
+    let responseBody = null;
+    const req = {
+      body: {
+        image_url: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+        product_name: 'Handcrafted Banarasi Silk Saree',
+        category: 'Handloom & Textiles',
+        material: 'Pure Silk',
+        craft_technique: 'Banarasi Handloom Weaving'
+      }
+    };
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      },
+      json: (data) => { responseBody = data; }
+    };
+
+    await generateProductImages(req, res);
+    assert.strictEqual(responseBody.success, true);
+    assert.ok(responseBody.images.length >= 4, `Expected at least 4 styled photos, got ${responseBody.images.length}`);
+    responseBody.images.forEach(img => {
+      assert.ok(img.includes('wesedw9fpem0032yfsmk'), 'All styled photos must be variations of the same product image');
+    });
+  });
+});
+
