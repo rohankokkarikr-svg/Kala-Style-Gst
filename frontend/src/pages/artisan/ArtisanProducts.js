@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { artisanAPI, productAPI } from '../../services/api';
-import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiEyeOff } from 'react-icons/hi';
+import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiEyeOff, HiPhotograph } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import ProductImageManager from '../../components/ProductImageManager';
 
 export default function ArtisanProducts() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
+  const [managerProduct, setManagerProduct] = useState(null);
 
   const fetchStats = () => {
     setLoading(true);
@@ -211,6 +213,13 @@ export default function ArtisanProducts() {
                     View in Store
                   </Link>
                   <button
+                    onClick={() => setManagerProduct(p)}
+                    className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
+                    title="Manage images"
+                  >
+                    <HiPhotograph className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => handleDelete(p.id)}
                     className="btn-ghost text-xs px-2.5 py-1.5 border border-red-500/30 rounded-lg text-red-400 hover:bg-red-500/10"
                     title="Delete product"
@@ -233,6 +242,21 @@ export default function ArtisanProducts() {
             <HiSparkles className="w-4 h-4" /> Create with AI
           </Link>
         </div>
+      )}
+
+      {/* Product Image Manager Modal */}
+      {managerProduct && (
+        <ProductImageManager
+          product={managerProduct}
+          onClose={() => setManagerProduct(null)}
+          onSaved={(newImages) => {
+            setProducts(prev => prev.map(p =>
+              p.id === managerProduct.id
+                ? { ...p, image_url: newImages[0], images: newImages }
+                : p
+            ));
+          }}
+        />
       )}
     </div>
   );
