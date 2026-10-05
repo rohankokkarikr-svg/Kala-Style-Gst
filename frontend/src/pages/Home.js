@@ -6,7 +6,6 @@ import ProductCard from '../components/ProductCard';
 import { ProductCardSkeleton } from '../components/Skeleton';
 import HeroSlider from '../components/HeroSlider';
 import IndianHandicraftsSection from '../components/IndianHandicraftsSection';
-import PersonalizedRecommendations from '../components/PersonalizedRecommendations';
 import Testimonials from '../components/Testimonials';
 import Footer from '../components/Footer';
 import { productAPI, artisanAPI } from '../services/api';
@@ -127,13 +126,6 @@ export default function Home() {
       {/* 🇮🇳 Explore Indian Handicrafts - 7 Main Categories */}
       <IndianHandicraftsSection />
 
-      {/* 🎯 Transparent Personalized Product Recommendations */}
-      <PersonalizedRecommendations
-        title="Recommended for You"
-        subtitle="Handcrafted treasures tailored to your browsing journey, searches, and style preferences"
-        limit={8}
-        className="bg-dark-900 border-b border-dark-700/60"
-      />
 
       <section className="py-20 bg-dark-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
