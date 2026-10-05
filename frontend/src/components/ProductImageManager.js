@@ -49,16 +49,32 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
 
   const uploadFile = async (file) => {
     if (!file?.type.startsWith("image/")) { toast.error("Only image files are allowed."); return null; }
-    const fd = new FormData();
-    fd.append("image", file);
     const tid = toast.loading("Uploading image\u2026");
+
+    // 1st attempt: multipart/form-data
     try {
+      const fd = new FormData();
+      fd.append("image", file);
       const { data } = await productAPI.uploadDirect(fd);
       if (data?.imageUrl) { toast.success("Image uploaded!", { id: tid }); return data.imageUrl; }
       throw new Error("no url");
-    } catch {
-      toast.error("Upload failed \u2014 please try again.", { id: tid }); return null;
-    }
+    } catch (_e1) {}
+
+    // 2nd attempt: base64 JSON body (works if multer middleware is missing)
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const { data } = await productAPI.uploadDirect({ image: base64 });
+      if (data?.imageUrl) { toast.success("Image uploaded!", { id: tid }); return data.imageUrl; }
+      throw new Error("no url");
+    } catch (_e2) {}
+
+    toast.error("Upload failed. Please check your connection and try again.", { id: tid });
+    return null;
   };
 
   const handleFiles = useCallback(async (files) => {
