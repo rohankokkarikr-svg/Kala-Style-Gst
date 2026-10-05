@@ -22,9 +22,17 @@ router.get('/categories', getCategories);
 router.get('/:id', getProductById);
 
 const uploadMiddleware = (req, res, next) => {
+  const contentType = (req.headers['content-type'] || '').toLowerCase();
+  if (!contentType.includes('multipart/form-data')) {
+    return next();
+  }
+
   upload.any()(req, res, (err) => {
     if (err) {
-      console.error('❌ Cloudinary Multer Upload Error:', err);
+      console.error('❌ Multer Upload Error:', err);
+      if (req.body && req.body.image) {
+        return next();
+      }
       return res.status(400).json({ error: err.message || 'Media upload failed. Please try a different file.' });
     }
     if (req.files && req.files.length > 0 && !req.file) {

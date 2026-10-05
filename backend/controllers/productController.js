@@ -325,7 +325,7 @@ exports.createProduct = async (req, res) => {
       name, description, price, original_price, category, subcategory, sizes,
       stock_quantity = 0, is_in_stock = true, image_url, barcode,
       artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags,
-      status
+      status, images
     } = req.body;
 
     // Reliably resolve artisan_id from authenticated user session or body
@@ -394,6 +394,7 @@ exports.createProduct = async (req, res) => {
       status: productStatus,
       barcode: barcode ? barcode.trim() : null,
       ...(image_url ? { image_url } : {}),
+      ...(images !== undefined ? { images: Array.isArray(images) ? images.filter(Boolean) : [images] } : {}),
       ...(targetArtisanId ? { artisan_id: targetArtisanId } : {}),
       ...(is_handmade !== undefined ? { is_handmade } : { is_handmade: true }),
       ...(material ? { material } : {}),
@@ -443,7 +444,8 @@ exports.updateProduct = async (req, res) => {
     const { 
       name, description, price, original_price, category, subcategory, sizes, 
       stock_quantity, is_in_stock, image_url, barcode,
-      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags, status
+      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags, status,
+      images
     } = req.body;
 
     const updatePayload = { 
@@ -453,6 +455,13 @@ exports.updateProduct = async (req, res) => {
       artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags
     };
     if (status !== undefined) updatePayload.status = status;
+    if (images !== undefined) {
+      const imgArr = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
+      updatePayload.images = imgArr;
+      if (!updatePayload.image_url && imgArr.length > 0) {
+        updatePayload.image_url = imgArr[0];
+      }
+    }
 
     const { data, error } = await supabase
       .from('products')
@@ -496,38 +505,124 @@ exports.deleteProduct = async (req, res) => {
   }
 };
 
-exports.uploadProductImage = async (req, res) => {
-  try {
-    const { cloudinary } = require('../config/cloudinary');
-    let imageUrl = null;
+// Helper for bulletproof upload: attempts Cloudinary first (if configured), falls back to Supabase Storage
+const processMediaUpload = async (req) => {
+  const { cloudinary } = require('../config/cloudinary');
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+  const hasCloudinary = Boolean(cloudName && apiKey && apiSecret);
 
-    if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
-      imageUrl = 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
-    } else if (req.file && req.file.buffer) {
-      const mime = req.file.mimetype || 'image/jpeg';
-      const base64Data = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
+  if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
+    return 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
+  }
+
+  // Already a URL?
+  if (req.file && (req.file.secure_url || req.file.path || req.file.url)) {
+    return req.file.secure_url || req.file.path || req.file.url;
+  }
+  if (req.body && typeof req.body.image === 'string' && (req.body.image.startsWith('http://') || req.body.image.startsWith('https://'))) {
+    return req.body.image;
+  }
+
+  let buffer = null;
+  let mimetype = 'image/jpeg';
+  let ext = 'jpg';
+
+  if (req.file && req.file.buffer) {
+    buffer = req.file.buffer;
+    mimetype = req.file.mimetype || 'image/jpeg';
+    const origExt = (req.file.originalname || '').split('.').pop();
+    if (origExt && origExt.length <= 4) ext = origExt.toLowerCase();
+  } else if (req.body && req.body.image) {
+    const raw = req.body.image;
+    const match = raw.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      mimetype = match[1];
+      buffer = Buffer.from(match[2], 'base64');
+      if (mimetype.includes('png')) ext = 'png';
+      else if (mimetype.includes('webp')) ext = 'webp';
+      else if (mimetype.includes('gif')) ext = 'gif';
+    } else {
+      buffer = Buffer.from(raw, 'base64');
+    }
+  }
+
+  if (!buffer) {
+    return null;
+  }
+
+  // 1. Try Cloudinary if keys are present
+  if (hasCloudinary) {
+    try {
+      const base64Data = `data:${mimetype};base64,${buffer.toString('base64')}`;
       const uploadRes = await cloudinary.uploader.upload(base64Data, {
         folder: 'kalastyle-artisan-marketplace',
-        resource_type: 'auto'
+        resource_type: 'auto',
+        timeout: 45000,
       });
-      imageUrl = uploadRes.secure_url || uploadRes.url;
-    } else if (req.file && (req.file.secure_url || req.file.path || req.file.url)) {
-      imageUrl = req.file.secure_url || req.file.path || req.file.url;
-    } else if (req.body && req.body.image) {
-      const uploadRes = await cloudinary.uploader.upload(req.body.image, {
-        folder: 'kalastyle-artisan-marketplace',
-        resource_type: 'auto'
-      });
-      imageUrl = uploadRes.secure_url || uploadRes.url;
+      const cUrl = uploadRes.secure_url || uploadRes.url;
+      if (cUrl) return cUrl;
+    } catch (cErr) {
+      console.warn('⚠️ Cloudinary upload attempt failed, falling back to Supabase Storage:', cErr.message);
     }
+  }
+
+  // 2. Fallback to Supabase Storage (always available on Render via SUPABASE_SERVICE_KEY)
+  const filename = `products/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+  try {
+    let uploadRes = await supabase.storage
+      .from('product-images')
+      .upload(filename, buffer, { contentType: mimetype, upsert: true });
+
+    if (uploadRes.error) {
+      console.warn('⚠️ product-images bucket notice:', uploadRes.error.message, '- trying site-config bucket');
+      uploadRes = await supabase.storage
+        .from('site-config')
+        .upload(filename, buffer, { contentType: mimetype, upsert: true });
+    }
+
+    if (uploadRes.data?.path) {
+      const bucket = uploadRes.error ? 'site-config' : 'product-images';
+      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(uploadRes.data.path);
+      if (urlData?.publicUrl) {
+        return urlData.publicUrl;
+      }
+    }
+    if (uploadRes.error) throw uploadRes.error;
+  } catch (sErr) {
+    console.error('❌ Supabase storage upload error:', sErr.message);
+    throw new Error(`Media storage upload failed: ${sErr.message}`);
+  }
+
+  throw new Error('Could not upload media');
+};
+
+exports.uploadProductImage = async (req, res) => {
+  try {
+    const imageUrl = await processMediaUpload(req);
 
     if (!imageUrl) {
       return res.status(400).json({ error: 'Please upload a file or image data' });
     }
 
+    const { data: currentProduct } = await supabase
+      .from('products')
+      .select('images')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    let imagesList = [];
+    if (currentProduct?.images) {
+      imagesList = Array.isArray(currentProduct.images) ? [...currentProduct.images] : [currentProduct.images];
+    }
+    if (!imagesList.includes(imageUrl)) {
+      imagesList.unshift(imageUrl);
+    }
+
     const { data, error } = await supabase
       .from('products')
-      .update({ image_url: imageUrl })
+      .update({ image_url: imageUrl, images: imagesList })
       .eq('id', req.params.id)
       .select()
       .single();
@@ -544,28 +639,7 @@ exports.uploadProductImage = async (req, res) => {
 
 exports.uploadDirect = async (req, res) => {
   try {
-    const { cloudinary } = require('../config/cloudinary');
-    let imageUrl = null;
-
-    if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
-      imageUrl = 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
-    } else if (req.file && req.file.buffer) {
-      const mime = req.file.mimetype || 'image/jpeg';
-      const base64Data = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
-      const uploadRes = await cloudinary.uploader.upload(base64Data, {
-        folder: 'kalastyle-artisan-marketplace',
-        resource_type: 'auto'
-      });
-      imageUrl = uploadRes.secure_url || uploadRes.url;
-    } else if (req.file && (req.file.secure_url || req.file.path || req.file.url)) {
-      imageUrl = req.file.secure_url || req.file.path || req.file.url;
-    } else if (req.body && req.body.image) {
-      const uploadRes = await cloudinary.uploader.upload(req.body.image, {
-        folder: 'kalastyle-artisan-marketplace',
-        resource_type: 'auto'
-      });
-      imageUrl = uploadRes.secure_url || uploadRes.url;
-    }
+    const imageUrl = await processMediaUpload(req);
 
     if (!imageUrl) {
       return res.status(400).json({ error: 'No image file or image data received' });

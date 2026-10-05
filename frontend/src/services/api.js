@@ -22,6 +22,9 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('sh_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -135,13 +138,13 @@ export const productAPI = {
   update:      (id, d)  => { apiCache.invalidateProducts(); return api.put(`/products/${id}`, d); },
   delete:      (id)     => { apiCache.invalidateProducts(); return api.delete(`/products/${id}`); },
   uploadImage: (id, fd) => api.post(`/products/${id}/image`, fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
+    headers: { 'Content-Type': undefined },
+    timeout: 120000,
   }),
   uploadDirect: (data) => {
     const isFormData = data instanceof FormData;
     return api.post('/products/upload', data, {
-      headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : { 'Content-Type': 'application/json' },
+      headers: isFormData ? { 'Content-Type': undefined } : { 'Content-Type': 'application/json' },
       timeout: 120000,
     });
   },
