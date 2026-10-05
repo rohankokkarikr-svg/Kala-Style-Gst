@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useSettings } from '../context/SettingsContext';
 import { HiTrash, HiArrowRight, HiTruck } from 'react-icons/hi';
+import PersonalizedRecommendations from '../components/PersonalizedRecommendations';
 
 export default function Cart() {
   const { items, removeFromCart, updateQuantity, totalPrice } = useCart();
@@ -16,11 +17,19 @@ export default function Cart() {
 
   if (items.length === 0) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
-        <div className="text-6xl mb-6">🛒</div>
-        <h2 className="text-2xl font-serif font-bold text-white mb-2">Your cart is empty</h2>
-        <p className="text-gray-400 mb-8">Looks like you haven't added anything yet.</p>
-        <Link to="/products" className="btn-primary">Continue Shopping</Link>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
+        <div className="min-h-[40vh] flex flex-col items-center justify-center px-4 text-center">
+          <div className="text-6xl mb-6">🛒</div>
+          <h2 className="text-2xl font-serif font-bold text-white mb-2">Your cart is empty</h2>
+          <p className="text-gray-400 mb-6">Looks like you haven't added anything yet.</p>
+          <Link to="/products" className="btn-primary">Continue Shopping</Link>
+        </div>
+        <PersonalizedRecommendations
+          title="Recommended For You"
+          subtitle="Explore authentic artisan creations curated for you"
+          limit={4}
+          className="pt-12 border-t border-dark-700/60"
+        />
       </div>
     );
   }
@@ -122,6 +131,15 @@ export default function Cart() {
           </div>
         </div>
       </div>
+
+      {/* Recommended Additions for Active Cart */}
+      <PersonalizedRecommendations
+        title="Complete Your Handcrafted Look"
+        subtitle="Artisan handicraft pairings curated to complement your current selections"
+        limit={4}
+        excludeIds={items.map((i) => i.product?.id).filter(Boolean)}
+        className="pt-16 border-t border-dark-700/60 mt-12"
+      />
     </div>
   );
 }

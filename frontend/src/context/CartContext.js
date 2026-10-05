@@ -33,6 +33,10 @@ export const CartProvider = ({ children }) => {
     } else {
       toast.success(`${product.name} added to cart 🛒`, { id: 'cart-toast' });
     }
+
+    try {
+      window.dispatchEvent(new CustomEvent('kala:signal', { detail: { type: 'CART', product } }));
+    } catch {}
   };
 
   const removeFromCart = (key) => {

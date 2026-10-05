@@ -40,6 +40,10 @@ export const WishlistProvider = ({ children }) => {
       toast.success(`${product.name || 'Item'} added to Wishlist! ❤️`, { id: 'wishlist-toast' });
       return [...prev, product];
     });
+
+    try {
+      window.dispatchEvent(new CustomEvent('kala:signal', { detail: { type: 'WISHLIST', product } }));
+    } catch {}
   };
 
   const removeFromWishlist = (productId) => {

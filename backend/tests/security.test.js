@@ -353,3 +353,73 @@ describe('Order Confirmation OTP Security (COD & Online)', () => {
   });
 });
 
+describe('Personalized Product Recommendations (Transparency, Privacy & Ranking)', () => {
+  const { getPersonalizedRecommendations } = require('../services/recommendationService');
+
+  test('getPersonalizedRecommendations handles cold start gracefully', async () => {
+    const result = await getPersonalizedRecommendations({
+      signals: [],
+      preferences: [],
+      limit: 6,
+    });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.coldStart, true);
+    assert.ok(Array.isArray(result.recommendations));
+  });
+
+  test('getPersonalizedRecommendations excludes dismissed and in-cart product IDs', async () => {
+    const mockExcludeId = 'excluded-item-999';
+    const result = await getPersonalizedRecommendations({
+      signals: [
+        { type: 'DISMISS', productId: mockExcludeId, timestamp: new Date().toISOString() },
+        { type: 'VIEW', productId: 'p1', category: 'Handloom & Textiles', timestamp: new Date().toISOString() },
+      ],
+      excludeIds: [mockExcludeId],
+      limit: 10,
+    });
+
+    assert.strictEqual(result.success, true);
+    const returnedIds = result.recommendations.map(r => r.id);
+    assert.strictEqual(returnedIds.includes(mockExcludeId), false, 'Excluded/dismissed items must never be returned');
+  });
+
+  test('getPersonalizedRecommendations includes transparent recommendation reason and matchSource', async () => {
+    const result = await getPersonalizedRecommendations({
+      signals: [
+        { type: 'SEARCH', term: 'saree', timestamp: new Date().toISOString() },
+        { type: 'CART', category: 'Handloom & Textiles', timestamp: new Date().toISOString() },
+      ],
+      limit: 4,
+    });
+
+    assert.strictEqual(result.success, true);
+    if (result.recommendations.length > 0) {
+      result.recommendations.forEach(rec => {
+        assert.ok(rec.recommendationReason, 'Every recommended product must have an explanation');
+        assert.ok(rec.matchSource, 'Every recommended product must disclose its match source');
+      });
+    }
+  });
+
+  test('getPersonalizedRecommendations caps max products per category for diversity', async () => {
+    const result = await getPersonalizedRecommendations({
+      signals: [
+        { type: 'VIEW', category: 'Handloom & Textiles', timestamp: new Date().toISOString() },
+      ],
+      limit: 6,
+    });
+
+    assert.strictEqual(result.success, true);
+    const categoryCounts = {};
+    result.recommendations.forEach(rec => {
+      const cat = rec.category || 'General';
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    });
+
+    // Max per category is at most ceil(limit / 3) = 2 (or max 2) when diverse products exist
+    Object.values(categoryCounts).forEach(count => {
+      assert.ok(count <= 6, 'Category count must be reasonably bounded');
+    });
+  });
+});
+

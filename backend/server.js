@@ -111,6 +111,7 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/admin/ai-manager', require('./routes/aiAdminRoutes'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/recommendations', require('./routes/recommendations'));
 
 // Health check — also checks if Supabase is reachable
 app.get('/health', async (req, res) => {

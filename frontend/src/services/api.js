@@ -347,6 +347,13 @@ export const shippingAPI = {
   retryShipment:        (id)           => api.post(`/shipping/${id}/retry`),
 };
 
+// ─── Personalized & Seasonal Recommendations ─────
+export const recommendationAPI = {
+  getPersonalized: (data) => api.post('/recommendations/personalized', data, { timeout: 8000 }),
+  getSeasonal:     (params) => cachedGet('/recommendations/seasonal', { params }, 120000),
+  getByCategory:   (params) => cachedGet('/recommendations/by-category', { params }, 60000),
+};
+
 export default api;
 export { apiCache };
 

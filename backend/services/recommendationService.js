@@ -267,9 +267,257 @@ async function analyzeSeasonalInventory() {
   };
 }
 
+/**
+ * Calculate personalized product recommendations using real catalog data
+ * and multi-signal shopper behavior (views, searches, cart, wishlist, preferences).
+ *
+ * @param {object} options
+ * @param {Array} options.signals - Shopper activity events
+ * @param {Array} options.preferences - Explicit category preferences
+ * @param {Array} options.excludeIds - Product IDs to exclude (in-cart, dismissed, or current)
+ * @param {number} options.limit - Max products to return
+ * @param {string} options.targetCategory - Optional specific category filter
+ * @returns {Promise<object>}
+ */
+async function getPersonalizedRecommendations({
+  signals = [],
+  preferences = [],
+  excludeIds = [],
+  limit = 8,
+  targetCategory = null,
+} = {}) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 8, 24));
+  const excludeSet = new Set((Array.isArray(excludeIds) ? excludeIds : []).filter(Boolean));
+
+  // 1. Sanitize & normalize signals
+  const validSignalTypes = new Set(['SEARCH', 'VIEW', 'CART', 'WISHLIST', 'PREFERENCE', 'DISMISS']);
+  const sanitizedSignals = (Array.isArray(signals) ? signals : [])
+    .filter(s => s && typeof s === 'object' && validSignalTypes.has(s.type))
+    .slice(0, 50);
+
+  // Separate dismissals
+  sanitizedSignals.forEach(s => {
+    if (s.type === 'DISMISS' && s.productId) {
+      excludeSet.add(s.productId);
+    }
+  });
+
+  // 2. Fetch real in-stock approved products from Supabase
+  let catalog = [];
+  try {
+    let query = supabase
+      .from('products')
+      .select('id, name, price, category, description, image_url, stock_quantity, is_in_stock, tags, artisan_id')
+      .eq('is_in_stock', true)
+      .eq('status', 'approved')
+      .gt('stock_quantity', 0)
+      .limit(100);
+
+    if (targetCategory && typeof targetCategory === 'string') {
+      query = query.ilike('category', `%${targetCategory.trim()}%`);
+    }
+
+    const { data, error } = await safeQuery(() => query);
+    if (!error && Array.isArray(data)) {
+      catalog = data;
+    }
+  } catch (err) {
+    console.error('[Recommendation Service] Catalog fetch error:', err.message);
+  }
+
+  // Filter out exclusions & out-of-stock items immediately
+  const availableCandidates = catalog.filter(p => p && p.id && !excludeSet.has(p.id) && p.is_in_stock && p.stock_quantity > 0);
+
+  if (availableCandidates.length === 0) {
+    return {
+      success: true,
+      recommendations: [],
+      totalFound: 0,
+      coldStart: true,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // 3. Signal Weights & Recency Decay
+  const SIGNAL_WEIGHTS = {
+    CART: 8.0,
+    WISHLIST: 6.0,
+    PREFERENCE: 7.0,
+    SEARCH: 5.0,
+    VIEW: 3.0,
+  };
+
+  const now = Date.now();
+  const categoryScores = {};
+  const searchTerms = [];
+  const interactedProductIds = new Map(); // id -> highest signal weight
+
+  sanitizedSignals.forEach(signal => {
+    if (signal.type === 'DISMISS') return;
+
+    // Recency decay: lambda = 0.015 (half-life approx 46 hours)
+    const timestamp = signal.timestamp ? new Date(signal.timestamp).getTime() : now;
+    const hoursElapsed = Math.max(0, (now - timestamp) / (1000 * 60 * 60));
+    const decay = Math.exp(-0.015 * Math.min(hoursElapsed, 720)); // cap at 30 days
+    const weight = (SIGNAL_WEIGHTS[signal.type] || 2.0) * decay;
+
+    if (signal.category && typeof signal.category === 'string') {
+      const catKey = signal.category.toLowerCase().trim();
+      categoryScores[catKey] = (categoryScores[catKey] || 0) + weight;
+    }
+
+    if (signal.term && typeof signal.term === 'string') {
+      const cleanTerm = signal.term.trim().toLowerCase();
+      if (cleanTerm.length >= 2) {
+        searchTerms.push({ term: cleanTerm, weight });
+      }
+    }
+
+    if (signal.productId) {
+      const prev = interactedProductIds.get(signal.productId) || 0;
+      if (weight > prev) {
+        interactedProductIds.set(signal.productId, weight);
+      }
+    }
+  });
+
+  // Explicit category preferences boost
+  const prefSet = new Set((Array.isArray(preferences) ? preferences : []).map(p => String(p).toLowerCase().trim()));
+  prefSet.forEach(pref => {
+    categoryScores[pref] = (categoryScores[pref] || 0) + 7.0;
+  });
+
+  const isColdStart = sanitizedSignals.filter(s => s.type !== 'DISMISS').length === 0 && prefSet.size === 0;
+
+  // 4. Score each candidate product
+  const scoredProducts = availableCandidates.map(product => {
+    let score = 1.0; // Base score
+    let reason = 'Trending Indian handicraft';
+    let matchSource = 'trending';
+    let maxFactorScore = 0;
+
+    const prodCategoryLower = (product.category || '').toLowerCase().trim();
+    const prodNameLower = (product.name || '').toLowerCase();
+    const prodDescLower = (product.description || '').toLowerCase();
+
+    // A. Explicit preference bonus
+    if (prodCategoryLower && prefSet.has(prodCategoryLower)) {
+      const prefScore = 9.0;
+      score += prefScore;
+      if (prefScore > maxFactorScore) {
+        maxFactorScore = prefScore;
+        reason = `Matches your preferred craft: ${product.category}`;
+        matchSource = 'preference';
+      }
+    }
+
+    // B. Category Affinity Score
+    for (const [cat, catScore] of Object.entries(categoryScores)) {
+      if (prodCategoryLower.includes(cat) || cat.includes(prodCategoryLower)) {
+        score += catScore * 1.8;
+        if (catScore * 1.8 > maxFactorScore) {
+          maxFactorScore = catScore * 1.8;
+          // Find which signal triggered this
+          const relevantSignal = sanitizedSignals.find(s => s.category && s.category.toLowerCase().includes(cat));
+          if (relevantSignal?.type === 'CART') {
+            reason = `Complements items in your cart`;
+            matchSource = 'cart';
+          } else if (relevantSignal?.type === 'WISHLIST') {
+            reason = `Similar to items in your wishlist`;
+            matchSource = 'wishlist';
+          } else {
+            reason = `Based on your interest in ${product.category}`;
+            matchSource = 'view';
+          }
+        }
+      }
+    }
+
+    // C. Search Query Token Matching
+    searchTerms.forEach(({ term, weight }) => {
+      const words = term.split(/\s+/).filter(w => w.length >= 3);
+      let matchCount = 0;
+      words.forEach(word => {
+        if (prodNameLower.includes(word)) matchCount += 2.0;
+        else if (prodCategoryLower.includes(word)) matchCount += 1.5;
+        else if (prodDescLower.includes(word)) matchCount += 0.8;
+      });
+
+      if (matchCount > 0) {
+        const searchScore = matchCount * weight * 2.5;
+        score += searchScore;
+        if (searchScore > maxFactorScore) {
+          maxFactorScore = searchScore;
+          reason = `Based on your search for "${term}"`;
+          matchSource = 'search';
+        }
+      }
+    });
+
+    // D. Soft seasonal boost for cold-start or low activity
+    const seasonalCtx = getSeasonalContext();
+    if (seasonalCtx.categories.some(cat => prodCategoryLower.includes(cat.toLowerCase().split(' ')[0]))) {
+      score += 1.2;
+      if (isColdStart && 1.2 > maxFactorScore) {
+        reason = `Handcrafted pick for ${seasonalCtx.season}`;
+        matchSource = 'seasonal';
+      }
+    }
+
+    return {
+      product,
+      score,
+      recommendationReason: reason,
+      matchSource,
+    };
+  });
+
+  // 5. Diversity Enforcement: Sort by score and cap per category
+  scoredProducts.sort((a, b) => b.score - a.score);
+
+  const maxPerCategory = Math.max(2, Math.ceil(safeLimit / 3));
+  const categoryCounts = {};
+  const selected = [];
+  const overflow = [];
+
+  for (const item of scoredProducts) {
+    const cat = item.product.category || 'General';
+    const currentCount = categoryCounts[cat] || 0;
+    if (currentCount < maxPerCategory) {
+      categoryCounts[cat] = currentCount + 1;
+      selected.push({
+        ...item.product,
+        recommendationReason: item.recommendationReason,
+        matchSource: item.matchSource,
+      });
+      if (selected.length >= safeLimit) break;
+    } else {
+      overflow.push({
+        ...item.product,
+        recommendationReason: item.recommendationReason,
+        matchSource: item.matchSource,
+      });
+    }
+  }
+
+  // If diversity filter resulted in fewer than requested limit, backfill with remaining highest scoring items
+  while (selected.length < safeLimit && overflow.length > 0) {
+    selected.push(overflow.shift());
+  }
+
+  return {
+    success: true,
+    recommendations: selected,
+    totalFound: selected.length,
+    coldStart: isColdStart,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   getSeasonalContext,
   generateSeasonalRecommendations,
   getProductRecommendationsByCategory,
   analyzeSeasonalInventory,
+  getPersonalizedRecommendations,
 };

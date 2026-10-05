@@ -4,6 +4,7 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { useRecommendations } from '../context/RecommendationContext';
 import { productAPI, reviewAPI, artisanAPI } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
 import ProductCard from '../components/ProductCard';
@@ -98,6 +99,7 @@ export default function ProductDetail() {
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { isAuthenticated, isAdmin } = useAuth();
   const { settings } = useSettings();
+  const { trackProductView, fetchRecommendations, dismissProduct } = useRecommendations();
   const timeline = settings?.shipping_estimated_days || '3 - 5 Business Days';
 
   const [product, setProduct] = useState(null);
@@ -176,13 +178,33 @@ export default function ProductDetail() {
   }, [id]);
 
   useEffect(() => {
+    if (product?.id) {
+      trackProductView(product);
+    }
+  }, [product, trackProductView]);
+
+  useEffect(() => {
     if (!product) return;
     const fetchRelated = async () => {
       setLoadingRelated(true);
       try {
-        const { data } = await productAPI.getAll({ category: product.category });
-        setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 4) : []);
-      } catch { setRelatedProducts([]); } finally { setLoadingRelated(false); }
+        const res = await fetchRecommendations({
+          limit: 4,
+          targetCategory: product.category,
+          excludeIds: [product.id],
+        });
+        if (res?.recommendations && res.recommendations.length > 0) {
+          setRelatedProducts(res.recommendations);
+        } else {
+          const { data } = await productAPI.getAll({ category: product.category });
+          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 4) : []);
+        }
+      } catch {
+        try {
+          const { data } = await productAPI.getAll({ category: product.category });
+          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 4) : []);
+        } catch { setRelatedProducts([]); }
+      } finally { setLoadingRelated(false); }
     };
     fetchRelated();
     if (product?.name) {
@@ -190,7 +212,7 @@ export default function ProductDetail() {
         .then(res => setProductReviews(res.data || []))
         .catch(() => {});
     }
-  }, [product]);
+  }, [product, fetchRecommendations]);
 
   const totalReviewsCount = productReviews.length;
   const avgRating = totalReviewsCount > 0
@@ -815,7 +837,16 @@ export default function ProductDetail() {
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {loadingRelated
               ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-              : relatedProducts.map(p => <ProductCard key={p.id} product={p} />)}
+              : relatedProducts.map(p => (
+                  <ProductCard
+                    key={p.id}
+                    product={p}
+                    onDismiss={(pid) => {
+                      dismissProduct(pid);
+                      setRelatedProducts(prev => prev.filter(item => item.id !== pid));
+                    }}
+                  />
+                ))}
           </div>
           {!loadingRelated && relatedProducts.length > 0 && (
             <div className="text-center mt-8">

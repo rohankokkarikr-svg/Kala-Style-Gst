@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
+import { useRecommendations } from '../context/RecommendationContext';
 import {
   HiShoppingCart,
   HiHeart,
@@ -48,6 +49,7 @@ export default function Navbar() {
   const { user, logout, isAdmin, isArtisan } = useAuth();
   const { totalItems } = useCart();
   const { totalWishlistItems } = useWishlist();
+  const { trackSearch } = useRecommendations();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -65,6 +67,7 @@ export default function Navbar() {
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     if (searchQuery.trim()) {
+      trackSearch(searchQuery.trim());
       navigate(`/products?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery('');
       setSearchOpen(false);
@@ -72,6 +75,7 @@ export default function Navbar() {
   };
 
   const handleSuggestionClick = (term) => {
+    trackSearch(term);
     navigate(`/products?search=${encodeURIComponent(term)}`);
     setSearchQuery('');
     setSearchOpen(false);

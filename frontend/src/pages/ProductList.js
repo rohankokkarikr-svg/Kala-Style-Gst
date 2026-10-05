@@ -6,6 +6,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { useSettings } from '../context/SettingsContext';
 import { ProductCardSkeleton } from '../components/Skeleton';
 import { productAPI, categoryAPI } from '../services/api';
+import { useRecommendations } from '../context/RecommendationContext';
+import PersonalizedRecommendations from '../components/PersonalizedRecommendations';
 import { HANDICRAFT_CATEGORIES } from '../constants/handicraftsData';
 import {
   HiFilter,
@@ -66,11 +68,15 @@ export default function ProductList() {
   const [selectedAvailability, setSelectedAvailability] = useState('all');
   const [selectedDiscount, setSelectedDiscount] = useState(0);
   const [internalSearch, setInternalSearch] = useState(searchQuery);
+  const { trackSearch } = useRecommendations();
 
   // Sync internal search when URL changes
   useEffect(() => {
     setInternalSearch(searchQuery);
-  }, [searchQuery]);
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      trackSearch(searchQuery.trim());
+    }
+  }, [searchQuery, trackSearch]);
 
   // Fetch from API with reliable fallback to full authentic handicrafts data
   const fetchProducts = React.useCallback(async (isBackground = false) => {
@@ -887,6 +893,19 @@ export default function ProductList() {
                 <button onClick={clearAllFilters} className="btn-gold px-6 py-2.5 text-xs font-semibold">
                   View All Handicrafts
                 </button>
+              </div>
+            )}
+
+            {/* Fallback recommendations when search yields few or 0 products */}
+            {!loading && filteredAndSortedProducts.length === 0 && (
+              <div className="mt-12 text-left w-full border-t border-dark-700/80 pt-8">
+                <PersonalizedRecommendations
+                  title="Curated Recommendations For You"
+                  subtitle="While you refine your search, discover these authentic Indian handicrafts"
+                  limit={4}
+                  showControls={false}
+                  className="py-2"
+                />
               </div>
             )}
           </main>

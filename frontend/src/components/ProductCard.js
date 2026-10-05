@@ -3,12 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
-import { HiShoppingCart, HiStar, HiHeart, HiEye } from 'react-icons/hi';
+import { HiShoppingCart, HiStar, HiHeart, HiEye, HiX, HiSparkles } from 'react-icons/hi';
 import QuickViewModal from './QuickViewModal';
 import { useLanguage } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
 
-export default function ProductCard({ product }) {
+export default function ProductCard({ product, onDismiss }) {
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { isAuthenticated } = useAuth();
@@ -33,7 +33,8 @@ export default function ProductCard({ product }) {
     is_in_stock,
     stock_quantity,
     discount_percentage,
-    state_of_origin
+    state_of_origin,
+    recommendationReason,
   } = product;
 
   const mainImage = image_url || image || (product.images && product.images[0]) || '';
@@ -106,8 +107,23 @@ export default function ProductCard({ product }) {
             )}
           </div>
 
-          {/* Wishlist Button (Interactive & Accessible, not inside Link) */}
-          <div className="absolute top-2.5 right-2.5 z-20">
+          {/* Top Right Actions: Dismiss (if personalized) & Wishlist */}
+          <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDismiss(id);
+                }}
+                className="p-1.5 rounded-full backdrop-blur-md bg-dark-900/80 text-gray-400 hover:text-red-400 hover:bg-dark-900 transition-all shadow-md cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400"
+                title="Not interested (hide from recommendations)"
+                aria-label="Dismiss recommendation"
+              >
+                <HiX className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={handleWishlistToggle}
@@ -146,6 +162,17 @@ export default function ProductCard({ product }) {
         {/* Product Details */}
         <div className="p-4 flex-1 flex flex-col justify-between">
           <div>
+            {/* Transparent Recommendation Reason Badge */}
+            {recommendationReason && (
+              <div
+                className="flex items-center gap-1 text-[10.5px] font-medium text-gold-400 bg-gold-500/10 px-2 py-0.5 rounded border border-gold-500/20 mb-2 truncate"
+                title={recommendationReason}
+              >
+                <HiSparkles className="w-3 h-3 text-gold-400 shrink-0" />
+                <span className="truncate">{recommendationReason}</span>
+              </div>
+            )}
+
             {/* Category & Origin */}
             <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
               <span className="text-gold-400/90 font-medium truncate max-w-[65%]">

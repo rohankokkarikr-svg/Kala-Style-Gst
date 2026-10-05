@@ -12,6 +12,7 @@ import { WishlistProvider } from './context/WishlistContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { RealtimeSyncProvider } from './context/RealtimeSyncContext';
 import { LanguageProvider } from './context/LanguageContext';
+import { RecommendationProvider } from './context/RecommendationContext';
 
 // Core layout components (immediate paint)
 import Navbar from './components/Navbar';
@@ -110,7 +111,8 @@ function App() {
           <WishlistProvider>
             <LanguageProvider>
               <RealtimeSyncProvider>
-              <Router>
+                <RecommendationProvider>
+                  <Router>
                 {/* Global Toast Notifications */}
                 <Toaster 
                   position="bottom-right"
@@ -206,6 +208,7 @@ function App() {
                   </Routes>
                 </Suspense>
               </Router>
+              </RecommendationProvider>
             </RealtimeSyncProvider>
           </LanguageProvider>
         </WishlistProvider>
