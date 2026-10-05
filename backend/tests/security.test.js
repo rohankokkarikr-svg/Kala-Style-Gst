@@ -383,5 +383,23 @@ describe('AI Product Studio Image Generation', () => {
       assert.ok(img.includes('wesedw9fpem0032yfsmk'), 'All styled photos must be variations of the same product image');
     });
   });
+
+  test('getProductById enriches product with 4-5 styled variants of same product for gallery display', async () => {
+    const { getProductById } = require('../controllers/productController');
+    let responseBody = null;
+    let statusCode = 200;
+    const req = {
+      params: { id: '36e7bf71-a953-4a18-9b1b-c30aeb895fd5' },
+      user: { role: 'shopper' }
+    };
+    const res = {
+      status: (code) => { statusCode = code; return { json: (d) => { responseBody = d; } }; },
+      json: (d) => { responseBody = d; }
+    };
+    await getProductById(req, res);
+    assert.strictEqual(statusCode, 200);
+    assert.ok(Array.isArray(responseBody.images), 'images must be an array');
+    assert.ok(responseBody.images.length >= 4, `Expected at least 4 styled photos on user side, got ${responseBody.images.length}`);
+  });
 });
 

@@ -13,7 +13,7 @@ import { useLanguage } from '../context/LanguageContext';
 import LanguageSelector from '../components/LanguageSelector';
 import {
   HiShoppingCart, HiStar, HiTruck, HiShieldCheck, HiHeart,
-  HiChevronRight, HiCheckCircle, HiBadgeCheck, HiPencilAlt,
+  HiChevronRight, HiChevronLeft, HiCheckCircle, HiBadgeCheck, HiPencilAlt,
   HiSparkles, HiChatAlt2, HiChevronDown, HiChevronUp,
   HiLocationMarker, HiClock, HiRefresh, HiLockClosed, HiArrowRight,
 } from 'react-icons/hi';
@@ -56,9 +56,27 @@ function StarRow({ rating, size = 'w-4 h-4' }) {
   );
 }
 
-/* ─── Product Images Extraction Helper ─── */
-function extractProductImages(prod) {
-  if (!prod) return [];
+/* ─── Product Image Styles Definition ─── */
+export const PRODUCT_IMAGE_STYLES = [
+  { id: 'master', label: 'Master View', icon: '📸', desc: 'Authentic Artisan Capture' },
+  { id: 'studio', label: 'Studio Shot', icon: '✨', desc: 'Crisp E-commerce Lighting' },
+  { id: 'lifestyle', label: 'Lifestyle', icon: '🌿', desc: 'Warm Ambient Golden Tone' },
+  { id: 'detail', label: 'Craft Detail', icon: '🔍', desc: 'Macro Texture & Stitching' },
+  { id: 'festive', label: 'Festive Showcase', icon: '🏮', desc: 'Heritage Luster & Depth' },
+];
+
+export const FALLBACK_PRODUCT_IMAGE = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+
+export const FALLBACK_STYLED_IMAGES = [
+  FALLBACK_PRODUCT_IMAGE,
+  'https://res.cloudinary.com/dcmmxmikz/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+  'https://res.cloudinary.com/dcmmxmikz/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+  'https://res.cloudinary.com/dcmmxmikz/image/upload/c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+  'https://res.cloudinary.com/dcmmxmikz/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+];
+
+export function extractProductImages(prod) {
+  if (!prod) return FALLBACK_STYLED_IMAGES;
   let list = [];
   if (Array.isArray(prod.images) && prod.images.length > 0) {
     list = prod.images.filter(Boolean);
@@ -80,12 +98,48 @@ function extractProductImages(prod) {
     }
   }
 
+  const primary = prod.image_url || prod.image || (list.length > 0 ? list[0] : null);
   if (list.length === 0) {
-    const fallback = prod.image_url || prod.image;
-    if (fallback) list = [fallback];
+    if (primary) list = [primary];
+    else return FALLBACK_STYLED_IMAGES;
   }
 
-  return [...new Set(list.filter(Boolean))];
+  // If the product has fewer than 3 images, generate 5 styled views of the SAME product
+  const baseImg = primary || list[0];
+  if (baseImg && list.length < 5) {
+    if (baseImg.includes('/image/upload/')) {
+      const transforms = [
+        'e_improve,e_sharpen:90,f_auto,q_auto',
+        'e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto',
+        'c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto',
+        'e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto',
+      ];
+      for (const tr of transforms) {
+        if (list.length >= 5) break;
+        const styledUrl = baseImg.replace('/image/upload/', `/image/upload/${tr}/`);
+        if (!list.includes(styledUrl)) {
+          list.push(styledUrl);
+        }
+      }
+    } else if (baseImg.startsWith('http')) {
+      const transforms = [
+        'e_improve,e_sharpen:90,f_auto,q_auto',
+        'e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto',
+        'c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto',
+        'e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto',
+      ];
+      for (const tr of transforms) {
+        if (list.length >= 5) break;
+        const styledUrl = `https://res.cloudinary.com/dcmmxmikz/image/fetch/${tr}/${encodeURIComponent(baseImg)}`;
+        if (!list.includes(styledUrl)) {
+          list.push(styledUrl);
+        }
+      }
+    }
+  }
+
+  const finalResult = [...new Set(list.filter(Boolean))];
+  return finalResult.length >= 3 ? finalResult.slice(0, 5) : FALLBACK_STYLED_IMAGES;
 }
 
 /* ══════════════════════════════════════════
@@ -259,7 +313,26 @@ export default function ProductDetail() {
     addToCart(product, product.sizes?.[0] || 'Standard', quantity);
   };
 
-  const handleImageSelect = (img, idx) => { setSelectedImage(img); setSelectedImageIdx(idx); };
+  const handleImageSelect = (img, idx) => {
+    setSelectedImage(img);
+    setSelectedImageIdx(idx);
+  };
+
+  const handlePrevImage = () => {
+    if (!imagesList.length) return;
+    const nextIdx = (selectedImageIdx - 1 + imagesList.length) % imagesList.length;
+    setSelectedImageIdx(nextIdx);
+    setSelectedImage(imagesList[nextIdx]);
+  };
+
+  const handleNextImage = () => {
+    if (!imagesList.length) return;
+    const nextIdx = (selectedImageIdx + 1) % imagesList.length;
+    setSelectedImageIdx(nextIdx);
+    setSelectedImage(imagesList[nextIdx]);
+  };
+
+  const activeStyle = PRODUCT_IMAGE_STYLES[selectedImageIdx % PRODUCT_IMAGE_STYLES.length];
 
   return (
     <div className="min-h-screen bg-dark-900">
@@ -308,27 +381,40 @@ export default function ProductDetail() {
             <div className="flex flex-col sm:flex-row gap-4">
               {/* Vertical thumbnails - desktop */}
               {imagesList.length > 1 && (
-                <div className="hidden sm:flex flex-col gap-3 w-20 flex-shrink-0">
-                  {imagesList.map((img, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleImageSelect(img, idx)}
-                      className={`relative w-20 h-20 rounded-xl overflow-hidden border-2 transition-all duration-200 flex-shrink-0 ${
-                        selectedImageIdx === idx
-                          ? 'border-gold-500 ring-2 ring-gold-500/30 scale-[0.97]'
-                          : 'border-dark-700 opacity-55 hover:opacity-90 hover:border-dark-500'
-                      }`}
-                    >
-                      <img
-                        src={img}
-                        alt={`View ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={e => {
-                          e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
-                        }}
-                      />
-                    </button>
-                  ))}
+                <div className="hidden sm:flex flex-col gap-2.5 w-24 flex-shrink-0">
+                  {imagesList.map((img, idx) => {
+                    const styleMeta = PRODUCT_IMAGE_STYLES[idx % PRODUCT_IMAGE_STYLES.length];
+                    const isSelected = selectedImageIdx === idx;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleImageSelect(img, idx)}
+                        title={`${styleMeta?.label} — ${styleMeta?.desc}`}
+                        className={`relative group/thumb w-24 h-24 rounded-xl overflow-hidden border-2 transition-all duration-200 flex-shrink-0 flex flex-col text-left ${
+                          isSelected
+                            ? 'border-gold-500 ring-2 ring-gold-500/40 shadow-lg scale-[0.98]'
+                            : 'border-dark-700 opacity-60 hover:opacity-100 hover:border-gold-500/50'
+                        }`}
+                      >
+                        <img
+                          src={img}
+                          alt={styleMeta?.label || `Style ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            e.target.src = FALLBACK_STYLED_IMAGES[idx % FALLBACK_STYLED_IMAGES.length];
+                          }}
+                        />
+                        {/* Style Badge overlay */}
+                        <div className={`absolute bottom-0 inset-x-0 px-1 py-0.5 text-[9px] font-semibold text-center truncate backdrop-blur-md transition-colors ${
+                          isSelected
+                            ? 'bg-gold-500/90 text-dark-950 font-bold'
+                            : 'bg-dark-950/80 text-gray-300 group-hover/thumb:text-gold-300'
+                        }`}>
+                          <span>{styleMeta?.icon} {styleMeta?.label}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -340,10 +426,33 @@ export default function ProductDetail() {
                     alt={product.name}
                     className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
                     onError={e => {
-                      e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+                      e.target.src = FALLBACK_STYLED_IMAGES[selectedImageIdx % FALLBACK_STYLED_IMAGES.length];
                     }}
                   />
-                  {/* Badges */}
+
+                  {/* Previous / Next Arrow Controls */}
+                  {imagesList.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handlePrevImage}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-dark-950/80 hover:bg-dark-900 text-white flex items-center justify-center backdrop-blur-md border border-dark-600/70 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                        aria-label="Previous product image style"
+                      >
+                        <HiChevronLeft className="w-6 h-6 text-gold-400" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNextImage}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-dark-950/80 hover:bg-dark-900 text-white flex items-center justify-center backdrop-blur-md border border-dark-600/70 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                        aria-label="Next product image style"
+                      >
+                        <HiChevronRight className="w-6 h-6 text-gold-400" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Top Badges */}
                   <div className="absolute top-3.5 left-3.5 flex flex-col gap-2 z-10 pointer-events-none">
                     {discount && (
                       <span className="bg-red-600 text-white font-bold text-[11px] uppercase px-2.5 py-1 rounded-full shadow-lg">
@@ -354,6 +463,7 @@ export default function ProductDetail() {
                       <span>🇮🇳</span><span>Handmade in India</span>
                     </span>
                   </div>
+
                   {/* Wishlist */}
                   <button
                     onClick={() => toggleWishlist(product)}
@@ -364,35 +474,54 @@ export default function ProductDetail() {
                   >
                     <HiHeart className={`w-5 h-5 ${isFavorited ? 'fill-current' : ''}`} />
                   </button>
-                  {/* Counter pill */}
+
+                  {/* Active Style Badge (bottom-left) */}
+                  {activeStyle && (
+                    <div className="absolute bottom-3.5 left-3.5 bg-dark-900/90 backdrop-blur-md border border-gold-500/30 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-xl flex items-center gap-1.5 z-10">
+                      <span className="text-sm">{activeStyle.icon}</span>
+                      <span className="text-gold-400 font-bold">{activeStyle.label}</span>
+                      <span className="text-gray-400 text-[10px] hidden sm:inline">• {activeStyle.desc}</span>
+                    </div>
+                  )}
+
+                  {/* Counter pill (bottom-right) */}
                   {imagesList.length > 1 && (
-                    <div className="absolute bottom-3.5 right-3.5 bg-dark-900/80 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-dark-600/60">
-                      {selectedImageIdx + 1}/{imagesList.length}
+                    <div className="absolute bottom-3.5 right-3.5 bg-dark-900/85 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1.5 rounded-full border border-dark-600/60 shadow-xl z-10">
+                      {selectedImageIdx + 1} / {imagesList.length}
                     </div>
                   )}
                 </div>
 
                 {/* Mobile thumbnail strip */}
                 {imagesList.length > 1 && (
-                  <div className="flex sm:hidden gap-2.5 mt-3 overflow-x-auto pb-1">
-                    {imagesList.map((img, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleImageSelect(img, idx)}
-                        className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
-                          selectedImageIdx === idx ? 'border-gold-500 ring-1 ring-gold-500/30' : 'border-dark-700 opacity-55 hover:opacity-90'
-                        }`}
-                      >
-                        <img
-                          src={img}
-                          alt={`View ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                          onError={e => {
-                            e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
-                          }}
-                        />
-                      </button>
-                    ))}
+                  <div className="flex sm:hidden gap-2 mt-3 overflow-x-auto pb-2 scrollbar-none">
+                    {imagesList.map((img, idx) => {
+                      const styleMeta = PRODUCT_IMAGE_STYLES[idx % PRODUCT_IMAGE_STYLES.length];
+                      const isSelected = selectedImageIdx === idx;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleImageSelect(img, idx)}
+                          className={`relative w-20 h-20 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
+                            isSelected ? 'border-gold-500 ring-2 ring-gold-500/40' : 'border-dark-700 opacity-60'
+                          }`}
+                        >
+                          <img
+                            src={img}
+                            alt={styleMeta?.label || `Style ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={e => {
+                              e.target.src = FALLBACK_STYLED_IMAGES[idx % FALLBACK_STYLED_IMAGES.length];
+                            }}
+                          />
+                          <div className={`absolute bottom-0 inset-x-0 px-1 text-[8px] font-bold text-center truncate backdrop-blur-md ${
+                            isSelected ? 'bg-gold-500 text-dark-950' : 'bg-dark-950/80 text-gray-300'
+                          }`}>
+                            {styleMeta?.icon} {styleMeta?.label}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

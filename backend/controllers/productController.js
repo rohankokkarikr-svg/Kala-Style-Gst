@@ -110,6 +110,76 @@ exports.getCategories = async (req, res) => {
   }
 };
 
+/**
+ * Ensures 4–5 styled variants of the same product image are available.
+ * Applies Studio, Lifestyle, Craft Detail, and Festive Showcase transformations.
+ */
+function generateStyledProductImages(primaryUrl, existingImages = [], tags = []) {
+  let images = [];
+  if (Array.isArray(existingImages) && existingImages.length > 0) {
+    images = existingImages.filter(Boolean);
+  } else if (typeof existingImages === 'string') {
+    try {
+      const parsed = JSON.parse(existingImages);
+      if (Array.isArray(parsed)) images = parsed.filter(Boolean);
+    } catch (_) {}
+  }
+
+  // Check tags for __IMAGES__: fallback
+  if (images.length === 0 && Array.isArray(tags)) {
+    const imgTag = tags.find(t => typeof t === 'string' && t.startsWith('__IMAGES__:'));
+    if (imgTag) {
+      try {
+        const parsed = JSON.parse(imgTag.replace('__IMAGES__:', ''));
+        if (Array.isArray(parsed)) images = parsed.filter(Boolean);
+      } catch (_) {}
+    }
+  }
+
+  // If already has 3 or more distinct images, return them (capped at 5)
+  if (images.length >= 3) {
+    return [...new Set(images)].slice(0, 5);
+  }
+
+  const base = primaryUrl || (images.length > 0 ? images[0] : null);
+  if (!base) return images;
+
+  const result = images.length > 0 ? [...images] : [base];
+  if (!result.includes(base)) result.unshift(base);
+
+  if (base.includes('/image/upload/')) {
+    const transforms = [
+      'e_improve,e_sharpen:90,f_auto,q_auto',
+      'e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto',
+      'c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto',
+      'e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto',
+    ];
+    for (const tr of transforms) {
+      if (result.length >= 5) break;
+      const styledUrl = base.replace('/image/upload/', `/image/upload/${tr}/`);
+      if (!result.includes(styledUrl)) {
+        result.push(styledUrl);
+      }
+    }
+  } else if (base.startsWith('http')) {
+    const transforms = [
+      'e_improve,e_sharpen:90,f_auto,q_auto',
+      'e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto',
+      'c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto',
+      'e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto',
+    ];
+    for (const tr of transforms) {
+      if (result.length >= 5) break;
+      const styledUrl = `https://res.cloudinary.com/dcmmxmikz/image/fetch/${tr}/${encodeURIComponent(base)}`;
+      if (!result.includes(styledUrl)) {
+        result.push(styledUrl);
+      }
+    }
+  }
+
+  return [...new Set(result)].slice(0, 5);
+}
+
 exports.getProducts = async (req, res) => {
   try {
     const { category, subcategory, search, material, is_handmade, artisan_id, min_price, max_price, sort } = req.query;
@@ -196,6 +266,11 @@ exports.getProducts = async (req, res) => {
       return !isDemo;
     });
 
+    filteredData = filteredData.map(p => ({
+      ...p,
+      images: generateStyledProductImages(p.image_url, p.images, p.tags),
+    }));
+
     if (isBasicRequest && filteredData.length > 0) {
       productCache.all = { data: filteredData, timestamp: Date.now() };
     }
@@ -227,6 +302,10 @@ exports.getFeaturedProducts = async (req, res) => {
     if (error) throw error;
     
     let filteredData = (data || []).filter(p => !p.is_hidden && (p.status === 'approved' || !p.status)).slice(0, 8);
+    filteredData = filteredData.map(p => ({
+      ...p,
+      images: generateStyledProductImages(p.image_url, p.images, p.tags),
+    }));
     
     productCache.featured = { data: filteredData, timestamp: Date.now() };
     
@@ -308,6 +387,9 @@ exports.getProductById = async (req, res) => {
         console.warn('Review stats agreement check notice:', revErr.message);
       }
 
+      // Ensure 3–5 styled images of the same product are provided for gallery
+      data.images = generateStyledProductImages(data.image_url, data.images, data.tags);
+
       return res.json(data);
     }
 
@@ -323,7 +405,7 @@ exports.createProduct = async (req, res) => {
   try {
     const {
       name, description, price, original_price, category, subcategory, sizes,
-      stock_quantity = 0, is_in_stock = true, image_url, barcode,
+      stock_quantity = 0, is_in_stock = true, image_url, images, barcode,
       artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags,
       status
     } = req.body;
@@ -381,6 +463,12 @@ exports.createProduct = async (req, res) => {
     const finalOrigPrice = original_price ? Number(original_price) : Math.round(finalPrice * 1.2);
     const productStatus = status || 'pending';
 
+    const finalImages = generateStyledProductImages(image_url, images, tags);
+    let finalTags = Array.isArray(tags) ? [...tags] : [];
+    if (finalImages.length > 0 && !finalTags.some(t => typeof t === 'string' && t.startsWith('__IMAGES__:'))) {
+      finalTags.push(`__IMAGES__:${JSON.stringify(finalImages)}`);
+    }
+
     const insertPayload = {
       name,
       description,
@@ -394,13 +482,14 @@ exports.createProduct = async (req, res) => {
       status: productStatus,
       barcode: barcode ? barcode.trim() : null,
       ...(image_url ? { image_url } : {}),
+      ...(finalImages.length > 0 ? { images: finalImages } : {}),
       ...(targetArtisanId ? { artisan_id: targetArtisanId } : {}),
       ...(is_handmade !== undefined ? { is_handmade } : { is_handmade: true }),
       ...(material ? { material } : {}),
       ...(style ? { style } : {}),
       ...(ai_generated !== undefined ? { ai_generated } : {}),
       ...(ai_suggested_price ? { ai_suggested_price } : {}),
-      ...(tags ? { tags } : {}),
+      ...(finalTags.length > 0 ? { tags: finalTags } : {}),
     };
 
     const { data, error } = await supabase
@@ -442,15 +531,23 @@ exports.updateProduct = async (req, res) => {
   try {
     const { 
       name, description, price, original_price, category, subcategory, sizes, 
-      stock_quantity, is_in_stock, image_url, barcode,
+      stock_quantity, is_in_stock, image_url, images, barcode,
       artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags, status
     } = req.body;
+
+    const finalImages = generateStyledProductImages(image_url, images, tags);
+    let finalTags = tags ? (Array.isArray(tags) ? [...tags] : []) : undefined;
+    if (finalTags && finalImages.length > 0 && !finalTags.some(t => typeof t === 'string' && t.startsWith('__IMAGES__:'))) {
+      finalTags.push(`__IMAGES__:${JSON.stringify(finalImages)}`);
+    }
 
     const updatePayload = { 
       name, description, price, original_price, category, subcategory, sizes, 
       stock_quantity, is_in_stock, image_url,
       barcode: barcode ? barcode.trim() : null,
-      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags
+      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price,
+      ...(finalTags !== undefined ? { tags: finalTags } : {}),
+      ...(finalImages.length > 0 ? { images: finalImages } : {}),
     };
     if (status !== undefined) updatePayload.status = status;
 

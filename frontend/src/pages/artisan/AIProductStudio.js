@@ -353,6 +353,22 @@ export default function AIProductStudio() {
       const chosenArtisan = artisansList.find(a => a.id === targetArtisanId);
       const targetArtisanName = chosenArtisan?.store_name || user?.artisan_profile?.store_name || user?.name;
 
+      let initialImages = [finalUrl].filter(Boolean);
+      if (finalUrl && finalUrl.includes('/image/upload/')) {
+        initialImages = [
+          finalUrl,
+          finalUrl.replace('/image/upload/', '/image/upload/e_improve,e_sharpen:90,f_auto,q_auto/'),
+          finalUrl.replace('/image/upload/', '/image/upload/e_vibrance:40,e_tint:equalize:15:gold,f_auto,q_auto/'),
+          finalUrl.replace('/image/upload/', '/image/upload/c_crop,g_auto,h_800,w_800,z_1.4,e_sharpen:110,f_auto,q_auto/'),
+          finalUrl.replace('/image/upload/', '/image/upload/e_contrast:25,e_saturation:25,e_sharpen:80,f_auto,q_auto/'),
+        ];
+      }
+
+      const tagsList = catalog.suggestedTags?.split(',').map(t => t.trim()).filter(Boolean) || [];
+      if (initialImages.length > 0) {
+        tagsList.push(`__IMAGES__:${JSON.stringify(initialImages)}`);
+      }
+
       const productData = {
         name:           catalog.productName,
         description:    catalog.fullDescription || catalog.shortDescription,
@@ -362,8 +378,9 @@ export default function AIProductStudio() {
         subcategory:    catalog.subcategory,
         material:       catalog.materials,
         style:          catalog.craftTechnique,
-        tags:           catalog.suggestedTags?.split(',').map(t => t.trim()).filter(Boolean),
+        tags:           tagsList,
         image_url:      finalUrl || '',
+        images:         initialImages,
         sizes:          ['Free Size'],
         stock_quantity: 10,
         artisan_id:     targetArtisanId,

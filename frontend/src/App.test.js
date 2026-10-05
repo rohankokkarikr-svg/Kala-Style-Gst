@@ -133,4 +133,26 @@ describe('KalaStyle AI Frontend Quality & Accessibility Suite', () => {
       expect(removeWishlistBtn).toBeInTheDocument();
     });
   });
+
+  describe('Product Gallery 3–5 Images on User Side', () => {
+    test('extractProductImages generates 5 styled views of the same product image', () => {
+      const { extractProductImages, PRODUCT_IMAGE_STYLES } = require('./pages/ProductDetail');
+      const prod = {
+        id: 'test-1',
+        name: 'Handcrafted Artisan Cotton Casual Shirt',
+        image_url: 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg',
+        images: ['https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg']
+      };
+
+      const imgs = extractProductImages(prod);
+      expect(Array.isArray(imgs)).toBe(true);
+      expect(imgs.length).toBe(5);
+      expect(PRODUCT_IMAGE_STYLES.length).toBe(5);
+
+      // Verify each variant targets the exact same product photo
+      imgs.forEach(url => {
+        expect(url).toContain('wesedw9fpem0032yfsmk');
+      });
+    });
+  });
 });
