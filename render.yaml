@@ -51,7 +51,7 @@ services:
 
   # Frontend Static Site
   - type: web
-    name: style-heaven-frontend
+    name: kala-style-frontend
     runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
