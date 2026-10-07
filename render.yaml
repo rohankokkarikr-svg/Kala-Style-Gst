@@ -1,7 +1,7 @@
 services:
   # Backend API Web Service
   - type: web
-    name: style-heaven-backend
+    name: kala-style-gst
     plan: free
     runtime: node
     rootDir: backend
