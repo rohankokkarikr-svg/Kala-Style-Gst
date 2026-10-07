@@ -80,6 +80,8 @@ api.interceptors.response.use(
 export const authAPI = {
   login:           (data) => api.post('/auth/login', data),
   signup:          (data) => api.post('/auth/signup', data),
+  sendOtp:         (email) => api.post('/auth/send-otp', { email }),
+  verifyOtp:       (data) => api.post('/auth/verify-otp', data),
   supabaseSession: (data) => api.post('/auth/supabase-session', data, {
     headers: { Authorization: '' },
   }),

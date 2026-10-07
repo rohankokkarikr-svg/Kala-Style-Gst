@@ -796,5 +796,78 @@ exports.syncSupabaseSession = async (req, res) => {
 // Backward-compatible alias for existing OTP flow
 exports.syncOtpSession = exports.syncSupabaseSession;
 
+// Robust backend proxy for sending Supabase Email OTP (bypasses browser ad-blockers / client network blocks)
+exports.sendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) {
+      console.error('[authController.sendOtp] Supabase error:', error);
+      const msg = (error.message || '').toLowerCase();
+      if (error.status === 429 || msg.includes('rate') || msg.includes('limit') || msg.includes('over_email_send_rate_limit')) {
+        return res.status(429).json({ error: 'Too many OTP requests. Please wait a moment before requesting another code.' });
+      } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
+        return res.status(500).json({ error: 'Email delivery failed. Please verify SMTP credentials in Supabase settings.' });
+      }
+      return res.status(error.status || 400).json({ error: error.message || 'Failed to send OTP' });
+    }
+
+    console.log(`[authController.sendOtp] OTP sent successfully to: ${cleanEmail}`);
+    res.json({ success: true, message: 'Verification OTP sent successfully' });
+  } catch (err) {
+    console.error('[authController.sendOtp] Server exception:', err);
+    res.status(500).json({ error: err.message || 'Internal server error while sending OTP' });
+  }
+};
+
+// Robust backend proxy for verifying Supabase Email OTP
+exports.verifyOtp = async (req, res) => {
+  try {
+    const { email, token } = req.body;
+    const cleanEmail = normalizeEmail(email);
+    const cleanToken = (token || '').toString().trim();
+
+    if (!cleanEmail || !cleanToken) {
+      return res.status(400).json({ error: 'Email and verification OTP code are required' });
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'email',
+    });
+
+    if (error) {
+      console.error('[authController.verifyOtp] Supabase error:', error);
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('expired')) {
+        return res.status(400).json({ error: 'This OTP has expired. Please request a new OTP.' });
+      } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('incorrect') || msg.includes('wrong')) {
+        return res.status(400).json({ error: 'The OTP code is incorrect. Please try again.' });
+      } else if (error.status === 429 || msg.includes('too many') || msg.includes('attempts')) {
+        return res.status(429).json({ error: 'Too many attempts. Please wait a moment and try again.' });
+      }
+      return res.status(error.status || 400).json({ error: error.message || 'Invalid or expired OTP' });
+    }
+
+    console.log(`[authController.verifyOtp] OTP verified successfully for: ${cleanEmail}`);
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('[authController.verifyOtp] Server exception:', err);
+    res.status(500).json({ error: err.message || 'Internal server error while verifying OTP' });
+  }
+};
+
 
 

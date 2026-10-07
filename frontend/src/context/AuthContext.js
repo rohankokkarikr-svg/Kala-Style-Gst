@@ -251,13 +251,25 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Please enter a valid email address.');
     }
 
+    // 1. Try via backend proxy FIRST (bypasses browser ad-blockers, tracking shields & client network blocks)
     try {
-      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
+      const res = await authAPI.sendOtp(cleanEmail);
+      if (res.data?.success) {
+        return { success: true };
+      }
+    } catch (backendErr) {
+      console.warn('Backend sendOtp fallback triggered:', backendErr?.response?.data || backendErr.message);
+      if (backendErr.response?.data?.error) {
+        throw new Error(backendErr.response.data.error);
+      }
+    }
+
+    // 2. Direct browser Supabase client fallback
+    try {
       const { error } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
           shouldCreateUser: true,
-          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -267,7 +279,7 @@ export const AuthProvider = ({ children }) => {
         if (error.status === 429 || msg.includes('rate') || msg.includes('limit') || msg.includes('over_email_send_rate_limit')) {
           throw new Error('Too many OTP requests. Please wait before requesting another code.');
         } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
-          throw new Error('Unable to connect. Please check your internet connection and try again.');
+          throw new Error('Unable to connect to auth service. Please check your connection or disable ad-blocker.');
         } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
           throw new Error('Email delivery failed: Supabase SMTP server error. Please save Brevo SMTP settings in Supabase Dashboard.');
         } else {
@@ -277,7 +289,6 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (err) {
-      // Pass along friendly error message without leaking internal details
       throw new Error(err.message || 'Something went wrong. Please try again.');
     }
   };
@@ -292,35 +303,57 @@ export const AuthProvider = ({ children }) => {
       throw new Error(`Please enter the ${OTP_LENGTH}-digit OTP verification code sent to your email.`);
     }
 
+    let data = null;
+
+    // 1. Try via backend proxy FIRST
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: cleanEmail,
-        token: cleanToken,
-        type: 'email',
-      });
-
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        if (msg.includes('expired')) {
-          throw new Error('This OTP has expired. Please request a new OTP.');
-        } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('incorrect') || msg.includes('wrong')) {
-          throw new Error('The OTP is incorrect. Please try again.');
-        } else if (error.status === 429 || msg.includes('too many') || msg.includes('attempts')) {
-          throw new Error('Too many attempts. Please wait and try again later.');
-        } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('connection')) {
-          throw new Error('Unable to connect. Please check your internet connection and try again.');
-        } else {
-          throw new Error('Something went wrong. Please try again.');
-        }
+      const res = await authAPI.verifyOtp({ email: cleanEmail, token: cleanToken });
+      if (res.data?.success && res.data?.data) {
+        data = res.data.data;
       }
-
-      // If called without session sync (e.g. order confirmation or signup flow)
-      if (!syncSession) {
-        if (isSignup) {
-          isSigningUpRef.current = true;
-        }
-        return { success: true, data };
+    } catch (backendErr) {
+      console.warn('Backend verifyOtp fallback triggered:', backendErr?.response?.data || backendErr.message);
+      if (backendErr.response?.data?.error) {
+        throw new Error(backendErr.response.data.error);
       }
+    }
+
+    // 2. Direct browser Supabase client fallback if backend didn't return data
+    if (!data) {
+      try {
+        const res = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanToken,
+          type: 'email',
+        });
+
+        if (res.error) {
+          const msg = (res.error.message || '').toLowerCase();
+          if (msg.includes('expired')) {
+            throw new Error('This OTP has expired. Please request a new OTP.');
+          } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('incorrect') || msg.includes('wrong')) {
+            throw new Error('The OTP is incorrect. Please try again.');
+          } else if (res.error.status === 429 || msg.includes('too many') || msg.includes('attempts')) {
+            throw new Error('Too many attempts. Please wait and try again later.');
+          } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('connection')) {
+            throw new Error('Unable to connect. Please check your internet connection and try again.');
+          } else {
+            throw new Error(res.error.message || 'Something went wrong. Please try again.');
+          }
+        }
+        data = res.data;
+      } catch (err) {
+        throw new Error(err.message || 'Something went wrong. Please try again.');
+      }
+    }
+
+    // If called without session sync (e.g. order confirmation or signup flow)
+    if (!syncSession) {
+      if (isSignup) {
+        isSigningUpRef.current = true;
+      }
+      return { success: true, data };
+    }
 
       const session = data?.session;
       const sbUser = data?.user;
