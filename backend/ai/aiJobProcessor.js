@@ -325,7 +325,6 @@ async function processPendingJobs() {
           .select('*')
           .in('status', ['pending', 'retrying'])
           .lte('scheduled_at', new Date().toISOString())
-          .order('priority', { ascending: false })
           .order('created_at', { ascending: true })
           .limit(10)
       );
