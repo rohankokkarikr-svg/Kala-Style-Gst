@@ -6,21 +6,21 @@ import { normalizeRole } from '../utils/authHelper';
 
 /** Protects any route behind authenticated session */
 export function PrivateRoute({ children }) {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, initializing, user } = useAuth();
   const location = useLocation();
   const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading || (!user && hasToken)) return <PageLoader />;
+  if (initializing || loading || (!user && hasToken)) return <PageLoader />;
   return (isAuthenticated && user) ? children : <NavRedirect to="/login" state={{ from: location }} replace />;
 }
 
 /** Only allows verified admin-role users */
 export function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin, isArtisan, loading, user } = useAuth();
+  const { isAuthenticated, isAdmin, isArtisan, loading, initializing, user } = useAuth();
   const location = useLocation();
   const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading || (!user && hasToken)) return <PageLoader />;
+  if (initializing || loading || (!user && hasToken)) return <PageLoader />;
   if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
   const role = normalizeRole(user?.role);
@@ -61,11 +61,11 @@ export function AdminRoute({ children }) {
 
 /** Only allows verified artisan-role (and admin) users */
 export function ArtisanRoute({ children }) {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, initializing, user } = useAuth();
   const location = useLocation();
   const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
-  if (loading || (!user && hasToken)) return <PageLoader />;
+  if (initializing || loading || (!user && hasToken)) return <PageLoader />;
   if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
   const role = normalizeRole(user?.role);

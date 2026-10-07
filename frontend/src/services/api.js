@@ -1,18 +1,34 @@
 import axios from 'axios';
 import apiCache from '../utils/apiCache';
 
+// Single authoritative API base URL resolution strategy
+export const getApiBaseUrl = () => {
+  const envUrl = (process.env.REACT_APP_API_URL || '').trim();
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalHost = isBrowser && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0'
+  );
+
+  // In production browser environments, NEVER allow localhost
+  if (isBrowser && !isLocalHost) {
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
+    }
+    return 'https://kala-style-gst-1.onrender.com/api';
+  }
+
+  // Local development fallback
+  if (envUrl) {
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
+  }
+  return 'http://localhost:5000/api';
+};
+
 // Base API instance pointing to backend
 const api = axios.create({
-  baseURL: (() => {
-    const envUrl = process.env.REACT_APP_API_URL;
-    if (!envUrl) {
-      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        return 'https://kala-style-gst-1.onrender.com/api';
-      }
-      return 'http://localhost:5000/api';
-    }
-    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/$/, '')}/api`;
-  })(),
+  baseURL: getApiBaseUrl(),
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
 });

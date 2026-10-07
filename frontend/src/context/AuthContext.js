@@ -19,6 +19,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {}
     return null;
   });
+  const [initializing, setInitializing] = useState(true);
   const [loading, setLoading] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -131,7 +132,10 @@ export const AuthProvider = ({ children }) => {
 
   // Auto-sync session on mount with database
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false));
+    refreshUser().finally(() => {
+      setLoading(false);
+      setInitializing(false);
+    });
   }, [refreshUser]);
 
   // Multi-tab session synchronization
@@ -561,6 +565,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{
       user: currentUser,
       loading,
+      initializing,
       oauthProcessing,
       oauthError,
       login,

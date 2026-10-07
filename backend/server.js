@@ -33,10 +33,36 @@ const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
 
-// Setup Socket.IO with CORS for any client device
+// Setup allowed origins for Production (Render frontend) and Local Dev
+const allowedOrigins = [
+  'https://kala-style-frontend.onrender.com',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5000',
+  'http://127.0.0.1:5000',
+];
+if (process.env.FRONTEND_URL) {
+  const customFront = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
+  if (!allowedOrigins.includes(customFront)) {
+    allowedOrigins.push(customFront);
+  }
+}
+
+const checkOrigin = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com')) {
+    return callback(null, true);
+  }
+  if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    return callback(null, true);
+  }
+  return callback(null, false);
+};
+
+// Setup Socket.IO with authoritative CORS
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: checkOrigin,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
   },
@@ -46,13 +72,21 @@ const io = new Server(server, {
 
 initRealtime(io);
 
-// Rate limiting middleware
-// Enable open CORS for all clients (mobile, local dev, preview servers)
+// Authoritative HTTP CORS middleware
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com')) {
+      return callback(null, origin);
+    }
+    if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      return callback(null, origin);
+    }
+    return callback(new Error('Blocked by CORS policy'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'x-auth-intent'],
 }));
 
 // Permissive Helmet configuration (no CSP restrictions)

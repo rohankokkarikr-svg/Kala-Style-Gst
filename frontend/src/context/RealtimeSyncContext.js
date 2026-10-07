@@ -50,14 +50,20 @@ export const RealtimeSyncProvider = ({ children }) => {
   useEffect(() => {
     // ─── 1. Setup Backend Socket.IO Connection ───
     try {
-      const envUrl = process.env.REACT_APP_API_URL;
-      let socketUrl = 'http://localhost:5000';
-      if (envUrl) {
-        // Strip /api from end if present
+      const isBrowser = typeof window !== 'undefined';
+      const isLocalHost = isBrowser && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '0.0.0.0'
+      );
+      const envUrl = (process.env.REACT_APP_API_URL || '').trim();
+
+      // Authoritative socket URL: In production, always point to Render backend
+      let socketUrl = 'https://kala-style-gst-1.onrender.com';
+      if (isLocalHost) {
+        socketUrl = envUrl ? envUrl.replace(/\/api\/?$/, '') : 'http://localhost:5000';
+      } else if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
         socketUrl = envUrl.replace(/\/api\/?$/, '');
-      } else if (typeof window !== 'undefined') {
-        const isHttps = window.location.protocol === 'https:';
-        socketUrl = `${isHttps ? 'https:' : 'http:'}//${window.location.hostname}:5000`;
       }
 
       const socket = io(socketUrl, {
