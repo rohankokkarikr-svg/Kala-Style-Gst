@@ -15,5 +15,7 @@ jobs:
       - name: Ping Backend Health Endpoint
         run: |
           echo "Pinging KalaStyle backend on Render..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://style-heaven-backend.onrender.com/health" || echo "failed")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "https://kala-style-gst-1.onrender.com/health" || echo "failed")
           echo "Render Backend Response Code: $HTTP_STATUS"
+          # Also ping root
+          curl -s -o /dev/null -m 20 "https://kala-style-gst-1.onrender.com/" || true
