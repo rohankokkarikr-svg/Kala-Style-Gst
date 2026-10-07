@@ -125,9 +125,10 @@ async function checkPaymentService() {
 async function checkStorageService() {
   const startMs = Date.now();
   try {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
+    const apiKey = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
+    let apiSecret = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
+    apiSecret = apiSecret.replace(/^["']|["']$/g, '');
 
     if (!cloudName || cloudName.startsWith('your_') || !apiKey || !apiSecret) {
       return {

@@ -1,16 +1,12 @@
 const cloudinary = require('cloudinary');
 const multer = require('multer');
 
-const CLOUD_NAME = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
-const API_KEY = (process.env.CLOUDINARY_API_KEY || '').trim();
-let API_SECRET = (process.env.CLOUDINARY_API_SECRET || '').trim();
+const CLOUD_NAME = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
+const API_KEY = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
+let API_SECRET = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
 
 // Strip surrounding quotes if entered in hosting dashboard
 API_SECRET = API_SECRET.replace(/^["']|["']$/g, '');
-
-if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-  console.warn('[cloudinary] ⚠️ Cloudinary credentials not fully configured in environment variables.');
-}
 
 cloudinary.v2.config({
   cloud_name: CLOUD_NAME,

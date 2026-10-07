@@ -508,10 +508,11 @@ exports.deleteProduct = async (req, res) => {
 // Helper for bulletproof upload: attempts Cloudinary first (if configured), falls back to Supabase Storage
 const processMediaUpload = async (req) => {
   const { cloudinary } = require('../config/cloudinary');
-  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
-  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
-  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
-  const hasCloudinary = Boolean(cloudName && apiKey && apiSecret);
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
+  let apiSecret = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
+  apiSecret = apiSecret.replace(/^["']|["']$/g, '');
+  const hasCloudinary = Boolean(cloudName && !cloudName.startsWith('your_') && apiKey && apiSecret);
 
   if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
     return 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';
