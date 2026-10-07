@@ -44,7 +44,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     autoRefreshToken: false,
   },
   global: {
-    headers: { 'x-application-name': 'kala-style-gst' },
+    headers: { 'x-application-name': 'kala-style-gst-1' },
   },
 });
 

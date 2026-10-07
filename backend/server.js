@@ -237,7 +237,7 @@ server.listen(PORT, '0.0.0.0', async () => {
 
   // Keep-alive self-ping in production to prevent Render free-tier idle sleep (15 min limit)
   if (process.env.NODE_ENV === 'production') {
-    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || 'https://kala-style-gst.onrender.com';
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || 'https://kala-style-gst-1.onrender.com';
     const https = require('https');
     setInterval(() => {
       try {

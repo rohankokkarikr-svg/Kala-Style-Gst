@@ -7,7 +7,7 @@ const api = axios.create({
     const envUrl = process.env.REACT_APP_API_URL;
     if (!envUrl) {
       if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        return 'https://kala-style-gst.onrender.com/api';
+        return 'https://kala-style-gst-1.onrender.com/api';
       }
       return 'http://localhost:5000/api';
     }
