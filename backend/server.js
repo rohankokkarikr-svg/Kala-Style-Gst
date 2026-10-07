@@ -113,6 +113,11 @@ app.use('/api/admin/ai-manager', require('./routes/aiAdminRoutes'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/recommendations', require('./routes/recommendations'));
 
+// Root keep-alive endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'Style Heaven Backend API', uptime: process.uptime() });
+});
+
 // Health check — also checks if Supabase is reachable
 app.get('/health', async (req, res) => {
   let supabaseStatus = 'unknown';
