@@ -355,6 +355,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true, data };
     }
 
+    try {
       const session = data?.session;
       const sbUser = data?.user;
 
