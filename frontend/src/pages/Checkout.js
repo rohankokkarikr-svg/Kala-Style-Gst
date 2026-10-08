@@ -132,7 +132,7 @@ function parseNominatimAddress(addr = {}) {
 }
 
 export default function Checkout() {
-  const { items, totalPrice, clearCart } = useCart();
+  const { items, totalPrice, clearCart, removeByProductId } = useCart();
   const { user, sendOtp, verifyOtp } = useAuth();
   const { settings } = useSettings();
   const navigate = useNavigate();
@@ -540,6 +540,37 @@ export default function Checkout() {
       return;
     }
 
+    // Pre-validate cart items against server to ensure all products exist and are available
+    try {
+      await orderAPI.calculateTotal({
+        items: items.map(i => ({
+          product_id: i.product?.id || i.product_id,
+          quantity: i.quantity,
+          size: i.size
+        })),
+        coupon_code: isCouponApplied ? couponCode : null
+      });
+    } catch (calcErr) {
+      const errMsg = calcErr.response?.data?.error || calcErr.message || '';
+      const productNotFoundMatch = errMsg.match(/Product not found:\s*([a-zA-Z0-9_-]+)/i);
+      if (productNotFoundMatch) {
+        const missingId = productNotFoundMatch[1];
+        if (typeof removeByProductId === 'function') {
+          removeByProductId(missingId);
+        }
+        toast.error('An item in your cart is no longer available and has been removed. Please review your cart.', {
+          duration: 5000,
+          id: 'cart-stale-item'
+        });
+        setStep(1);
+        return;
+      }
+      if (calcErr.response?.status === 400 && errMsg) {
+        toast.error(errMsg);
+        return;
+      }
+    }
+
     setOtpSending(true);
     setOtpError('');
     try {
@@ -662,19 +693,25 @@ export default function Checkout() {
           throw authErr;
         }
       }
-
-      setOtpCountdown(0);
-      setShowOtpModal(false);
-      toast.success('Email OTP verified successfully! 🎉');
-
-      // 2. Execute Order Creation with OTP confirmation
-      await executeOrderCreation(code);
     } catch (err) {
-      const errMsg = err.message || err.response?.data?.error || 'Invalid OTP code. Please check your email and try again.';
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Invalid OTP code. Please check your email and try again.';
       setOtpError(errMsg);
       toast.error(errMsg);
       setOtpValue(Array(OTP_LENGTH).fill(''));
       otpInputsRef.current[0]?.focus();
+      setOtpLoading(false);
+      return;
+    }
+
+    setOtpCountdown(0);
+    setShowOtpModal(false);
+    toast.success('Email OTP verified successfully! 🎉');
+
+    // 2. Execute Order Creation with OTP confirmation
+    try {
+      await executeOrderCreation(code);
+    } catch (orderErr) {
+      console.error('Order creation failed:', orderErr);
     } finally {
       setOtpLoading(false);
     }
@@ -788,7 +825,24 @@ export default function Checkout() {
         }, 700);
       }
     } catch (err) {
-      const errMsg = err.response?.data?.error || 'Failed to place order. Please try again.';
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to place order. Please try again.';
+
+      // Check if product is missing or no longer available in the database
+      const productNotFoundMatch = errMsg.match(/Product not found:\s*([a-zA-Z0-9_-]+)/i);
+      if (productNotFoundMatch) {
+        const missingId = productNotFoundMatch[1];
+        if (typeof removeByProductId === 'function') {
+          removeByProductId(missingId);
+        }
+        toast.error('An item in your cart is no longer available and has been removed. Please review your cart.', {
+          duration: 5000,
+          id: 'cart-stale-item'
+        });
+        setShowOtpModal(false);
+        setStep(1);
+        return;
+      }
+
       toast.error(errMsg);
       throw err;
     } finally {

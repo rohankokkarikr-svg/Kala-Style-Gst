@@ -21,7 +21,7 @@ async function seedKala() {
     console.log('Note on dependent cleanup:', err.message);
   }
 
-  const { error: delError } = await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  const { error: delError } = await supabase.from('products').delete().neq('id', 'd9813407-dcbb-4e07-86ca-f9e9e0456bec');
   if (delError) {
     console.warn('Notice clearing products:', delError.message);
   } else {

@@ -44,6 +44,10 @@ export const CartProvider = ({ children }) => {
     toast.success('Item removed', { id: 'cart-toast' });
   };
 
+  const removeByProductId = (productId) => {
+    setItems((prev) => prev.filter((i) => i.product?.id !== productId));
+  };
+
   const updateQuantity = (key, quantity) => {
     if (quantity < 1) return removeFromCart(key);
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, quantity } : i)));
@@ -55,7 +59,7 @@ export const CartProvider = ({ children }) => {
   const totalPrice    = items.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice }}>
+    <CartContext.Provider value={{ items, addToCart, removeFromCart, removeByProductId, updateQuantity, clearCart, totalItems, totalPrice }}>
       {children}
     </CartContext.Provider>
   );
