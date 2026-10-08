@@ -818,7 +818,7 @@ exports.sendOtp = async (req, res) => {
       if (error.status === 429 || msg.includes('rate') || msg.includes('limit') || msg.includes('over_email_send_rate_limit')) {
         return res.status(429).json({ error: 'Too many OTP requests. Please wait a moment before requesting another code.' });
       } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
-        return res.status(500).json({ error: 'Email delivery failed. Please verify SMTP credentials in Supabase settings.' });
+        return res.status(500).json({ error: 'Failed to send login OTP email. Please verify your email address and try again.' });
       }
       return res.status(error.status || 400).json({ error: error.message || 'Failed to send OTP' });
     }

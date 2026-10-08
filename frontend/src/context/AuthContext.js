@@ -285,7 +285,7 @@ export const AuthProvider = ({ children }) => {
         } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
           throw new Error('Unable to connect to auth service. Please check your connection or disable ad-blocker.');
         } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
-          throw new Error('Email delivery failed: Supabase SMTP server error. Please save Brevo SMTP settings in Supabase Dashboard.');
+          throw new Error('Unable to send login OTP email. Please verify your email address and try again.');
         } else {
           throw new Error(error.message || 'Something went wrong. Please try again.');
         }
