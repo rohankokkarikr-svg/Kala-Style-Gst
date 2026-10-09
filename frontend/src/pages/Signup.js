@@ -113,7 +113,17 @@ export default function Signup() {
     }
 
     if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    if (!/[a-zA-Z]/.test(password)) {
+      toast.error('Password must contain at least one letter (a-z or A-Z)');
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      toast.error('Password must contain at least one number (0-9)');
       return;
     }
 
@@ -124,8 +134,8 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      // Send OTP to the provided email address via Supabase Auth
-      await sendOtp(cleanEmail);
+      // Send OTP to the provided email address via Supabase Auth (isSignup: true)
+      await sendOtp(cleanEmail, true);
       setStep('otp');
       setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
@@ -144,7 +154,7 @@ export default function Signup() {
     setLoading(true);
 
     try {
-      await sendOtp(email.trim().toLowerCase());
+      await sendOtp(email.trim().toLowerCase(), true);
       setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('A fresh OTP code has been sent to your email.');

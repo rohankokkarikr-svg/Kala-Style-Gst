@@ -248,7 +248,7 @@ export const AuthProvider = ({ children }) => {
   }, [refreshUser]);
 
   // ─── Supabase Email OTP: Send OTP ─────────────────────────────
-  const sendOtp = async (email) => {
+  const sendOtp = async (email, isSignup = false) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!cleanEmail || !emailRegex.test(cleanEmail)) {
@@ -257,12 +257,17 @@ export const AuthProvider = ({ children }) => {
 
     // 1. Try via backend proxy FIRST (bypasses browser ad-blockers, tracking shields & client network blocks)
     try {
-      const res = await authAPI.sendOtp(cleanEmail);
+      const res = await authAPI.sendOtp(cleanEmail, isSignup);
       if (res.data?.success) {
         return { success: true };
       }
     } catch (backendErr) {
       console.warn('Backend sendOtp fallback triggered:', backendErr?.response?.data || backendErr.message);
+      if (backendErr.response?.data?.notFound) {
+        const notFoundErr = new Error(backendErr.response.data.error || 'No account found with this email. Please sign up first.');
+        notFoundErr.notFound = true;
+        throw notFoundErr;
+      }
       if (backendErr.response?.data?.error) {
         throw new Error(backendErr.response.data.error);
       }
@@ -273,7 +278,7 @@ export const AuthProvider = ({ children }) => {
       const { error } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
-          shouldCreateUser: true,
+          shouldCreateUser: isSignup === true,
         },
       });
 
@@ -418,8 +423,13 @@ export const AuthProvider = ({ children }) => {
       toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`);
       return normalizedUser;
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to log in';
-      throw new Error(errMsg);
+      const errorData = err.response?.data;
+      const errMsg = errorData?.error || err.message || 'Failed to log in';
+      const loginErr = new Error(errMsg);
+      if (errorData?.notFound) {
+        loginErr.notFound = true;
+      }
+      throw loginErr;
     }
   };
 
@@ -570,6 +580,10 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Password must be at least 6 characters long.');
     }
 
+    if (!/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      throw new Error('Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).');
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
     const recoveryToken = session?.access_token;
 
@@ -578,7 +592,11 @@ export const AuthProvider = ({ children }) => {
     });
 
     if (sbUpdateErr) {
-      throw new Error(sbUpdateErr.message || 'Failed to update password with authentication provider.');
+      let msg = sbUpdateErr.message || '';
+      if (msg.includes('abcdefghijklmnopqrstuvwxyz') || msg.toLowerCase().includes('password should contain at least one character of each')) {
+        msg = 'Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).';
+      }
+      throw new Error(msg || 'Failed to update password with authentication provider.');
     }
 
     try {

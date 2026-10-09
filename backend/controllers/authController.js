@@ -248,7 +248,10 @@ exports.login = async (req, res) => {
     const user = users && users[0];
 
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
+      return res.status(404).json({
+        error: 'No account found with this email or phone number. Please create an account first.',
+        notFound: true
+      });
     }
 
     // Check account status
@@ -257,11 +260,31 @@ exports.login = async (req, res) => {
     }
 
     // Check password (support raw and trimmed passwords to tolerate accidental trailing spaces)
-    const isMatch = (await bcrypt.compare(password, user.password)) || 
-                    (typeof password === 'string' && await bcrypt.compare(password.trim(), user.password));
+    let isMatch = (await bcrypt.compare(password, user.password)) || 
+                  (typeof password === 'string' && await bcrypt.compare(password.trim(), user.password));
+
+    // Fallback: verify against Supabase Auth in case password was reset via Supabase Auth
+    if (!isMatch && user.email) {
+      try {
+        const { data: sbAuthData, error: sbAuthErr } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: password.trim()
+        });
+        if (!sbAuthErr && sbAuthData?.user) {
+          isMatch = true;
+          // Synchronize bcrypt hash into public.users for fast subsequent logins
+          const salt = await bcrypt.genSalt(10);
+          const newHashed = await bcrypt.hash(password.trim(), salt);
+          await supabase.from('users').update({
+            password: newHashed,
+            supabase_uid: sbAuthData.user.id
+          }).eq('id', user.id);
+        }
+      } catch (_) {}
+    }
 
     if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials. Please verify your phone/email and password.' });
+      return res.status(401).json({ error: 'Incorrect password. Please verify your password or use Forgot Password.' });
     }
 
     // Normalize role string to canonical user | artisan | admin
@@ -799,16 +822,36 @@ exports.syncOtpSession = exports.syncSupabaseSession;
 // Robust backend proxy for sending Supabase Email OTP (bypasses browser ad-blockers / client network blocks)
 exports.sendOtp = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, isSignup } = req.body;
     const cleanEmail = normalizeEmail(email);
     if (!cleanEmail) {
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
+    // If this is a login attempt (not signup), verify that user exists in database
+    if (!isSignup) {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id, status')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (!existingUser) {
+        return res.status(404).json({
+          error: 'No account found with this email address. Please sign up to create an account first.',
+          notFound: true
+        });
+      }
+
+      if (existingUser.status && (existingUser.status === 'blocked' || existingUser.status === 'suspended')) {
+        return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
       options: {
-        shouldCreateUser: true,
+        shouldCreateUser: isSignup === true,
       },
     });
 
@@ -918,6 +961,10 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
+    if (!/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      return res.status(400).json({ error: 'Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).' });
+    }
+
     // Verify token using official Supabase auth.getUser(token)
     const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(incomingToken);
     if (sbError || !sbUser || !sbUser.email) {
@@ -933,7 +980,13 @@ exports.resetPassword = async (req, res) => {
 
     // Update in Supabase Auth via admin API
     try {
-      await supabase.auth.admin.updateUserById(verifiedUid, { password: newPassword });
+      const { error: adminUpdateErr } = await supabase.auth.admin.updateUserById(verifiedUid, { password: newPassword });
+      if (adminUpdateErr) {
+        let msg = adminUpdateErr.message || '';
+        if (msg.includes('abcdefghijklmnopqrstuvwxyz') || msg.toLowerCase().includes('password should contain at least one character of each')) {
+          return res.status(422).json({ error: 'Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).' });
+        }
+      }
     } catch (adminErr) {
       console.warn('[authController.resetPassword] Supabase admin update notice:', adminErr.message);
     }

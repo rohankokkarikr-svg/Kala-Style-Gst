@@ -96,7 +96,7 @@ api.interceptors.response.use(
 export const authAPI = {
   login:           (data) => api.post('/auth/login', data),
   signup:          (data) => api.post('/auth/signup', data),
-  sendOtp:         (email) => api.post('/auth/send-otp', { email }),
+  sendOtp:         (email, isSignup = false) => api.post('/auth/send-otp', { email, isSignup }),
   verifyOtp:       (data) => api.post('/auth/verify-otp', data),
   forgotPassword:  (email) => api.post('/auth/forgot-password', { email }),
   resetPassword:   (data) => api.post('/auth/reset-password', data),

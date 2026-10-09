@@ -93,6 +93,16 @@ export default function ResetPassword() {
       return;
     }
 
+    if (!/[a-zA-Z]/.test(newPassword)) {
+      setError('Password must contain at least one letter (a-z or A-Z).');
+      return;
+    }
+
+    if (!/\d/.test(newPassword)) {
+      setError('Password must contain at least one number (0-9).');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match. Please verify your entries.');
       return;
@@ -107,7 +117,10 @@ export default function ResetPassword() {
         navigate('/login', { replace: true });
       }, 2500);
     } catch (err) {
-      const errMsg = err.message || 'Failed to update password. Your reset link may have expired.';
+      let errMsg = err.message || 'Failed to update password. Your reset link may have expired.';
+      if (errMsg.includes('abcdefghijklmnopqrstuvwxyz') || errMsg.toLowerCase().includes('password should contain at least one character of each')) {
+        errMsg = 'Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).';
+      }
       setError(errMsg);
       toast.error(errMsg);
     } finally {
@@ -115,18 +128,31 @@ export default function ResetPassword() {
     }
   };
 
-  // Password strength indicator helper
+  // Live password policy checks
+  const hasLength = newPassword.length >= 6;
+  const hasLetter = /[a-zA-Z]/.test(newPassword);
+  const hasNumber = /\d/.test(newPassword);
+  const isPolicyMet = hasLength && hasLetter && hasNumber;
+
+  // Password strength indicator helper (strictly requires letters and numbers)
   const getStrengthInfo = (pass) => {
     if (!pass) return { label: '', color: 'bg-dark-600', width: 'w-0' };
-    if (pass.length < 6) return { label: 'Too short', color: 'bg-red-500', width: 'w-1/4' };
+    const hasLen = pass.length >= 6;
+    const hasLet = /[a-zA-Z]/.test(pass);
     const hasNum = /\d/.test(pass);
+
+    if (!hasLen || !hasLet || !hasNum) {
+      return { label: 'Missing letter or number', color: 'bg-amber-500', width: 'w-1/3' };
+    }
+
     const hasSpecial = /[^A-Za-z0-9]/.test(pass);
     const hasUpper = /[A-Z]/.test(pass);
-    const score = (pass.length >= 8 ? 1 : 0) + (hasNum ? 1 : 0) + (hasSpecial ? 1 : 0) + (hasUpper ? 1 : 0);
+    const hasLower = /[a-z]/.test(pass);
+    const score = (pass.length >= 8 ? 1 : 0) + (hasSpecial ? 1 : 0) + (hasUpper && hasLower ? 1 : 0);
 
-    if (score >= 3) return { label: 'Strong', color: 'bg-emerald-500', width: 'w-full' };
-    if (score >= 2) return { label: 'Good', color: 'bg-gold-500', width: 'w-3/4' };
-    return { label: 'Fair', color: 'bg-amber-500', width: 'w-1/2' };
+    if (score >= 2) return { label: 'Strong', color: 'bg-emerald-500', width: 'w-full' };
+    if (score >= 1) return { label: 'Good', color: 'bg-gold-500', width: 'w-3/4' };
+    return { label: 'Fair', color: 'bg-emerald-400', width: 'w-1/2' };
   };
 
   const strength = getStrengthInfo(newPassword);
@@ -252,6 +278,22 @@ export default function ResetPassword() {
                     <span>Strength: <span className="font-semibold text-white">{strength.label}</span></span>
                     <span>Min 6 characters</span>
                   </div>
+
+                  {/* Requirements Live Checklist */}
+                  <div className="mt-2.5 p-2.5 bg-dark-900/90 rounded-lg border border-dark-600/60 text-[11px] grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    <div className={`flex items-center gap-1.5 ${hasLength ? 'text-emerald-400 font-medium' : 'text-gray-400'}`}>
+                      <span>{hasLength ? '✓' : '○'}</span>
+                      <span>Min 6 characters</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${hasLetter ? 'text-emerald-400 font-medium' : 'text-gray-400'}`}>
+                      <span>{hasLetter ? '✓' : '○'}</span>
+                      <span>At least 1 letter</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-emerald-400 font-medium' : 'text-gray-400'}`}>
+                      <span>{hasNumber ? '✓' : '○'}</span>
+                      <span>At least 1 number</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -302,7 +344,7 @@ export default function ResetPassword() {
 
             <button
               type="submit"
-              disabled={loading || !newPassword || !confirmPassword || newPassword !== confirmPassword}
+              disabled={loading || !newPassword || !confirmPassword || newPassword !== confirmPassword || !isPolicyMet}
               className="w-full btn-primary flex items-center justify-center gap-2"
             >
               {loading ? (

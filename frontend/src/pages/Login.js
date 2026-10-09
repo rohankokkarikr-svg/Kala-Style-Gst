@@ -30,9 +30,6 @@ export default function Login() {
   const stateFrom = typeof rawFrom === 'string' ? rawFrom : rawFrom?.pathname;
 
   const getInitialPortal = () => {
-    if (queryPortal === 'admin' || (queryFrom && queryFrom.startsWith('/admin')) || (stateFrom && stateFrom.startsWith('/admin'))) {
-      return 'admin';
-    }
     if (queryPortal === 'artisan' || queryIntent === 'artisan' || (queryFrom && queryFrom.startsWith('/artisan')) || (stateFrom && stateFrom.startsWith('/artisan'))) {
       return 'artisan';
     }
@@ -51,6 +48,7 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [loginNotFound, setLoginNotFound] = useState(false);
 
   // Google OAuth flow state
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -62,6 +60,7 @@ export default function Login() {
   const [countdown, setCountdown] = useState(0);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
+  const [otpNotFound, setOtpNotFound] = useState(false);
 
   const otpInputsRef = useRef([]);
 
@@ -145,20 +144,22 @@ export default function Login() {
     sessionStorage.removeItem('auth_intent');
     sessionStorage.removeItem('portal_notice');
 
-    // Portal role boundaries enforcement
+    // If account has admin role in Supabase database, grant admin dashboard access automatically
+    if (role === 'admin') {
+      toast.success('Authenticated as Administrator 🛡️');
+      const adminTarget = storedReturnUrl || stateFrom || queryFrom || '/admin';
+      const destination = resolveSafeRedirect('admin', adminTarget);
+      navigate(destination, { replace: true });
+      return;
+    }
+
+    // Portal role boundaries enforcement for customers attempting artisan portal
     if (portalMode === 'artisan' && role === 'user') {
       toast('Your account is registered as a customer. To sell your crafts, please register as an artisan.', {
         icon: '🎨',
         duration: 6000,
       });
       navigate('/', { replace: true });
-      return;
-    }
-
-    if (portalMode === 'admin' && role !== 'admin') {
-      toast.error('Access Denied: Administrative permissions are required to access the Admin Control Center.');
-      if (logout) logout();
-      navigate('/login?portal=admin', { replace: true });
       return;
     }
 
@@ -185,6 +186,7 @@ export default function Login() {
   const handlePasswordLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
+    setLoginNotFound(false);
 
     const cleanIdentifier = identifier.trim();
     if (!cleanIdentifier) {
@@ -201,14 +203,6 @@ export default function Login() {
     try {
       const loggedInUser = await login(cleanIdentifier, password);
 
-      // Verify portal match for Admin portal
-      if (portalMode === 'admin' && normalizeRole(loggedInUser?.role) !== 'admin') {
-        setLoginError('Access Denied: This portal is restricted to authorized platform administrators only.');
-        toast.error('Access Denied: Administrator permissions required.');
-        if (logout) await logout();
-        return;
-      }
-
       // Verify portal match for Artisan portal
       if (portalMode === 'artisan' && normalizeRole(loggedInUser?.role) === 'user') {
         toast('Your account is registered as a customer. Sign in via Customer Portal or apply as an Artisan.', {
@@ -221,6 +215,11 @@ export default function Login() {
     } catch (err) {
       const errMsg = err.message || 'Invalid credentials. Please verify your details.';
       setLoginError(errMsg);
+      if (err.notFound || errMsg.toLowerCase().includes('no account found')) {
+        setLoginNotFound(true);
+      } else {
+        setLoginNotFound(false);
+      }
       toast.error(errMsg);
     } finally {
       setLoginLoading(false);
@@ -234,7 +233,7 @@ export default function Login() {
     try {
       const isArtisanPortal = portalMode === 'artisan';
       const authIntent = isArtisanPortal ? 'artisan' : 'user';
-      const defaultReturn = isArtisanPortal ? '/artisan' : portalMode === 'admin' ? '/admin' : '/';
+      const defaultReturn = isArtisanPortal ? '/artisan' : '/';
       const returnUrl = stateFrom || queryFrom || defaultReturn;
       await signInWithGoogle(returnUrl, { authIntent });
     } catch (err) {
@@ -248,6 +247,7 @@ export default function Login() {
     if (e) e.preventDefault();
     if (otpLoading) return;
     setOtpError('');
+    setOtpNotFound(false);
 
     const cleanEmail = otpEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -259,14 +259,20 @@ export default function Login() {
 
     setOtpLoading(true);
     try {
-      await sendOtp(cleanEmail);
+      await sendOtp(cleanEmail, false);
       setOtpStep('otp');
       setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('Login OTP sent successfully to your email! 📩');
     } catch (err) {
-      setOtpError(err.message);
-      toast.error(err.message);
+      const errMsg = err.message || 'Failed to send OTP';
+      setOtpError(errMsg);
+      if (err.notFound || errMsg.toLowerCase().includes('no account found')) {
+        setOtpNotFound(true);
+      } else {
+        setOtpNotFound(false);
+      }
+      toast.error(errMsg);
     } finally {
       setOtpLoading(false);
     }
@@ -276,10 +282,11 @@ export default function Login() {
   const handleResendOtp = async () => {
     if (countdown > 0 || otpLoading) return;
     setOtpError('');
+    setOtpNotFound(false);
     setOtpLoading(true);
 
     try {
-      await sendOtp(otpEmail.trim().toLowerCase());
+      await sendOtp(otpEmail.trim().toLowerCase(), false);
       setCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       toast.success('A new OTP code has been sent to your email.');
@@ -409,19 +416,11 @@ export default function Login() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-serif font-bold text-white">
-            {portalMode === 'admin'
-              ? 'Admin Control Center'
-              : portalMode === 'artisan'
-              ? 'Artisan Studio'
-              : 'Welcome Back 👋'}
+            {portalMode === 'artisan' ? 'Artisan Studio' : 'Welcome Back 👋'}
           </h2>
 
           <p className="mt-2 text-xs sm:text-sm text-gray-400">
-            {portalMode === 'admin' ? (
-              <span className="text-amber-400 font-medium">
-                🛡️ Restricted to authorized platform administrators
-              </span>
-            ) : portalMode === 'artisan' ? (
+            {portalMode === 'artisan' ? (
               <span>
                 Sign in to manage your <span className="gold-text font-medium">handcrafts, AI tools, and orders</span>
               </span>
@@ -433,15 +432,17 @@ export default function Login() {
           </p>
         </div>
 
-        {/* ─── Portal Switcher Tabs (Customer / Artisan / Admin) ─── */}
-        <div className="grid grid-cols-3 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">
+        {/* ─── Portal Switcher Tabs (Customer vs Artisan) ─── */}
+        <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">
           <button
             type="button"
             id="portal-customer-btn"
             onClick={() => {
               setPortalMode('customer');
               setLoginError('');
+              setLoginNotFound(false);
               setOtpError('');
+              setOtpNotFound(false);
             }}
             className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
               portalMode === 'customer'
@@ -458,7 +459,9 @@ export default function Login() {
             onClick={() => {
               setPortalMode('artisan');
               setLoginError('');
+              setLoginNotFound(false);
               setOtpError('');
+              setOtpNotFound(false);
             }}
             className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
               portalMode === 'artisan'
@@ -468,59 +471,41 @@ export default function Login() {
           >
             🎨 Artisan Login
           </button>
-
-          <button
-            type="button"
-            id="portal-admin-btn"
-            onClick={() => {
-              setPortalMode('admin');
-              setAuthMethod('password'); // Admin uses strictly verified credentials
-              setLoginError('');
-              setOtpError('');
-            }}
-            className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
-              portalMode === 'admin'
-                ? 'bg-amber-500 text-dark-950 shadow-md font-bold'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            🛡️ Admin Login
-          </button>
         </div>
 
-        {/* ─── Password vs OTP Method Switcher (for Customer & Artisan) ─── */}
-        {portalMode !== 'admin' && (
-          <div className="flex border-b border-dark-600/70 pb-1 text-xs justify-center gap-6">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMethod('password');
-                setLoginError('');
-              }}
-              className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
-                authMethod === 'password'
-                  ? 'border-gold-500 text-gold-400 font-semibold'
-                  : 'border-transparent text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              🔑 Password Login
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMethod('otp');
-                setOtpError('');
-              }}
-              className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
-                authMethod === 'otp'
-                  ? 'border-gold-500 text-gold-400 font-semibold'
-                  : 'border-transparent text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              ✉️ Email OTP Login
-            </button>
-          </div>
-        )}
+        {/* ─── Password vs OTP Method Switcher ─── */}
+        <div className="flex border-b border-dark-600/70 pb-1 text-xs justify-center gap-6">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMethod('password');
+              setLoginError('');
+              setLoginNotFound(false);
+            }}
+            className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
+              authMethod === 'password'
+                ? 'border-gold-500 text-gold-400 font-semibold'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🔑 Password Login
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMethod('otp');
+              setOtpError('');
+              setOtpNotFound(false);
+            }}
+            className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
+              authMethod === 'otp'
+                ? 'border-gold-500 text-gold-400 font-semibold'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            ✉️ Email OTP Login
+          </button>
+        </div>
 
         {/* ─── OPTION A: PASSWORD LOGIN FLOW ─── */}
         {authMethod === 'password' ? (
@@ -531,24 +516,20 @@ export default function Login() {
                 htmlFor="login-identifier"
                 className="block text-xs font-medium text-gray-300 mb-1.5 uppercase tracking-wider"
               >
-                {portalMode === 'admin'
-                  ? 'Administrator Email'
-                  : portalMode === 'artisan'
+                {portalMode === 'artisan'
                   ? 'Artisan Email or Phone Number'
                   : 'Email or 10-Digit Phone Number'}
               </label>
               <input
                 id="login-identifier"
                 name="identifier"
-                type={portalMode === 'admin' ? 'email' : 'text'}
+                type="text"
                 required
                 autoFocus
                 autoComplete="username"
                 className="input-field"
                 placeholder={
-                  portalMode === 'admin'
-                    ? 'admin@kalastyle.ai'
-                    : portalMode === 'artisan'
+                  portalMode === 'artisan'
                     ? 'Enter artisan email or phone'
                     : 'name@example.com or 9876543210'
                 }
@@ -556,6 +537,7 @@ export default function Login() {
                 onChange={(e) => {
                   setIdentifier(e.target.value);
                   if (loginError) setLoginError('');
+                  if (loginNotFound) setLoginNotFound(false);
                 }}
               />
             </div>
@@ -589,6 +571,7 @@ export default function Login() {
                   onChange={(e) => {
                     setPassword(e.target.value);
                     if (loginError) setLoginError('');
+                    if (loginNotFound) setLoginNotFound(false);
                   }}
                 />
                 <button
@@ -616,9 +599,23 @@ export default function Login() {
             </div>
 
             {loginError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-start gap-2">
-                <span>⚠️</span>
-                <span>{loginError}</span>
+              <div className={`p-3.5 rounded-xl text-xs flex flex-col gap-2 ${
+                loginNotFound
+                  ? 'bg-amber-500/15 border border-amber-500/40 text-amber-200'
+                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              }`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-base shrink-0">{loginNotFound ? '🔍' : '⚠️'}</span>
+                  <span className="leading-relaxed font-medium">{loginError}</span>
+                </div>
+                {loginNotFound && (
+                  <Link
+                    to={portalMode === 'artisan' ? '/signup?role=artisan' : '/signup'}
+                    className="mt-1 py-2 px-3 bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold rounded-lg text-center transition-all inline-block shadow-gold"
+                  >
+                    Create Account First →
+                  </Link>
+                )}
               </div>
             )}
 
@@ -626,11 +623,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loginLoading || !identifier.trim() || !password}
-              className={`w-full py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-                portalMode === 'admin'
-                  ? 'bg-amber-500 hover:bg-amber-400 text-dark-950 shadow-amber-500/20'
-                  : 'btn-primary'
-              }`}
+              className="w-full btn-primary py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loginLoading ? (
                 <>
@@ -639,51 +632,45 @@ export default function Login() {
                 </>
               ) : (
                 <span>
-                  {portalMode === 'admin'
-                    ? 'Authenticate Administrator →'
-                    : portalMode === 'artisan'
+                  {portalMode === 'artisan'
                     ? 'Sign In to Artisan Studio →'
                     : 'Sign In to KalaStyle →'}
                 </span>
               )}
             </button>
 
-            {/* Google Sign In (for Customer & Artisan portals) */}
-            {portalMode !== 'admin' && (
-              <>
-                <div className="relative my-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-dark-500/80" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase tracking-wider">
-                    <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or continue with</span>
-                  </div>
-                </div>
+            {/* Google Sign In */}
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-dark-500/80" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-wider">
+                <span className="bg-dark-800 px-3 text-gray-400 font-medium">Or continue with</span>
+              </div>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={googleLoading}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
-                >
-                  {googleLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-gold-400 font-semibold">Connecting to Google...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
-                      <span>
-                        {portalMode === 'artisan'
-                          ? 'Continue with Google (Artisan)'
-                          : 'Continue with Google'}
-                      </span>
-                    </>
-                  )}
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-dark-400 bg-dark-800 hover:bg-dark-700/80 text-white font-medium text-sm transition-all duration-200 shadow-md hover:border-gold-500/50 hover:shadow-gold focus:outline-none focus:ring-2 focus:ring-gold-500/40 disabled:opacity-60 disabled:cursor-not-allowed group cursor-pointer"
+            >
+              {googleLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gold-400 font-semibold">Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <FcGoogle className="w-5 h-5 text-xl shrink-0 group-hover:scale-105 transition-transform" />
+                  <span>
+                    {portalMode === 'artisan'
+                      ? 'Continue with Google (Artisan)'
+                      : 'Continue with Google'}
+                  </span>
+                </>
+              )}
+            </button>
           </form>
         ) : (
           /* ─── OPTION B: EMAIL OTP FLOW ─── */
@@ -710,12 +697,28 @@ export default function Login() {
                     onChange={(e) => {
                       setOtpEmail(e.target.value);
                       if (otpError) setOtpError('');
+                      if (otpNotFound) setOtpNotFound(false);
                     }}
                   />
                   {otpError && (
-                    <p className="mt-2 text-xs text-red-400 flex items-center gap-1">
-                      ⚠️ {otpError}
-                    </p>
+                    <div className={`mt-2 p-3 rounded-xl text-xs flex flex-col gap-2 ${
+                      otpNotFound
+                        ? 'bg-amber-500/15 border border-amber-500/40 text-amber-200'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <span className="text-base shrink-0">{otpNotFound ? '🔍' : '⚠️'}</span>
+                        <span className="leading-relaxed font-medium">{otpError}</span>
+                      </div>
+                      {otpNotFound && (
+                        <Link
+                          to={portalMode === 'artisan' ? '/signup?role=artisan' : '/signup'}
+                          className="mt-1 py-1.5 px-3 bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold rounded-lg text-center transition-all inline-block shadow-gold"
+                        >
+                          Create Account First →
+                        </Link>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -835,11 +838,7 @@ export default function Login() {
 
         {/* ─── Footer Navigation Links ─── */}
         <div className="text-center text-xs sm:text-sm text-gray-400 pt-3 border-t border-dark-600/50">
-          {portalMode === 'admin' ? (
-            <p className="text-[11px] text-gray-500">
-              Admin privileges are assigned by system security. Public signup is disabled.
-            </p>
-          ) : portalMode === 'artisan' ? (
+          {portalMode === 'artisan' ? (
             <div>
               Want to showcase your handcrafted products?{' '}
               <Link to="/signup?role=artisan" className="text-gold-400 hover:text-gold-300 font-medium">

@@ -20,7 +20,7 @@ const {
 } = require('../utils/authHelper');
 
 const { protect, admin, artisan } = require('../middleware/auth');
-const { forgotPassword, resetPassword, register } = require('../controllers/authController');
+const { forgotPassword, resetPassword, register, login, sendOtp } = require('../controllers/authController');
 
 describe('Master Authentication & Canonical RBAC Security Suite', () => {
   // ─── 1. Canonical Role Normalization ───────────────────────────
@@ -186,6 +186,82 @@ describe('Master Authentication & Canonical RBAC Security Suite', () => {
     await resetPassword(req, res);
     assert.strictEqual(statusCode, 400);
     assert.ok(responseBody.error.includes('at least 6 characters'));
+  });
+
+  test('resetPassword rejects passwords missing letters (like 123456@123) with 400', async () => {
+    const req = {
+      headers: { authorization: 'Bearer mock_recovery_token' },
+      body: { newPassword: '123456@123' }
+    };
+    let statusCode = null;
+    let responseBody = null;
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      }
+    };
+
+    await resetPassword(req, res);
+    assert.strictEqual(statusCode, 400);
+    assert.ok(responseBody.error.includes('at least one letter'));
+  });
+
+  test('resetPassword rejects passwords missing numbers with 400', async () => {
+    const req = {
+      headers: { authorization: 'Bearer mock_recovery_token' },
+      body: { newPassword: 'PasswordOnly' }
+    };
+    let statusCode = null;
+    let responseBody = null;
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      }
+    };
+
+    await resetPassword(req, res);
+    assert.strictEqual(statusCode, 400);
+    assert.ok(responseBody.error.includes('at least one number'));
+  });
+
+  test('login returns 404 with notFound when account does not exist in database', async () => {
+    const req = {
+      body: { identifier: 'ghost_unregistered_account_xyz@test.com', password: 'Password123' }
+    };
+    let statusCode = null;
+    let responseBody = null;
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      }
+    };
+
+    await login(req, res);
+    assert.strictEqual(statusCode, 404);
+    assert.strictEqual(responseBody.notFound, true);
+    assert.ok(responseBody.error.includes('No account found'));
+  });
+
+  test('sendOtp returns 404 with notFound on login attempt for unregistered email', async () => {
+    const req = {
+      body: { email: 'ghost_unregistered_account_xyz@test.com', isSignup: false }
+    };
+    let statusCode = null;
+    let responseBody = null;
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      }
+    };
+
+    await sendOtp(req, res);
+    assert.strictEqual(statusCode, 404);
+    assert.strictEqual(responseBody.notFound, true);
+    assert.ok(responseBody.error.includes('No account found'));
   });
 
   // ─── 8. RBAC Middleware Authorization Checks ──────────────────
