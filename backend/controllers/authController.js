@@ -657,8 +657,8 @@ exports.syncSupabaseSession = async (req, res) => {
         portalNotice = 'Your Google account is registered as a customer. Please complete artisan registration to create an artisan account.';
       }
 
-      // Section 11 & 19: Link supabase_uid if present and not yet linked, preventing duplicate ownership
-      if (!user.supabase_uid && verifiedUid) {
+      // Section 11 & 19: Link supabase_uid if present and not yet linked or updated, preventing duplicate ownership
+      if (verifiedUid && (!user.supabase_uid || user.supabase_uid !== verifiedUid)) {
         try {
           const { data: conflictUser } = await supabase
             .from('users')
@@ -868,6 +868,100 @@ exports.verifyOtp = async (req, res) => {
     res.status(500).json({ error: err.message || 'Internal server error while verifying OTP' });
   }
 };
+
+// ─── Forgot Password Handler ───────────────────────────────────
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = normalizeEmail(email);
+
+    if (!cleanEmail) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const redirectUrl = `${frontendBaseUrl}/reset-password`;
+
+    // Dispatch Supabase password recovery email
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: redirectUrl
+    });
+
+    if (error) {
+      console.warn('[authController.forgotPassword] Supabase notice:', error.message);
+    }
+
+    // Generic response to prevent account enumeration
+    console.log(`[AUTH_AUDIT] forgotPassword: operation=recovery_requested, email=${cleanEmail}`);
+    res.json({
+      success: true,
+      message: 'If an account exists with this email address, a password reset link has been dispatched to your inbox.'
+    });
+  } catch (err) {
+    console.error('[authController.forgotPassword] Server error:', err);
+    res.status(500).json({ error: 'Server error while processing password reset request' });
+  }
+};
+
+// ─── Reset Password Handler ────────────────────────────────────
+exports.resetPassword = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const incomingToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : req.body?.accessToken?.trim();
+    const { newPassword } = req.body;
+
+    if (!incomingToken) {
+      return res.status(401).json({ error: 'Valid password recovery session token is required' });
+    }
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Verify token using official Supabase auth.getUser(token)
+    const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(incomingToken);
+    if (sbError || !sbUser || !sbUser.email) {
+      return res.status(401).json({ error: 'Invalid or expired password reset session. Please request a new reset link.' });
+    }
+
+    const verifiedEmail = normalizeEmail(sbUser.email);
+    const verifiedUid = sbUser.id;
+
+    // Hash the new password for public.users
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update in Supabase Auth via admin API
+    try {
+      await supabase.auth.admin.updateUserById(verifiedUid, { password: newPassword });
+    } catch (adminErr) {
+      console.warn('[authController.resetPassword] Supabase admin update notice:', adminErr.message);
+    }
+
+    // Update in public.users
+    const { data: updatedUsers, error: dbErr } = await supabase
+      .from('users')
+      .update({
+        password: hashedPassword,
+        supabase_uid: verifiedUid
+      })
+      .or(`supabase_uid.eq.${verifiedUid},email.ilike.${verifiedEmail}`)
+      .select('id, name, email, role, status');
+
+    if (dbErr) {
+      console.error('[authController.resetPassword] Database update error:', dbErr);
+      return res.status(500).json({ error: 'Failed to update user password in database' });
+    }
+
+    console.log(`[AUTH_AUDIT] resetPassword: operation=password_reset, email=${verifiedEmail}, uid=${verifiedUid}`);
+
+    res.json({ success: true, message: 'Password updated successfully. You can now sign in with your new password.' });
+  } catch (err) {
+    console.error('[authController.resetPassword] Exception:', err);
+    res.status(500).json({ error: 'Server error during password reset' });
+  }
+};
+
 
 
 

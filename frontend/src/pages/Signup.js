@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FcGoogle } from 'react-icons/fc';
+import { HiEye, HiEyeOff } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import toast from 'react-hot-toast';
@@ -17,6 +18,7 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [storeName, setStoreName] = useState('');
   const [artisanType, setArtisanType] = useState('Weaver');
 
@@ -414,16 +416,26 @@ export default function Signup() {
 
               <div>
                 <label className="block text-xs font-medium text-gray-300 mb-1">Password (for future logins)</label>
-                <input
-                  id="signup-password"
-                  name="password"
-                  type="password"
-                  required
-                  className="input-field"
-                  placeholder="Min 6 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    id="signup-password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    className="input-field pr-10"
+                    placeholder="Min 6 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <HiEyeOff className="w-5 h-5" /> : <HiEye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
 
               {role === 'artisan' && (

@@ -538,6 +538,70 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ─── Forgot Password ─────────────────────────────────────────
+  const forgotPassword = async (email) => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    const redirectUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}/reset-password`
+      : 'http://localhost:3000/reset-password';
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl,
+      });
+      if (error) {
+        console.warn('[forgotPassword] Supabase client notice, falling back to backend:', error.message);
+        await authAPI.forgotPassword(cleanEmail);
+      }
+    } catch (_) {
+      await authAPI.forgotPassword(cleanEmail);
+    }
+    return { success: true };
+  };
+
+  // ─── Reset Password ──────────────────────────────────────────
+  const resetPassword = async (newPassword) => {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const recoveryToken = session?.access_token;
+
+    const { error: sbUpdateErr } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (sbUpdateErr) {
+      throw new Error(sbUpdateErr.message || 'Failed to update password with authentication provider.');
+    }
+
+    try {
+      if (recoveryToken) {
+        await authAPI.resetPassword({
+          newPassword,
+          accessToken: recoveryToken,
+        });
+      }
+    } catch (dbSyncErr) {
+      console.warn('[resetPassword] Database password sync notice:', dbSyncErr.response?.data?.error || dbSyncErr.message);
+    }
+
+    try {
+      await supabase.auth.signOut();
+    } catch (_) {}
+    localStorage.removeItem('sh_token');
+    localStorage.removeItem('sh_user');
+    setUser(null);
+
+    return { success: true };
+  };
+
   // ─── Logout ──────────────────────────────────────────────────
   const logout = async () => {
     try {
@@ -575,6 +639,8 @@ export const AuthProvider = ({ children }) => {
       logout,
       sendOtp,
       verifyOtp,
+      forgotPassword,
+      resetPassword,
       isAdmin,
       isArtisan,
       isAuthenticated,

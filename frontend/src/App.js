@@ -23,6 +23,8 @@ import Home from './pages/Home';
 // Lazy-loaded Public Pages for ultra-fast bundle & instant loading
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const ProductList = lazy(() => import('./pages/ProductList'));
 const ProductDetail = lazy(() => import('./pages/ProductDetail'));
 const Cart = lazy(() => import('./pages/Cart'));
@@ -180,6 +182,8 @@ function App() {
                                 <Route path="/" element={<Home />} />
                                 <Route path="/login" element={<Login />} />
                                 <Route path="/signup" element={<Signup />} />
+                                <Route path="/forgot-password" element={<ForgotPassword />} />
+                                <Route path="/reset-password" element={<ResetPassword />} />
                                 <Route path="/products" element={<ProductList />} />
                                 <Route path="/categories/:categorySlug" element={<ProductList />} />
                                 <Route path="/products/:id" element={<ProductDetail />} />

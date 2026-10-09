@@ -98,6 +98,8 @@ export const authAPI = {
   signup:          (data) => api.post('/auth/signup', data),
   sendOtp:         (email) => api.post('/auth/send-otp', { email }),
   verifyOtp:       (data) => api.post('/auth/verify-otp', data),
+  forgotPassword:  (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword:   (data) => api.post('/auth/reset-password', data),
   supabaseSession: (data) => api.post('/auth/supabase-session', data, {
     headers: { Authorization: '' },
   }),
