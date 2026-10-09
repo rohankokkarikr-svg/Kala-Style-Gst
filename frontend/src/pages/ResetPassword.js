@@ -14,6 +14,7 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [sessionChecking, setSessionChecking] = useState(true);
   const [hasValidSession, setHasValidSession] = useState(false);
+  const [recoveryToken, setRecoveryToken] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
@@ -29,6 +30,7 @@ export default function ResetPassword() {
         // 1. Check if Supabase client already established session from URL tokens
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token && mounted) {
+          setRecoveryToken(session.access_token);
           setHasValidSession(true);
           setSessionChecking(false);
           return;
@@ -39,14 +41,50 @@ export default function ResetPassword() {
           const hash = window.location.hash.substring(1);
           const params = new URLSearchParams(hash);
           const accessToken = params.get('access_token');
-          const type = params.get('type');
+          const refreshToken = params.get('refresh_token');
 
-          if (accessToken && (type === 'recovery' || type === 'invite' || type === 'signup')) {
+          if (accessToken) {
+            try {
+              await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || '',
+              });
+            } catch (_) {}
+
             if (mounted) {
+              setRecoveryToken(accessToken);
               setHasValidSession(true);
               setSessionChecking(false);
               return;
             }
+          }
+        }
+
+        // 3. Check if PKCE code or search token is in URL search
+        if (typeof window !== 'undefined' && window.location.search) {
+          const searchParams = new URLSearchParams(window.location.search);
+          const code = searchParams.get('code');
+          const token = searchParams.get('token') || searchParams.get('access_token');
+
+          if (code) {
+            try {
+              const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
+              if (!exchangeErr && exchangeData?.session?.access_token) {
+                if (mounted) {
+                  setRecoveryToken(exchangeData.session.access_token);
+                  setHasValidSession(true);
+                  setSessionChecking(false);
+                  return;
+                }
+              }
+            } catch (_) {}
+          }
+
+          if (token && mounted) {
+            setRecoveryToken(token);
+            setHasValidSession(true);
+            setSessionChecking(false);
+            return;
           }
         }
       } catch (err) {
@@ -54,11 +92,11 @@ export default function ResetPassword() {
       }
 
       if (mounted) {
-        // Wait briefly for Supabase onAuthStateChange in case URL is still being parsed
         setTimeout(async () => {
           if (!mounted) return;
           const { data: { session: retrySession } } = await supabase.auth.getSession();
           if (retrySession?.access_token) {
+            setRecoveryToken(retrySession.access_token);
             setHasValidSession(true);
           } else {
             setHasValidSession(false);
@@ -72,7 +110,8 @@ export default function ResetPassword() {
 
     // Listen to Supabase auth events for PASSWORD_RECOVERY
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session && mounted) {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.access_token && mounted) {
+        setRecoveryToken(session.access_token);
         setHasValidSession(true);
         setSessionChecking(false);
       }
@@ -88,29 +127,45 @@ export default function ResetPassword() {
     e.preventDefault();
     setError('');
 
+    if (!newPassword) {
+      setError('Please enter a new password.');
+      toast.error('Please enter a new password.');
+      return;
+    }
+
     if (newPassword.length < 6) {
       setError('Password must be at least 6 characters long.');
+      toast.error('Password must be at least 6 characters long.');
       return;
     }
 
     if (!/[a-zA-Z]/.test(newPassword)) {
       setError('Password must contain at least one letter (a-z or A-Z).');
+      toast.error('Password must contain at least one letter (a-z or A-Z).');
       return;
     }
 
     if (!/\d/.test(newPassword)) {
       setError('Password must contain at least one number (0-9).');
+      toast.error('Password must contain at least one number (0-9).');
+      return;
+    }
+
+    if (!confirmPassword) {
+      setError('Please confirm your new password.');
+      toast.error('Please confirm your new password.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match. Please verify your entries.');
+      toast.error('Passwords do not match. Please verify your entries.');
       return;
     }
 
     setLoading(true);
     try {
-      await resetPassword(newPassword);
+      await resetPassword(newPassword, recoveryToken);
       setSuccess(true);
       toast.success('Your password has been reset successfully! 🎉');
       setTimeout(() => {
@@ -344,8 +399,8 @@ export default function ResetPassword() {
 
             <button
               type="submit"
-              disabled={loading || !newPassword || !confirmPassword || newPassword !== confirmPassword || !isPolicyMet}
-              className="w-full btn-primary flex items-center justify-center gap-2"
+              disabled={loading}
+              className="w-full btn-primary flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>

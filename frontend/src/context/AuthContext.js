@@ -176,6 +176,11 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
+        // If currently on password reset page, do not hijack or wipe recovery session with normal session sync
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/reset-password')) {
+          return;
+        }
+
         if (!session?.access_token) {
           return;
         }
@@ -575,7 +580,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─── Reset Password ──────────────────────────────────────────
-  const resetPassword = async (newPassword) => {
+  const resetPassword = async (newPassword, explicitToken = null) => {
     if (!newPassword || newPassword.length < 6) {
       throw new Error('Password must be at least 6 characters long.');
     }
@@ -584,30 +589,58 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).');
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const recoveryToken = session?.access_token;
-
-    const { error: sbUpdateErr } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-
-    if (sbUpdateErr) {
-      let msg = sbUpdateErr.message || '';
-      if (msg.includes('abcdefghijklmnopqrstuvwxyz') || msg.toLowerCase().includes('password should contain at least one character of each')) {
-        msg = 'Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).';
-      }
-      throw new Error(msg || 'Failed to update password with authentication provider.');
+    // 1. Resolve token from explicitToken or active session
+    let token = explicitToken;
+    if (!token) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch (_) {}
     }
 
+    // 2. Update via Supabase client if session is active
+    let sbSuccess = false;
     try {
-      if (recoveryToken) {
-        await authAPI.resetPassword({
-          newPassword,
-          accessToken: recoveryToken,
-        });
+      const { data, error: sbUpdateErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (!sbUpdateErr && data?.user) {
+        sbSuccess = true;
+      } else if (sbUpdateErr) {
+        let msg = sbUpdateErr.message || '';
+        if (msg.includes('abcdefghijklmnopqrstuvwxyz') || msg.toLowerCase().includes('password should contain at least one character of each')) {
+          throw new Error('Password must contain at least one letter (a-z / A-Z) and at least one number (0-9).');
+        }
       }
-    } catch (dbSyncErr) {
-      console.warn('[resetPassword] Database password sync notice:', dbSyncErr.response?.data?.error || dbSyncErr.message);
+    } catch (sbErr) {
+      if (sbErr.message && sbErr.message.includes('Password must contain')) {
+        throw sbErr;
+      }
+      console.warn('[resetPassword] Supabase client updateUser notice:', sbErr.message);
+    }
+
+    // 3. Update via Backend Admin API with accessToken
+    let backendSuccess = false;
+    if (token) {
+      try {
+        const res = await authAPI.resetPassword({
+          newPassword,
+          accessToken: token,
+        });
+        if (res.data?.success) {
+          backendSuccess = true;
+        }
+      } catch (backendErr) {
+        console.warn('[resetPassword] Backend reset notice:', backendErr.response?.data || backendErr.message);
+        const backendErrMsg = backendErr.response?.data?.error;
+        if (backendErrMsg && !sbSuccess) {
+          throw new Error(backendErrMsg);
+        }
+      }
+    }
+
+    if (!sbSuccess && !backendSuccess) {
+      throw new Error('Password reset session has expired or is invalid. Please request a new reset link.');
     }
 
     try {

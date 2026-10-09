@@ -922,7 +922,14 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({ error: 'Please provide a valid email address' });
     }
 
-    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const originHeader = req.headers?.origin || req.headers?.referer;
+    let frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    if (originHeader) {
+      try {
+        const parsed = new URL(originHeader).origin;
+        if (parsed) frontendBaseUrl = parsed.replace(/\/$/, '');
+      } catch (_) {}
+    }
     const redirectUrl = `${frontendBaseUrl}/reset-password`;
 
     // Dispatch Supabase password recovery email
