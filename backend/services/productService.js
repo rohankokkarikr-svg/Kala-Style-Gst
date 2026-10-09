@@ -73,6 +73,12 @@ exports.getLowStockProducts = async (threshold = 5, limit = 20) => {
 exports.approveProduct = async (productId, reason = 'Approved by AI Admin Manager', confidence = 1.0) => {
   if (!productId) throw new Error('product_id is required');
 
+  const { data: existing } = await safeQuery(() =>
+    supabase.from('products').select('stock_quantity').eq('id', productId).maybeSingle()
+  );
+  const currentStock = existing?.stock_quantity != null ? Number(existing.stock_quantity) : 10;
+  const finalStock = currentStock > 0 ? currentStock : 10;
+
   const { data, error } = await safeQuery(() =>
     supabase
       .from('products')
@@ -80,6 +86,8 @@ exports.approveProduct = async (productId, reason = 'Approved by AI Admin Manage
         status: 'approved',
         rejection_reason: null,
         is_hidden: false,
+        is_in_stock: true,
+        stock_quantity: finalStock,
       })
       .eq('id', productId)
       .select('*, artisan_profiles(id, store_name)')

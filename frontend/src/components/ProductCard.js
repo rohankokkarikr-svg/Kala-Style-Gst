@@ -44,6 +44,7 @@ export default function ProductCard({ product, onDismiss }) {
     : null);
 
   const isFavorited = isInWishlist(id);
+  const isOutOfStock = is_in_stock === false || (stock_quantity != null && Number(stock_quantity) <= 0);
 
   // Regional Translation Support
   const cachedTranslation = getCachedTranslation ? getCachedTranslation(id, currentLang) : null;
@@ -152,7 +153,7 @@ export default function ProductCard({ product, onDismiss }) {
           </div>
 
           {/* Out of Stock Overlay */}
-          {(is_in_stock === false || (stock_quantity !== undefined && stock_quantity <= 0)) && (
+          {isOutOfStock && (
             <span className="absolute bottom-3 left-3 right-3 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-600/90 text-white text-center rounded-lg shadow-lg z-10 pointer-events-none">
               Out of Stock
             </span>
@@ -246,10 +247,14 @@ export default function ProductCard({ product, onDismiss }) {
             {/* Quick Add to Cart Button */}
             <button
               onClick={handleQuickAdd}
-              disabled={is_in_stock === false || (stock_quantity !== undefined && stock_quantity <= 0)}
-              className="p-2.5 rounded-xl bg-dark-700 hover:bg-gold-500 text-gray-200 hover:text-dark-900 border border-dark-600 hover:border-gold-400 transition-all duration-200 shadow-sm"
-              aria-label="Add to cart"
-              title="Quick Add to Cart"
+              disabled={isOutOfStock}
+              className={`p-2.5 rounded-xl border transition-all duration-200 shadow-sm ${
+                isOutOfStock
+                  ? 'bg-dark-800 text-gray-600 border-dark-700 cursor-not-allowed opacity-50'
+                  : 'bg-dark-700 hover:bg-gold-500 text-gray-200 hover:text-dark-900 border-dark-600 hover:border-gold-400 cursor-pointer'
+              }`}
+              aria-label={isOutOfStock ? 'Out of Stock' : 'Add to cart'}
+              title={isOutOfStock ? 'Out of Stock' : 'Quick Add to Cart'}
             >
               <HiShoppingCart className="w-4 h-4" />
             </button>

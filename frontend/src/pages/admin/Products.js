@@ -107,9 +107,20 @@ export default function Products() {
 
   const handleApprove = async (id) => {
     try {
-      await adminAPI.approveProduct(id);
+      const res = await adminAPI.approveProduct(id);
       toast.success('Product approved and published!');
-      setProducts(prev => prev.map(p => p.id === id ? { ...p, status: 'approved', rejection_reason: null } : p));
+      const updated = res?.data;
+      setProducts(prev => prev.map(p => p.id === id ? {
+        ...p,
+        ...(updated || {}),
+        status: 'approved',
+        is_in_stock: true,
+        stock_quantity: updated?.stock_quantity ?? (Number(p.stock_quantity) > 0 ? Number(p.stock_quantity) : 10),
+        rejection_reason: null
+      } : p));
+      window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
+        detail: { payload: { action: 'approve', id } }
+      }));
     } catch {
       toast.error('Failed to approve product');
     }
@@ -267,7 +278,7 @@ export default function Products() {
         category: editFormData.category.trim(),
         subcategory: editFormData.subcategory.trim(),
         stock_quantity: Number(editFormData.stock_quantity) || 0,
-        is_in_stock: Boolean(editFormData.is_in_stock),
+        is_in_stock: Number(editFormData.stock_quantity) > 0 ? (editFormData.is_in_stock !== false) : false,
         status: editFormData.status,
         rejection_reason: editFormData.status === 'rejected' ? editFormData.rejection_reason : null,
         material: editFormData.material.trim(),

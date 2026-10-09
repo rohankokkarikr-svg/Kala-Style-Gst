@@ -165,11 +165,16 @@ export default function ArtisanProducts() {
                 </div>
 
                 <div className="absolute top-2 right-2">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md ${
-                    p.is_in_stock ? 'bg-green-600/90 text-white' : 'bg-red-600/90 text-white'
-                  }`}>
-                    {p.is_in_stock ? 'In Stock' : 'Out of Stock'}
-                  </span>
+                  {(() => {
+                    const isOutOfStock = p.is_in_stock === false || (p.stock_quantity != null && Number(p.stock_quantity) <= 0);
+                    return (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md ${
+                        !isOutOfStock ? 'bg-green-600/90 text-white' : 'bg-red-600/90 text-white'
+                      }`}>
+                        {!isOutOfStock ? `In Stock (${p.stock_quantity ?? 10})` : 'Out of Stock'}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

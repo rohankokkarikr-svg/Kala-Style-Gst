@@ -217,8 +217,8 @@ export const reviewAPI = {
   getApproved: (params) => cachedGet('/reviews', { params }, 60000),
   getAll: (params) => api.get('/reviews/admin', { params }),
   submit: (data) => api.post('/reviews', data),
-  approve: (id) => api.patch(`/reviews/${id}/approve`),
-  delete: (id) => api.delete(`/reviews/${id}`),
+  approve: (id) => { apiCache.invalidateReviews(); return api.patch(`/reviews/${id}/approve`); },
+  delete: (id) => { apiCache.invalidateReviews(); return api.delete(`/reviews/${id}`); },
 };
 
 // ─── Coupons ─────────────────────────────────────
@@ -278,15 +278,15 @@ export const aiAPI = {
 export const adminAPI = {
   getOverview:          ()         => api.get('/admin/overview'),
   getArtisans:          (params)   => api.get('/admin/artisans', { params }),
-  updateArtisanStatus:  (id, data) => api.put(`/admin/artisans/${id}/status`, data),
+  updateArtisanStatus:  (id, data) => { apiCache.invalidateArtisans(); return api.put(`/admin/artisans/${id}/status`, data); },
   getCustomers:         (params)   => api.get('/admin/customers', { params }),
   updateCustomerStatus: (id, data) => api.put(`/admin/customers/${id}/status`, data),
   getProducts:          (params)   => api.get('/admin/products', { params }),
-  updateProduct:        (id, data) => api.put(`/admin/products/${id}`, data),
-  approveProduct:       (id)       => api.put(`/admin/products/${id}/approve`),
-  rejectProduct:        (id, data) => api.put(`/admin/products/${id}/reject`, data),
-  hideProduct:          (id, data) => api.put(`/admin/products/${id}/hide`, data),
-  deleteProduct:        (id)       => api.delete(`/admin/products/${id}`),
+  updateProduct:        (id, data) => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}`, data); },
+  approveProduct:       (id)       => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}/approve`); },
+  rejectProduct:        (id, data) => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}/reject`, data); },
+  hideProduct:          (id, data) => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}/hide`, data); },
+  deleteProduct:        (id)       => { apiCache.invalidateProducts(); return api.delete(`/admin/products/${id}`); },
   getCategories:        ()         => api.get('/admin/categories'),
   createCategory:       (data)     => api.post('/admin/categories', data),
   updateCategory:       (id, data) => api.put(`/admin/categories/${id}`, data),

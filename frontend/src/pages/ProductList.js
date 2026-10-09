@@ -242,9 +242,9 @@ export default function ProductList() {
 
     // 6. Availability Filter
     if (selectedAvailability === 'in_stock') {
-      list = list.filter((p) => p.is_in_stock !== false && (p.stock_quantity === undefined || p.stock_quantity > 0));
+      list = list.filter((p) => p.is_in_stock !== false && (p.stock_quantity == null || Number(p.stock_quantity) > 0));
     } else if (selectedAvailability === 'out_of_stock') {
-      list = list.filter((p) => p.is_in_stock === false || p.stock_quantity <= 0);
+      list = list.filter((p) => p.is_in_stock === false || (p.stock_quantity != null && Number(p.stock_quantity) <= 0));
     }
 
     // 7. Discount Filter

@@ -55,11 +55,11 @@ function Field({ label, children }) {
   );
 }
 
-function Input({ value, onChange, placeholder, multiline }) {
+function Input({ value, onChange, placeholder, multiline, type = 'text', min }) {
   const cls = 'w-full bg-dark-700 border border-dark-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gold-500/60 placeholder-gray-600 transition-colors';
   return multiline
     ? <textarea rows={3} className={cls} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
-    : <input className={cls} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
+    : <input type={type} min={min} className={cls} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
 }
 
 // ── Main Component ───────────────────────────────────────────────────────────
@@ -240,6 +240,7 @@ export default function AIProductStudio() {
         careInstructions: Array.isArray(cat.careInstructions) ? cat.careInstructions.join('\n') : '',
         priceMin:         cat.suggestedPriceRange?.minimum || cat.price_range?.min || 499,
         priceMax:         cat.suggestedPriceRange?.maximum || cat.price_range?.max || 2999,
+        stockQuantity:    10,
         isAIGenerated:    data.isAIGenerated !== false,
       });
       stopLoadingMessages();
@@ -265,6 +266,7 @@ export default function AIProductStudio() {
         careInstructions: 'Handle with care\nStore in cool dry place',
         priceMin:         499,
         priceMax:         2499,
+        stockQuantity:    10,
         isAIGenerated:    false,
       });
       setStep(3);
@@ -346,6 +348,7 @@ export default function AIProductStudio() {
       const chosenArtisan = artisansList.find(a => a.id === targetArtisanId);
       const targetArtisanName = chosenArtisan?.store_name || user?.artisan_profile?.store_name || user?.name;
 
+      const finalStock = Number(catalog.stockQuantity) > 0 ? Number(catalog.stockQuantity) : 10;
       const productData = {
         name:           catalog.productName,
         description:    catalog.fullDescription || catalog.shortDescription,
@@ -358,14 +361,15 @@ export default function AIProductStudio() {
         tags:           catalog.suggestedTags?.split(',').map(t => t.trim()).filter(Boolean),
         image_url:      finalUrl || '',
         sizes:          ['Free Size'],
-        stock_quantity: 10,
+        stock_quantity: finalStock,
+        is_in_stock:    true,
         artisan_id:     targetArtisanId,
         artisan_name:   targetArtisanName,
         status:         isDraft ? 'draft' : 'pending',
         ai_generated:   catalog.isAIGenerated,
       };
 
-      const { data: createdProduct } = await productAPI.create(productData);
+      await productAPI.create(productData);
       apiCache.invalidateProducts();
       window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
         detail: { payload: { action: 'create' } }
@@ -603,6 +607,15 @@ export default function AIProductStudio() {
             <Field label="Tags (comma-separated)">
               <Input value={catalog.suggestedTags} onChange={v => updateCatalogField('suggestedTags', v)} placeholder="handmade, artisan, bamboo" />
             </Field>
+            <Field label="Initial Stock Quantity *">
+              <Input
+                type="number"
+                min="1"
+                value={catalog.stockQuantity ?? 10}
+                onChange={v => updateCatalogField('stockQuantity', Math.max(1, parseInt(v, 10) || 1))}
+                placeholder="Initial Stock (e.g. 10)"
+              />
+            </Field>
           </div>
 
           <Field label="Short Description">
@@ -771,7 +784,12 @@ export default function AIProductStudio() {
                 <h3 className="text-white font-bold">{catalog.productName}</h3>
                 <p className="text-gold-400 text-sm">{catalog.category}</p>
                 <p className="text-gray-400 text-xs line-clamp-2">{catalog.shortDescription}</p>
-                {finalPrice && <p className="text-green-400 font-semibold">₹{finalPrice}</p>}
+                <div className="flex items-center gap-3 pt-1">
+                  {finalPrice && <span className="text-green-400 font-semibold text-sm">₹{finalPrice}</span>}
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    Stock: {catalog.stockQuantity || 10} units (In Stock)
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">

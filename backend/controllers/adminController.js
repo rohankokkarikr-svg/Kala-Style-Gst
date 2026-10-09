@@ -403,11 +403,28 @@ exports.updateProduct = async (req, res) => {
 exports.approveProduct = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Inspect existing product stock to guarantee it is not left as out-of-stock
+    const { data: existing } = await supabase
+      .from('products')
+      .select('stock_quantity, is_in_stock')
+      .eq('id', id)
+      .maybeSingle();
+
+    const currentStock = existing?.stock_quantity != null ? Number(existing.stock_quantity) : 10;
+    const finalStock = currentStock > 0 ? currentStock : 10;
+
     const { data, error } = await supabase
       .from('products')
-      .update({ status: 'approved', rejection_reason: null })
+      .update({
+        status: 'approved',
+        rejection_reason: null,
+        is_hidden: false,
+        is_in_stock: true,
+        stock_quantity: finalStock,
+      })
       .eq('id', id)
-      .select()
+      .select('*, artisan_profiles(id, store_name, location, artisan_type)')
       .single();
 
     if (error) throw error;

@@ -37,12 +37,13 @@ exports.getArtisanById = async (req, res) => {
     if (profileError || !profile) {
       return res.status(404).json({ error: 'Artisan not found' });
     }
-    // Fetch their products
+    // Fetch their products (approved, visible)
     const { data: products } = await supabase
       .from('products')
       .select('*')
       .eq('artisan_id', id)
-      .eq('is_in_stock', true)
+      .neq('is_hidden', true)
+      .or('status.eq.approved,status.is.null')
       .order('created_at', { ascending: false });
 
     res.json({ profile: parseArtisanUpi(profile), products: products || [] });

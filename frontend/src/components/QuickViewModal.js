@@ -71,6 +71,7 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
     : [product.image_url || product.image].filter(Boolean);
 
   const isFavorited = isInWishlist(product.id);
+  const isOutOfStock = product.is_in_stock === false || (product.stock_quantity != null && Number(product.stock_quantity) <= 0);
 
   // Multilingual Display Overrides (powered by Gemini AI)
   const displayedTitle = translatedData?.name || product.name;
@@ -80,6 +81,10 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
   const displayedOrigin = translatedData?.state_of_origin || product.state_of_origin;
 
   const handleAddToCart = () => {
+    if (isOutOfStock) {
+      toast.error('This product is currently out of stock');
+      return;
+    }
     if (!isAuthenticated) {
       toast.error('Please log in to add items to your cart');
       navigate('/login');
@@ -253,11 +258,11 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
 
                 {/* Stock indicator */}
                 <div className="flex items-center gap-2 mt-3 text-xs">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-emerald-400 font-medium">
-                    {product.is_in_stock !== false ? 'In Stock — Ready to dispatch' : 'Out of Stock'}
+                  <span className={`inline-block w-2 h-2 rounded-full ${isOutOfStock ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`}></span>
+                  <span className={`${isOutOfStock ? 'text-red-400' : 'text-emerald-400'} font-medium`}>
+                    {isOutOfStock ? 'Out of Stock' : 'In Stock — Ready to dispatch'}
                   </span>
-                  {product.stock_quantity && (
+                  {!isOutOfStock && product.stock_quantity != null && (
                     <span className="text-gray-500">({product.stock_quantity} available)</span>
                   )}
                 </div>
@@ -270,8 +275,9 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
                   <div className="flex items-center border border-dark-600 rounded-xl bg-dark-900 overflow-hidden">
                     <button
                       type="button"
+                      disabled={isOutOfStock}
                       onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors"
+                      className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors disabled:opacity-40"
                     >
                       -
                     </button>
@@ -280,8 +286,9 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
                     </span>
                     <button
                       type="button"
+                      disabled={isOutOfStock}
                       onClick={() => setQuantity((q) => q + 1)}
-                      className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors"
+                      className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors disabled:opacity-40"
                     >
                       +
                     </button>
@@ -290,11 +297,15 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
                   {/* Add to Cart */}
                   <button
                     onClick={handleAddToCart}
-                    disabled={product.is_in_stock === false}
-                    className="btn-gold flex-1 flex items-center justify-center gap-2 py-3 shadow-gold"
+                    disabled={isOutOfStock}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 transition-all ${
+                      isOutOfStock
+                        ? 'bg-dark-700 text-gray-500 border border-dark-600 cursor-not-allowed opacity-75'
+                        : 'btn-gold shadow-gold'
+                    }`}
                   >
                     <HiShoppingCart className="w-5 h-5" />
-                    <span>Add to Cart</span>
+                    <span>{isOutOfStock ? 'Out of Stock' : 'Add to Cart'}</span>
                   </button>
 
                   {/* Wishlist Button */}

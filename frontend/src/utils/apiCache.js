@@ -8,6 +8,22 @@ class APICache {
     this.cache = new Map();
     this.defaultTTL = 10 * 60 * 1000; // 10 minutes fresh
     this.storagePrefix = 'kala_swr_';
+    this.cacheVersion = 'v3_real_catalog_live';
+
+    // Auto-purge stale cached data on startup if cache version bumped
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        if (localStorage.getItem('kala_swr_version') !== this.cacheVersion) {
+          const toDelete = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(this.storagePrefix)) toDelete.push(k);
+          }
+          toDelete.forEach((k) => localStorage.removeItem(k));
+          localStorage.setItem('kala_swr_version', this.cacheVersion);
+        }
+      }
+    } catch (_) {}
   }
 
   _toStorageKey(key) {
@@ -108,6 +124,16 @@ class APICache {
 
   invalidateProducts() {
     this.invalidate('/products');
+  }
+
+  invalidateArtisans() {
+    this.invalidate('/artisans');
+    this.invalidate('/admin/artisans');
+  }
+
+  invalidateReviews() {
+    this.invalidate('/reviews');
+    this.invalidate('/admin/reviews');
   }
 
   invalidateCategories() {

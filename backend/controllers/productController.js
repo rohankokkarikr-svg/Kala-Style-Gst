@@ -381,6 +381,11 @@ exports.createProduct = async (req, res) => {
     const finalOrigPrice = original_price ? Number(original_price) : Math.round(finalPrice * 1.2);
     const productStatus = status || 'pending';
 
+    const resolvedStock = stock_quantity !== undefined && stock_quantity !== '' && !isNaN(Number(stock_quantity))
+      ? Math.max(0, Number(stock_quantity))
+      : 10;
+    const resolvedInStock = is_in_stock !== undefined ? Boolean(is_in_stock) : resolvedStock > 0;
+
     const insertPayload = {
       name,
       description,
@@ -389,8 +394,8 @@ exports.createProduct = async (req, res) => {
       category: category || 'Handicrafts',
       subcategory: subcategory || null,
       sizes: sizes || ['Free Size'],
-      stock_quantity: Number(stock_quantity) || 0,
-      is_in_stock: is_in_stock !== undefined ? is_in_stock : true,
+      stock_quantity: resolvedStock,
+      is_in_stock: resolvedInStock,
       status: productStatus,
       barcode: barcode ? barcode.trim() : null,
       ...(image_url ? { image_url } : {}),
@@ -448,12 +453,31 @@ exports.updateProduct = async (req, res) => {
       images
     } = req.body;
 
-    const updatePayload = { 
-      name, description, price, original_price, category, subcategory, sizes, 
-      stock_quantity, is_in_stock, image_url,
-      barcode: barcode ? barcode.trim() : null,
-      artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags
-    };
+    const updatePayload = {};
+    if (name !== undefined) updatePayload.name = name;
+    if (description !== undefined) updatePayload.description = description;
+    if (price !== undefined) updatePayload.price = Number(price);
+    if (original_price !== undefined) updatePayload.original_price = original_price ? Number(original_price) : null;
+    if (category !== undefined) updatePayload.category = category;
+    if (subcategory !== undefined) updatePayload.subcategory = subcategory;
+    if (sizes !== undefined) updatePayload.sizes = sizes;
+    if (stock_quantity !== undefined) {
+      const numStock = Number(stock_quantity);
+      updatePayload.stock_quantity = isNaN(numStock) ? 0 : Math.max(0, numStock);
+      if (is_in_stock === undefined) {
+        updatePayload.is_in_stock = updatePayload.stock_quantity > 0;
+      }
+    }
+    if (is_in_stock !== undefined) updatePayload.is_in_stock = Boolean(is_in_stock);
+    if (image_url !== undefined) updatePayload.image_url = image_url;
+    if (barcode !== undefined) updatePayload.barcode = barcode ? barcode.trim() : null;
+    if (artisan_id !== undefined) updatePayload.artisan_id = artisan_id;
+    if (is_handmade !== undefined) updatePayload.is_handmade = Boolean(is_handmade);
+    if (material !== undefined) updatePayload.material = material;
+    if (style !== undefined) updatePayload.style = style;
+    if (ai_generated !== undefined) updatePayload.ai_generated = ai_generated;
+    if (ai_suggested_price !== undefined) updatePayload.ai_suggested_price = ai_suggested_price;
+    if (tags !== undefined) updatePayload.tags = tags;
     if (status !== undefined) updatePayload.status = status;
     if (images !== undefined) {
       const imgArr = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);

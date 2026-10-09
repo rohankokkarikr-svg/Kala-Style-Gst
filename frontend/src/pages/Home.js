@@ -61,7 +61,7 @@ export default function Home() {
     try {
       const res = await productAPI.getFeatured();
       const items = res?.data || res;
-      if (Array.isArray(items) && items.length > 0) {
+      if (Array.isArray(items)) {
         setFeatured(items);
       }
     } catch {
@@ -70,7 +70,7 @@ export default function Home() {
     try {
       const res = await artisanAPI.getAll();
       const items = res?.data || res;
-      if (Array.isArray(items) && items.length > 0) {
+      if (Array.isArray(items)) {
         setArtisans(items.slice(0, 4));
       }
     } catch {}
