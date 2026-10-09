@@ -231,6 +231,7 @@ export default function Login() {
     if (googleLoading) return;
     setGoogleLoading(true);
     try {
+      sessionStorage.setItem('auth_flow', 'login');
       const isArtisanPortal = portalMode === 'artisan';
       const authIntent = isArtisanPortal ? 'artisan' : 'user';
       const defaultReturn = isArtisanPortal ? '/artisan' : '/';
@@ -431,6 +432,22 @@ export default function Login() {
             )}
           </p>
         </div>
+
+        {/* ─── Google OAuth Account Not Found Alert ─── */}
+        {oauthError && (
+          <div className="p-3.5 rounded-xl text-xs flex flex-col gap-2 bg-amber-500/15 border border-amber-500/40 text-amber-200">
+            <div className="flex items-start gap-2">
+              <span className="text-base shrink-0">🔍</span>
+              <span className="leading-relaxed font-medium">{oauthError}</span>
+            </div>
+            <Link
+              to={portalMode === 'artisan' ? '/signup?role=artisan' : '/signup'}
+              className="mt-1 py-2 px-3 bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold rounded-lg text-center transition-all inline-block shadow-gold"
+            >
+              Create Account First →
+            </Link>
+          </div>
+        )}
 
         {/* ─── Portal Switcher Tabs (Customer vs Artisan) ─── */}
         <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">

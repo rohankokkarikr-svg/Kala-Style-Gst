@@ -20,7 +20,7 @@ const {
 } = require('../utils/authHelper');
 
 const { protect, admin, artisan } = require('../middleware/auth');
-const { forgotPassword, resetPassword, register, login, sendOtp } = require('../controllers/authController');
+const { forgotPassword, resetPassword, register, login, sendOtp, syncSupabaseSession } = require('../controllers/authController');
 
 describe('Master Authentication & Canonical RBAC Security Suite', () => {
   // ─── 1. Canonical Role Normalization ───────────────────────────
@@ -262,6 +262,47 @@ describe('Master Authentication & Canonical RBAC Security Suite', () => {
     assert.strictEqual(statusCode, 404);
     assert.strictEqual(responseBody.notFound, true);
     assert.ok(responseBody.error.includes('No account found'));
+  });
+
+  test('syncSupabaseSession strictly returns 404 with notFound when uncreated account attempts to log in from welcome back page', async () => {
+    const supabase = require('../config/supabase');
+    const originalGetUser = supabase.auth.getUser;
+    supabase.auth.getUser = async () => ({
+      data: {
+        user: {
+          id: 'mock-sb-uid-unregistered-999',
+          email: 'unregistered_google_shopper_999@test.com',
+          user_metadata: { full_name: 'Unregistered Visitor' }
+        }
+      },
+      error: null
+    });
+
+    let statusCode = null;
+    let responseBody = null;
+    const req = {
+      headers: {},
+      body: {
+        accessToken: 'mock-valid-sb-access-token',
+        auth_flow: 'login',
+        auth_intent: 'user'
+      }
+    };
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      }
+    };
+
+    try {
+      await syncSupabaseSession(req, res);
+      assert.strictEqual(statusCode, 404);
+      assert.strictEqual(responseBody.notFound, true);
+      assert.ok(responseBody.error.includes('No account found'));
+    } finally {
+      supabase.auth.getUser = originalGetUser;
+    }
   });
 
   // ─── 8. RBAC Middleware Authorization Checks ──────────────────

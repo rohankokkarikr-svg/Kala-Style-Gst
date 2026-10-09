@@ -588,6 +588,10 @@ exports.syncSupabaseSession = async (req, res) => {
     const rawIntent = (req.body?.auth_intent || req.query?.auth_intent || req.headers['x-auth-intent'] || '').toString().toLowerCase().trim();
     const authIntent = rawIntent === 'artisan' ? 'artisan' : 'user';
 
+    // Auth flow: 'login' vs 'signup' (Default is 'login' to strictly prevent auto-creating accounts on the Welcome Back page)
+    const rawFlow = (req.body?.auth_flow || req.query?.auth_flow || req.headers['x-auth-flow'] || req.body?.flow || '').toString().toLowerCase().trim();
+    const isSignupFlow = rawFlow === 'signup' || req.body?.is_signup === true;
+
     if (!token) {
       return res.status(401).json({ error: 'Valid Supabase session token is required to sync session' });
     }
@@ -707,6 +711,14 @@ exports.syncSupabaseSession = async (req, res) => {
         } catch (_) {}
       }
     } else {
+      // If user does not exist in database and this is a login attempt, strictly disallow auto-provisioning
+      if (!isSignupFlow) {
+        return res.status(404).json({
+          error: 'No account found for this Google account. Please create an account first.',
+          notFound: true
+        });
+      }
+
       // Section 11 & 15: New account creation: Role determined strictly by verified login portal intent
       const targetRole = authIntent === 'artisan' ? 'artisan' : 'user';
       const defaultName = googleName || verifiedEmail.split('@')[0] || (targetRole === 'artisan' ? 'Artisan' : 'User');

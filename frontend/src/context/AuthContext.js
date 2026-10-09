@@ -57,12 +57,18 @@ export const AuthProvider = ({ children }) => {
         const storedIntent = sessionStorage.getItem('auth_intent');
         const authIntent = storedIntent === 'artisan' ? 'artisan' : 'user';
 
+        // Recover auth_flow from sessionStorage or detect from route (default: 'login')
+        const storedFlow = sessionStorage.getItem('auth_flow');
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        const authFlow = storedFlow || (currentPath.startsWith('/signup') ? 'signup' : 'login');
+
         // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
           accessToken: session.access_token,
           email: session.user?.email,
           supabase_uid: session.user?.id,
-          auth_intent: authIntent
+          auth_intent: authIntent,
+          auth_flow: authFlow
         });
         if (data?.user && data?.token) {
           const normalized = { ...data.user, role: normalizeRole(data.user.role) };
@@ -74,13 +80,28 @@ export const AuthProvider = ({ children }) => {
             sessionStorage.setItem('portal_notice', data.portal_notice);
           }
 
+          sessionStorage.removeItem('auth_flow');
           return normalized;
         }
       } catch (e) {
+        const isNotFound = e.response?.status === 404 || e.response?.data?.notFound;
         const errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
         console.error('[syncSupabaseSessionSingleFlight] Sync error:', errMsg);
+
+        if (isNotFound) {
+          // Strict: When user has not registered, immediately sign out of Supabase to prevent unlinked session
+          try {
+            await supabase.auth.signOut();
+          } catch (_) {}
+          localStorage.removeItem('sh_token');
+          localStorage.removeItem('sh_user');
+          sessionStorage.removeItem('oauth_in_flight');
+          sessionStorage.removeItem('auth_flow');
+          setUser(null);
+        }
+
         setOauthError(errMsg);
-        toast.error(errMsg);
+        toast.error(errMsg, { duration: 6000 });
       } finally {
         syncPromiseRef.current = null;
         setOauthProcessing(false);
@@ -165,6 +186,7 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('auth_return_url');
         sessionStorage.removeItem('oauth_in_flight');
         sessionStorage.removeItem('auth_intent');
+        sessionStorage.removeItem('auth_flow');
         sessionStorage.removeItem('portal_notice');
         setUser(null);
         setOauthProcessing(false);
@@ -208,8 +230,8 @@ export const AuthProvider = ({ children }) => {
             const syncedUser = await syncSupabaseSessionSingleFlight(session);
             sessionStorage.removeItem('oauth_in_flight');
 
-            // Section 20: Clean URL ONLY AFTER session has successfully been established
-            if (syncedUser && typeof window !== 'undefined') {
+            // Section 20: Clean URL after session evaluation
+            if (typeof window !== 'undefined') {
               if (window.location.hash || window.location.search) {
                 window.history.replaceState(null, '', window.location.pathname);
               }
@@ -378,6 +400,7 @@ export const AuthProvider = ({ children }) => {
         accessToken: session?.access_token,
         email: cleanEmail,
         supabase_uid: sbUser?.id,
+        auth_flow: isSignup ? 'signup' : 'login',
       });
 
       const normalizedUser = {
@@ -478,23 +501,29 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Supabase client is not available. Please verify your connection.');
       }
 
-      // Section 2: Parse flexible returnUrl and explicit authIntent
+      // Section 2: Parse flexible returnUrl and explicit authIntent & authFlow
       let targetReturnUrl = null;
       let targetAuthIntent = 'user';
+      let targetAuthFlow = 'login';
 
       if (typeof returnUrlOrOptions === 'string') {
         targetReturnUrl = returnUrlOrOptions;
         if (maybeOptions && typeof maybeOptions === 'object') {
           if (maybeOptions.authIntent) targetAuthIntent = maybeOptions.authIntent;
           else if (maybeOptions.auth_intent) targetAuthIntent = maybeOptions.auth_intent;
+          if (maybeOptions.flow) targetAuthFlow = maybeOptions.flow;
+          else if (maybeOptions.authFlow || maybeOptions.auth_flow) targetAuthFlow = maybeOptions.authFlow || maybeOptions.auth_flow;
         }
       } else if (returnUrlOrOptions && typeof returnUrlOrOptions === 'object') {
         targetReturnUrl = returnUrlOrOptions.returnUrl || returnUrlOrOptions.redirectTo || null;
         targetAuthIntent = returnUrlOrOptions.authIntent || returnUrlOrOptions.auth_intent || 'user';
+        if (returnUrlOrOptions.flow) targetAuthFlow = returnUrlOrOptions.flow;
+        else if (returnUrlOrOptions.authFlow || returnUrlOrOptions.auth_flow) targetAuthFlow = returnUrlOrOptions.authFlow || returnUrlOrOptions.auth_flow;
       }
 
-      // Normalize auth_intent
+      // Normalize auth_intent & auth_flow
       targetAuthIntent = String(targetAuthIntent).toLowerCase().trim() === 'artisan' ? 'artisan' : 'user';
+      targetAuthFlow = String(targetAuthFlow).toLowerCase().trim() === 'signup' ? 'signup' : 'login';
 
       // Fallback intent inference: if returnUrl points to artisan route, ensure intent is artisan
       if (targetAuthIntent !== 'artisan' && targetReturnUrl && targetReturnUrl.startsWith('/artisan')) {
@@ -503,6 +532,7 @@ export const AuthProvider = ({ children }) => {
 
       // Section 3: Store explicit login portal intent in sessionStorage so it survives the OAuth redirect loop
       sessionStorage.setItem('auth_intent', targetAuthIntent);
+      sessionStorage.setItem('auth_flow', targetAuthFlow);
 
       // Preserve returnUrl in sessionStorage for clean role/destination navigation upon OAuth return
       if (targetReturnUrl && typeof targetReturnUrl === 'string') {
@@ -533,6 +563,7 @@ export const AuthProvider = ({ children }) => {
       if (error) {
         sessionStorage.removeItem('oauth_in_flight');
         sessionStorage.removeItem('auth_intent');
+        sessionStorage.removeItem('auth_flow');
         setOauthProcessing(false);
         console.error('Supabase signInWithOAuth error:', error);
         const msg = (error.message || '').toLowerCase();
@@ -548,6 +579,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       sessionStorage.removeItem('oauth_in_flight');
       sessionStorage.removeItem('auth_intent');
+      sessionStorage.removeItem('auth_flow');
       setOauthProcessing(false);
       throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
     }
