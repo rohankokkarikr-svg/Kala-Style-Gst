@@ -305,6 +305,55 @@ describe('Master Authentication & Canonical RBAC Security Suite', () => {
     }
   });
 
+  test('syncSupabaseSession allows account creation when flow is signup', async () => {
+    const supabase = require('../config/supabase');
+    const originalGetUser = supabase.auth.getUser;
+    const testEmail = `new_verified_signup_${Date.now()}@test.com`;
+    supabase.auth.getUser = async () => ({
+      data: {
+        user: {
+          id: `mock-sb-uid-${Date.now()}`,
+          email: testEmail,
+          user_metadata: { full_name: 'New Registered Customer' }
+        }
+      },
+      error: null
+    });
+
+    let statusCode = 200;
+    let responseBody = null;
+    const req = {
+      headers: {},
+      body: {
+        accessToken: 'mock-valid-sb-access-token',
+        auth_flow: 'signup',
+        auth_intent: 'user',
+        is_signup: true
+      }
+    };
+    const res = {
+      status: (code) => {
+        statusCode = code;
+        return { json: (data) => { responseBody = data; } };
+      },
+      json: (data) => {
+        responseBody = data;
+      }
+    };
+
+    try {
+      await syncSupabaseSession(req, res);
+      assert.strictEqual(statusCode, 200);
+      assert.ok(responseBody.token, 'Must return JWT token');
+      assert.strictEqual(responseBody.user.role, 'user', 'Must create account with role user');
+      if (responseBody.user?.id) {
+        await supabase.from('users').delete().eq('id', responseBody.user.id);
+      }
+    } finally {
+      supabase.auth.getUser = originalGetUser;
+    }
+  });
+
   // ─── 8. RBAC Middleware Authorization Checks ──────────────────
   test('admin middleware grants access to admin and blocks non-admin users', () => {
     let nextCalled = false;

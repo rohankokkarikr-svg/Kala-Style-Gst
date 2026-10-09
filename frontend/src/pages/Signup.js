@@ -80,6 +80,9 @@ export default function Signup() {
     setGoogleLoading(true);
     try {
       sessionStorage.setItem('auth_flow', 'signup');
+      localStorage.setItem('auth_flow', 'signup');
+      sessionStorage.setItem('auth_is_signup', 'true');
+      localStorage.setItem('auth_is_signup', 'true');
       const authIntent = role === 'artisan' ? 'artisan' : 'user';
       const returnUrl = role === 'artisan' ? '/artisan' : '/';
       await signInWithGoogle(returnUrl, { authIntent });

@@ -232,6 +232,9 @@ export default function Login() {
     setGoogleLoading(true);
     try {
       sessionStorage.setItem('auth_flow', 'login');
+      localStorage.setItem('auth_flow', 'login');
+      sessionStorage.removeItem('auth_is_signup');
+      localStorage.removeItem('auth_is_signup');
       const isArtisanPortal = portalMode === 'artisan';
       const authIntent = isArtisanPortal ? 'artisan' : 'user';
       const defaultReturn = isArtisanPortal ? '/artisan' : '/';

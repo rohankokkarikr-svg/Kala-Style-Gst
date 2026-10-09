@@ -53,14 +53,17 @@ export const AuthProvider = ({ children }) => {
     syncPromiseRef.current = (async () => {
       try {
         setOauthError(null);
-        // Step 2 & 13: Recover auth_intent from sessionStorage (default: 'user')
-        const storedIntent = sessionStorage.getItem('auth_intent');
+        // Step 2 & 13: Recover auth_intent from sessionStorage or localStorage (default: 'user')
+        const storedIntent = sessionStorage.getItem('auth_intent') || localStorage.getItem('auth_intent');
         const authIntent = storedIntent === 'artisan' ? 'artisan' : 'user';
 
-        // Recover auth_flow from sessionStorage or detect from route (default: 'login')
-        const storedFlow = sessionStorage.getItem('auth_flow');
-        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-        const authFlow = storedFlow || (currentPath.startsWith('/signup') ? 'signup' : 'login');
+        // Recover auth_flow from sessionStorage or localStorage (support fallback flags)
+        const storedFlow = sessionStorage.getItem('auth_flow') || localStorage.getItem('auth_flow');
+        const isSignupFlag = storedFlow === 'signup' ||
+                             sessionStorage.getItem('auth_is_signup') === 'true' ||
+                             localStorage.getItem('auth_is_signup') === 'true' ||
+                             (typeof window !== 'undefined' && window.location.pathname.startsWith('/signup'));
+        const authFlow = isSignupFlag ? 'signup' : 'login';
 
         // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
@@ -68,7 +71,8 @@ export const AuthProvider = ({ children }) => {
           email: session.user?.email,
           supabase_uid: session.user?.id,
           auth_intent: authIntent,
-          auth_flow: authFlow
+          auth_flow: authFlow,
+          is_signup: isSignupFlag
         });
         if (data?.user && data?.token) {
           const normalized = { ...data.user, role: normalizeRole(data.user.role) };
@@ -81,6 +85,9 @@ export const AuthProvider = ({ children }) => {
           }
 
           sessionStorage.removeItem('auth_flow');
+          localStorage.removeItem('auth_flow');
+          sessionStorage.removeItem('auth_is_signup');
+          localStorage.removeItem('auth_is_signup');
           return normalized;
         }
       } catch (e) {
@@ -97,6 +104,9 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem('sh_user');
           sessionStorage.removeItem('oauth_in_flight');
           sessionStorage.removeItem('auth_flow');
+          localStorage.removeItem('auth_flow');
+          sessionStorage.removeItem('auth_is_signup');
+          localStorage.removeItem('auth_is_signup');
           setUser(null);
         }
 
@@ -187,6 +197,9 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('oauth_in_flight');
         sessionStorage.removeItem('auth_intent');
         sessionStorage.removeItem('auth_flow');
+        localStorage.removeItem('auth_flow');
+        sessionStorage.removeItem('auth_is_signup');
+        localStorage.removeItem('auth_is_signup');
         sessionStorage.removeItem('portal_notice');
         setUser(null);
         setOauthProcessing(false);
@@ -504,7 +517,15 @@ export const AuthProvider = ({ children }) => {
       // Section 2: Parse flexible returnUrl and explicit authIntent & authFlow
       let targetReturnUrl = null;
       let targetAuthIntent = 'user';
-      let targetAuthFlow = 'login';
+
+      // Detect flow: check if currently on signup page, or if storage was set to signup
+      const isSignupPage = (typeof window !== 'undefined' && window.location.pathname.startsWith('/signup')) ||
+                           (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('auth_flow') === 'signup') ||
+                           (typeof localStorage !== 'undefined' && localStorage.getItem('auth_flow') === 'signup') ||
+                           (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('auth_is_signup') === 'true') ||
+                           (typeof localStorage !== 'undefined' && localStorage.getItem('auth_is_signup') === 'true');
+
+      let targetAuthFlow = isSignupPage ? 'signup' : 'login';
 
       if (typeof returnUrlOrOptions === 'string') {
         targetReturnUrl = returnUrlOrOptions;
@@ -533,6 +554,14 @@ export const AuthProvider = ({ children }) => {
       // Section 3: Store explicit login portal intent in sessionStorage so it survives the OAuth redirect loop
       sessionStorage.setItem('auth_intent', targetAuthIntent);
       sessionStorage.setItem('auth_flow', targetAuthFlow);
+      localStorage.setItem('auth_flow', targetAuthFlow);
+      if (targetAuthFlow === 'signup') {
+        sessionStorage.setItem('auth_is_signup', 'true');
+        localStorage.setItem('auth_is_signup', 'true');
+      } else {
+        sessionStorage.removeItem('auth_is_signup');
+        localStorage.removeItem('auth_is_signup');
+      }
 
       // Preserve returnUrl in sessionStorage for clean role/destination navigation upon OAuth return
       if (targetReturnUrl && typeof targetReturnUrl === 'string') {
@@ -564,6 +593,9 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('oauth_in_flight');
         sessionStorage.removeItem('auth_intent');
         sessionStorage.removeItem('auth_flow');
+        localStorage.removeItem('auth_flow');
+        sessionStorage.removeItem('auth_is_signup');
+        localStorage.removeItem('auth_is_signup');
         setOauthProcessing(false);
         console.error('Supabase signInWithOAuth error:', error);
         const msg = (error.message || '').toLowerCase();
@@ -580,6 +612,9 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.removeItem('oauth_in_flight');
       sessionStorage.removeItem('auth_intent');
       sessionStorage.removeItem('auth_flow');
+      localStorage.removeItem('auth_flow');
+      sessionStorage.removeItem('auth_is_signup');
+      localStorage.removeItem('auth_is_signup');
       setOauthProcessing(false);
       throw new Error(err.message || 'Something went wrong while initiating Google Sign-In.');
     }

@@ -590,7 +590,7 @@ exports.syncSupabaseSession = async (req, res) => {
 
     // Auth flow: 'login' vs 'signup' (Default is 'login' to strictly prevent auto-creating accounts on the Welcome Back page)
     const rawFlow = (req.body?.auth_flow || req.query?.auth_flow || req.headers['x-auth-flow'] || req.body?.flow || '').toString().toLowerCase().trim();
-    const isSignupFlow = rawFlow === 'signup' || req.body?.is_signup === true;
+    const isSignupFlow = rawFlow === 'signup' || req.body?.is_signup === true || req.body?.is_signup === 'true' || req.query?.is_signup === 'true' || req.headers['x-auth-signup'] === 'true';
 
     if (!token) {
       return res.status(401).json({ error: 'Valid Supabase session token is required to sync session' });
