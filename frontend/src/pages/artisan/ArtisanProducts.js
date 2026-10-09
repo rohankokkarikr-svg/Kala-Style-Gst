@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { artisanAPI, productAPI } from '../../services/api';
 import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiEyeOff, HiPhotograph, HiPencilAlt, HiX, HiCheck } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 import ProductImageManager from '../../components/ProductImageManager';
 
 export default function ArtisanProducts() {
+  const { user } = useAuth();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
@@ -21,6 +23,17 @@ export default function ArtisanProducts() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const productsRef = useRef(products);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const fetchStats = () => {
     setLoading(true);
     artisanAPI.getMyStats().then(({ data }) => {
@@ -33,15 +46,49 @@ export default function ArtisanProducts() {
     fetchStats();
   }, []);
 
-  // Real-time listener: instantly reflect Admin approval / changes
+  // Real-time listener: strictly reflect Admin approval / changes for THIS artisan's products only
   useEffect(() => {
     const handleSync = (e) => {
       const payload = e.detail?.payload;
-      fetchStats();
-      if (payload?.action === 'approve') {
-        toast.success('🎉 Product approved by Admin and is now live!');
-      } else if (payload?.action === 'reject') {
-        toast.error('⚠️ Product review updated by Admin');
+      if (!payload) return;
+
+      const action = payload.action;
+      const targetId = payload.id || payload.product?.id || payload.productId;
+      const targetArtisanId = payload.product?.artisan_id;
+
+      const currentProducts = productsRef.current || [];
+      const currentUser = userRef.current;
+      const currentArtisanProfileId = currentUser?.artisan_profile?.id;
+      const currentUserId = currentUser?.id;
+
+      // Determine if this event belongs to THIS artisan's catalog
+      const isOwnedProduct = 
+        (targetId && currentProducts.some(p => p.id === targetId)) ||
+        (targetArtisanId && (targetArtisanId === currentArtisanProfileId || targetArtisanId === currentUserId));
+
+      // Admin review decisions (approve / reject):
+      // STRICT RULE: Only the artisan who actually owns this product is notified and updated
+      if (action === 'approve' || action === 'reject') {
+        if (!isOwnedProduct) {
+          // This product belongs to another artisan — do not show toast, do not re-fetch
+          return;
+        }
+
+        // Product belongs to this artisan: refresh artisan stats and display personalized notification
+        fetchStats();
+        const prodName = payload.product?.name || currentProducts.find(p => p.id === targetId)?.name || 'Your product';
+        if (action === 'approve') {
+          toast.success(`🎉 "${prodName}" was approved by Admin and is now live!`);
+        } else if (action === 'reject') {
+          const reason = payload.reason || payload.product?.rejection_reason;
+          toast.error(`⚠️ "${prodName}" review updated by Admin${reason ? `: ${reason}` : ''}`);
+        }
+        return;
+      }
+
+      // Other actions (e.g. self-initiated update): refresh if it affects this artisan's items
+      if (isOwnedProduct) {
+        fetchStats();
       }
     };
     window.addEventListener('kala:sync:products_updated', handleSync);

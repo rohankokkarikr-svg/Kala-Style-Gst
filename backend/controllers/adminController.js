@@ -451,7 +451,7 @@ exports.rejectProduct = async (req, res) => {
       .from('products')
       .update({ status: 'rejected', rejection_reason: reason || 'Policy Violation' })
       .eq('id', id)
-      .select()
+      .select('*, artisan_profiles(id, store_name, location, artisan_type)')
       .single();
 
     if (error) throw error;

@@ -109,7 +109,7 @@ export default function Products() {
     try {
       const res = await adminAPI.approveProduct(id);
       toast.success('Product approved and published!');
-      const updated = res?.data;
+      const updated = res?.data?.product || res?.data;
       setProducts(prev => prev.map(p => p.id === id ? {
         ...p,
         ...(updated || {}),
@@ -119,7 +119,7 @@ export default function Products() {
         rejection_reason: null
       } : p));
       window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
-        detail: { payload: { action: 'approve', id } }
+        detail: { payload: { action: 'approve', id, product: updated } }
       }));
     } catch {
       toast.error('Failed to approve product');
@@ -133,9 +133,13 @@ export default function Products() {
     }
     setRejecting(true);
     try {
-      await adminAPI.rejectProduct(rejectModal.id, { reason: rejectReason });
+      const res = await adminAPI.rejectProduct(rejectModal.id, { reason: rejectReason });
       toast.success('Product rejected with reason noted');
+      const updated = res?.data?.product || res?.data;
       setProducts(prev => prev.map(p => p.id === rejectModal.id ? { ...p, status: 'rejected', rejection_reason: rejectReason } : p));
+      window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
+        detail: { payload: { action: 'reject', id: rejectModal.id, reason: rejectReason, product: updated } }
+      }));
       setRejectModal(null);
       setRejectReason('Incorrect product details or category mismatch');
     } catch {
