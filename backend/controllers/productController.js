@@ -384,7 +384,7 @@ exports.createProduct = async (req, res) => {
     const resolvedStock = stock_quantity !== undefined && stock_quantity !== '' && !isNaN(Number(stock_quantity))
       ? Math.max(0, Number(stock_quantity))
       : 10;
-    const resolvedInStock = is_in_stock !== undefined ? Boolean(is_in_stock) : resolvedStock > 0;
+    const resolvedInStock = resolvedStock > 0;
 
     const insertPayload = {
       name,
@@ -464,11 +464,10 @@ exports.updateProduct = async (req, res) => {
     if (stock_quantity !== undefined) {
       const numStock = Number(stock_quantity);
       updatePayload.stock_quantity = isNaN(numStock) ? 0 : Math.max(0, numStock);
-      if (is_in_stock === undefined) {
-        updatePayload.is_in_stock = updatePayload.stock_quantity > 0;
-      }
+      updatePayload.is_in_stock = updatePayload.stock_quantity > 0;
+    } else if (is_in_stock !== undefined) {
+      updatePayload.is_in_stock = Boolean(is_in_stock);
     }
-    if (is_in_stock !== undefined) updatePayload.is_in_stock = Boolean(is_in_stock);
     if (image_url !== undefined) updatePayload.image_url = image_url;
     if (barcode !== undefined) updatePayload.barcode = barcode ? barcode.trim() : null;
     if (artisan_id !== undefined) updatePayload.artisan_id = artisan_id;

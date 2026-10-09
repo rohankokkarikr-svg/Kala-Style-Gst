@@ -347,9 +347,13 @@ exports.updateProduct = async (req, res) => {
       updateData.original_price = original_price ? Number(original_price) : null;
     }
     if (category !== undefined) updateData.category = category;
-    if (subcategory !== undefined) updateData.subcategory = subcategory;
-    if (stock_quantity !== undefined) updateData.stock_quantity = Number(stock_quantity);
-    if (is_in_stock !== undefined) updateData.is_in_stock = Boolean(is_in_stock);
+    if (stock_quantity !== undefined) {
+      const numStock = Number(stock_quantity);
+      updateData.stock_quantity = isNaN(numStock) ? 0 : Math.max(0, numStock);
+      updateData.is_in_stock = updateData.stock_quantity > 0;
+    } else if (is_in_stock !== undefined) {
+      updateData.is_in_stock = Boolean(is_in_stock);
+    }
     if (image_url !== undefined) updateData.image_url = image_url;
     if (status !== undefined) {
       updateData.status = status;

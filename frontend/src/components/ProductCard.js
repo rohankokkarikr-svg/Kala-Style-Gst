@@ -44,7 +44,9 @@ export default function ProductCard({ product, onDismiss }) {
     : null);
 
   const isFavorited = isInWishlist(id);
-  const isOutOfStock = is_in_stock === false || (stock_quantity != null && Number(stock_quantity) <= 0);
+  const stockCount = stock_quantity != null ? Number(stock_quantity) : null;
+  const isOutOfStock = stockCount !== null ? stockCount <= 0 : is_in_stock === false;
+  const displayStock = stockCount !== null ? Math.max(0, stockCount) : (is_in_stock !== false ? 10 : 0);
 
   // Regional Translation Support
   const cachedTranslation = getCachedTranslation ? getCachedTranslation(id, currentLang) : null;
@@ -239,9 +241,17 @@ export default function ProductCard({ product, onDismiss }) {
                   </span>
                 )}
               </div>
-              <span className="text-[10px] text-emerald-400 font-medium">
-                Free Delivery
-              </span>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                {isOutOfStock ? (
+                  <span className="text-red-400 font-medium">Out of stock</span>
+                ) : stockCount !== null && stockCount <= 5 ? (
+                  <span className="text-amber-400 font-medium">Only {stockCount} left</span>
+                ) : (
+                  <span className="text-emerald-400 font-medium">
+                    {stockCount !== null ? `${stockCount} in stock` : 'In stock'} · Free Delivery
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Quick Add to Cart Button */}

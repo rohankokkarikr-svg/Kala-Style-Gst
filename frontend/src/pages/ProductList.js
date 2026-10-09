@@ -242,9 +242,15 @@ export default function ProductList() {
 
     // 6. Availability Filter
     if (selectedAvailability === 'in_stock') {
-      list = list.filter((p) => p.is_in_stock !== false && (p.stock_quantity == null || Number(p.stock_quantity) > 0));
+      list = list.filter((p) => {
+        const stockCount = p.stock_quantity != null ? Number(p.stock_quantity) : null;
+        return stockCount !== null ? stockCount > 0 : p.is_in_stock !== false;
+      });
     } else if (selectedAvailability === 'out_of_stock') {
-      list = list.filter((p) => p.is_in_stock === false || (p.stock_quantity != null && Number(p.stock_quantity) <= 0));
+      list = list.filter((p) => {
+        const stockCount = p.stock_quantity != null ? Number(p.stock_quantity) : null;
+        return stockCount !== null ? stockCount <= 0 : p.is_in_stock === false;
+      });
     }
 
     // 7. Discount Filter

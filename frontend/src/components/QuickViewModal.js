@@ -71,7 +71,9 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
     : [product.image_url || product.image].filter(Boolean);
 
   const isFavorited = isInWishlist(product.id);
-  const isOutOfStock = product.is_in_stock === false || (product.stock_quantity != null && Number(product.stock_quantity) <= 0);
+  const stockCount = product?.stock_quantity != null ? Number(product.stock_quantity) : null;
+  const isOutOfStock = stockCount !== null ? stockCount <= 0 : product?.is_in_stock === false;
+  const availableStock = stockCount !== null ? Math.max(0, stockCount) : (product?.is_in_stock !== false ? 10 : 0);
 
   // Multilingual Display Overrides (powered by Gemini AI)
   const displayedTitle = translatedData?.name || product.name;
@@ -81,8 +83,12 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
   const displayedOrigin = translatedData?.state_of_origin || product.state_of_origin;
 
   const handleAddToCart = () => {
-    if (isOutOfStock) {
+    if (isOutOfStock || availableStock <= 0) {
       toast.error('This product is currently out of stock');
+      return;
+    }
+    if (quantity > availableStock) {
+      toast.error(`Only ${availableStock} units available in stock`);
       return;
     }
     if (!isAuthenticated) {
@@ -262,8 +268,8 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
                   <span className={`${isOutOfStock ? 'text-red-400' : 'text-emerald-400'} font-medium`}>
                     {isOutOfStock ? 'Out of Stock' : 'In Stock — Ready to dispatch'}
                   </span>
-                  {!isOutOfStock && product.stock_quantity != null && (
-                    <span className="text-gray-500">({product.stock_quantity} available)</span>
+                  {!isOutOfStock && availableStock > 0 && (
+                    <span className="text-gray-400">({availableStock} available)</span>
                   )}
                 </div>
               </div>
@@ -287,7 +293,7 @@ export default function QuickViewModal({ product, isOpen, onClose }) {
                     <button
                       type="button"
                       disabled={isOutOfStock}
-                      onClick={() => setQuantity((q) => q + 1)}
+                      onClick={() => setQuantity((q) => (availableStock > 0 ? Math.min(availableStock, q + 1) : q + 1))}
                       className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors disabled:opacity-40"
                     >
                       +

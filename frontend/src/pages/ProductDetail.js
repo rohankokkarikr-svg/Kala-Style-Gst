@@ -258,7 +258,9 @@ export default function ProductDetail() {
 
   const isFavorited = isInWishlist(product.id);
   const artisanProfile = product?.artisan_profiles || {};
-  const isOutOfStock = product.is_in_stock === false || (product.stock_quantity != null && Number(product.stock_quantity) <= 0);
+  const stockCount = product?.stock_quantity != null ? Number(product.stock_quantity) : null;
+  const isOutOfStock = stockCount !== null ? stockCount <= 0 : product?.is_in_stock === false;
+  const availableStock = stockCount !== null ? Math.max(0, stockCount) : (product?.is_in_stock !== false ? 10 : 0);
   const rawArtisanBio = artisanProfile.bio || product?.artisan_bio || '';
   const cleanArtisanBio = (rawArtisanBio.split('__UPI_META__:')[0] || '').trim() ||
     'Carrying forward ancestral Indian craft traditions with unwavering dedication to perfection and authentic handmade heritage.';
@@ -278,8 +280,12 @@ export default function ProductDetail() {
   const displayedStateOfOrigin = translatedData?.state_of_origin || product.state_of_origin || 'India';
 
   const handleAddToCart = () => {
-    if (isOutOfStock) {
+    if (isOutOfStock || availableStock <= 0) {
       toast.error('This product is currently out of stock');
+      return;
+    }
+    if (quantity > availableStock) {
+      toast.error(`Only ${availableStock} units available in stock`);
       return;
     }
     if (!isAuthenticated) { toast.error('Please log in to add items to your cart'); navigate('/login'); return; }
@@ -536,7 +542,7 @@ export default function ProductDetail() {
                     : 'bg-red-950/60 border-red-500/20 text-red-400'
                 }`}>
                   <span className={`w-2 h-2 rounded-full ${!isOutOfStock ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                  {!isOutOfStock ? `In Stock (${product.stock_quantity ?? 10} units) · Ready to Dispatch` : 'Currently Out of Stock'}
+                  {!isOutOfStock ? `In Stock (${availableStock} units) · Ready to Dispatch` : 'Currently Out of Stock'}
                 </div>
               </div>
               <p className="text-gray-400 text-sm leading-relaxed border-t border-dark-700/60 pt-3">{displayedShortDescription}</p>
@@ -549,7 +555,7 @@ export default function ProductDetail() {
                   <button type="button" onClick={() => setQuantity(q => Math.max(1, q - 1))}
                     className="px-4 py-3 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors font-bold text-base">−</button>
                   <span className="px-5 py-3 text-sm font-bold text-white min-w-[3rem] text-center">{quantity}</span>
-                  <button type="button" onClick={() => setQuantity(q => q + 1)}
+                  <button type="button" onClick={() => setQuantity(q => (availableStock > 0 ? Math.min(availableStock, q + 1) : q + 1))}
                     className="px-4 py-3 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors font-bold text-base">+</button>
                 </div>
                 <button onClick={handleAddToCart} disabled={isOutOfStock}

@@ -55,8 +55,8 @@ exports.calculateOrderTotals = async (items) => {
   for (const item of items) {
     const prod = productMap[item.product_id];
     if (!prod) return { error: `Product not found: ${item.product_id}` };
-    if (prod.is_hidden || prod.status === 'rejected') return { error: `Product "${prod.name}" is not available` };
-    if (!prod.is_in_stock || (prod.stock_quantity !== null && prod.stock_quantity <= 0)) {
+    const hasStock = prod.stock_quantity !== null ? Number(prod.stock_quantity) > 0 : prod.is_in_stock !== false;
+    if (!hasStock) {
       return { error: `"${prod.name}" is out of stock` };
     }
     const qty = Math.max(1, parseInt(item.quantity) || 1);

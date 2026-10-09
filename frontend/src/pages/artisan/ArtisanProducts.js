@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { artisanAPI, productAPI } from '../../services/api';
-import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiEyeOff, HiPhotograph } from 'react-icons/hi';
+import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiEyeOff, HiPhotograph, HiPencilAlt, HiX, HiCheck } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 import ProductImageManager from '../../components/ProductImageManager';
 
@@ -10,6 +10,16 @@ export default function ArtisanProducts() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [managerProduct, setManagerProduct] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    price: '',
+    stock_quantity: '',
+    category: '',
+    material: '',
+    description: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchStats = () => {
     setLoading(true);
@@ -45,6 +55,54 @@ export default function ArtisanProducts() {
       setProducts(p => p.filter(x => x.id !== id));
       toast.success('Product deleted successfully');
     } catch { toast.error('Failed to delete product'); }
+  };
+
+  const handleOpenEdit = (product) => {
+    setEditingProduct(product);
+    setEditFormData({
+      name: product.name || '',
+      price: product.price ?? '',
+      stock_quantity: product.stock_quantity ?? (product.is_in_stock ? 10 : 0),
+      category: product.category || 'Handicrafts',
+      material: product.material || '',
+      description: product.description || '',
+    });
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    const numStock = parseInt(editFormData.stock_quantity, 10);
+    const stockVal = isNaN(numStock) || numStock < 0 ? 0 : numStock;
+    const priceVal = parseFloat(editFormData.price) || 0;
+
+    setSavingEdit(true);
+    try {
+      const payload = {
+        name: editFormData.name.trim(),
+        price: priceVal,
+        stock_quantity: stockVal,
+        is_in_stock: stockVal > 0,
+        category: editFormData.category,
+        material: editFormData.material,
+        description: editFormData.description,
+      };
+
+      const res = await productAPI.update(editingProduct.id, payload);
+      const updated = res?.data || { ...editingProduct, ...payload };
+
+      setProducts(prev => prev.map(p => p.id === editingProduct.id ? { ...p, ...updated } : p));
+      toast.success(`Updated "${editFormData.name}"! Stock set to ${stockVal} units.`);
+      setEditingProduct(null);
+      window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
+        detail: { payload: { action: 'update', id: editingProduct.id } }
+      }));
+    } catch (err) {
+      console.error('Update product error:', err);
+      toast.error(err?.response?.data?.error || 'Failed to update product');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const getStatusBadge = (p) => {
@@ -166,12 +224,14 @@ export default function ArtisanProducts() {
 
                 <div className="absolute top-2 right-2">
                   {(() => {
-                    const isOutOfStock = p.is_in_stock === false || (p.stock_quantity != null && Number(p.stock_quantity) <= 0);
+                    const stockCount = p.stock_quantity != null ? Number(p.stock_quantity) : null;
+                    const isOutOfStock = stockCount !== null ? stockCount <= 0 : p.is_in_stock === false;
+                    const displayStock = stockCount !== null ? Math.max(0, stockCount) : (p.is_in_stock !== false ? 10 : 0);
                     return (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md ${
                         !isOutOfStock ? 'bg-green-600/90 text-white' : 'bg-red-600/90 text-white'
                       }`}>
-                        {!isOutOfStock ? `In Stock (${p.stock_quantity ?? 10})` : 'Out of Stock'}
+                        {!isOutOfStock ? `In Stock (${displayStock})` : 'Out of Stock'}
                       </span>
                     );
                   })()}
@@ -185,7 +245,11 @@ export default function ArtisanProducts() {
                   </div>
                   <div className="flex items-center justify-between mt-1.5">
                     <p className="text-gold-400 font-bold text-sm">₹{Number(p.price || 0).toLocaleString('en-IN')}</p>
-                    <p className="text-gray-400 text-xs">Stock: {p.stock_quantity ?? 0}</p>
+                    <p className="text-gray-400 text-xs font-medium">
+                      Stock: <span className={(p.stock_quantity != null ? Number(p.stock_quantity) > 0 : p.is_in_stock !== false) ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                        {p.stock_quantity ?? (p.is_in_stock ? 10 : 0)}
+                      </span>
+                    </p>
                   </div>
                   <p className="text-gray-500 text-[11px] mt-1 truncate">{p.category || 'Handicrafts'}</p>
 
@@ -217,6 +281,13 @@ export default function ArtisanProducts() {
                   >
                     View in Store
                   </Link>
+                  <button
+                    onClick={() => handleOpenEdit(p)}
+                    className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/40 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
+                    title="Edit stock and product details"
+                  >
+                    <HiPencilAlt className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => setManagerProduct(p)}
                     className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
@@ -262,6 +333,128 @@ export default function ArtisanProducts() {
             ));
           }}
         />
+      )}
+
+      {/* Artisan Product & Stock Edit Modal */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)" }}>
+          <div className="relative w-full max-w-lg bg-dark-800 border border-dark-600 rounded-2xl shadow-2xl p-6 text-white max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-dark-700">
+              <div>
+                <h3 className="text-lg font-serif font-bold text-gold-400">Edit Product & Stock</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Manage inventory quantity and product details</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-dark-700 transition"
+              >
+                <HiX className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 mt-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Product Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Price (₹)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editFormData.price}
+                    onChange={(e) => setEditFormData({ ...editFormData, price: e.target.value })}
+                    className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1 flex items-center justify-between">
+                    <span>Stock Quantity</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      Number(editFormData.stock_quantity) > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {Number(editFormData.stock_quantity) > 0 ? 'In Stock' : 'Out of Stock'}
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={editFormData.stock_quantity}
+                    onChange={(e) => setEditFormData({ ...editFormData, stock_quantity: e.target.value })}
+                    className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500"
+                    placeholder="e.g. 155"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Category</label>
+                  <input
+                    type="text"
+                    value={editFormData.category}
+                    onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                    className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Material</label>
+                  <input
+                    type="text"
+                    value={editFormData.material}
+                    onChange={(e) => setEditFormData({ ...editFormData, material: e.target.value })}
+                    className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500"
+                    placeholder="e.g. Pure Cotton"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Description</label>
+                <textarea
+                  rows={3}
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-700">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="px-4 py-2 rounded-lg border border-dark-600 text-gray-300 hover:text-white hover:bg-dark-700 text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="btn-primary px-5 py-2 text-xs font-bold flex items-center gap-1.5 rounded-lg shadow-gold"
+                >
+                  {savingEdit ? (
+                    <span>Saving...</span>
+                  ) : (
+                    <>
+                      <HiCheck className="w-4 h-4" /> Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

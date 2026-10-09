@@ -133,8 +133,9 @@ async function executeApprovedAction(approval, adminId) {
 
     case 'update_product_inventory': {
       const { safeQuery } = require('../config/supabase');
+      const qty = parseInt(toolArgs.stock_quantity, 10) || 0;
       const { data, error } = await safeQuery(() =>
-        supabase.from('products').update({ stock_quantity: toolArgs.stock_quantity }).eq('id', toolArgs.product_id).select()
+        supabase.from('products').update({ stock_quantity: qty, is_in_stock: qty > 0 }).eq('id', toolArgs.product_id).select()
       );
       return { executed: !error, action: 'INVENTORY_UPDATED', result: data, message: `Product inventory updated.` };
     }
