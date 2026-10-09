@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, admin, artisan } = require('../middleware/auth');
+const { protect, admin, artisan, optionalProtect } = require('../middleware/auth');
 const { upload } = require('../config/cloudinary');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const {
@@ -15,11 +15,11 @@ const {
   uploadDirect
 } = require('../controllers/productController');
 
-// Public routes
-router.get('/', getProducts);
+// Public routes (with optional auth identification)
+router.get('/', optionalProtect, getProducts);
 router.get('/featured', getFeaturedProducts);
 router.get('/categories', getCategories);
-router.get('/:id', getProductById);
+router.get('/:id', optionalProtect, getProductById);
 
 const uploadMiddleware = (req, res, next) => {
   const contentType = (req.headers['content-type'] || '').toLowerCase();

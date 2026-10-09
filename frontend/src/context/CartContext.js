@@ -45,7 +45,12 @@ export const CartProvider = ({ children }) => {
   };
 
   const removeByProductId = (productId) => {
-    setItems((prev) => prev.filter((i) => i.product?.id !== productId));
+    const target = String(productId || '').trim();
+    if (!target) return;
+    setItems((prev) => prev.filter((i) => {
+      const pid = String(i.product?.id || i.product_id || i.id || '').trim();
+      return pid !== target && !i.key?.startsWith(target);
+    }));
   };
 
   const updateQuantity = (key, quantity) => {
@@ -55,8 +60,11 @@ export const CartProvider = ({ children }) => {
 
   const clearCart = () => setItems([]);
 
-  const totalItems    = items.reduce((s, i) => s + i.quantity, 0);
-  const totalPrice    = items.reduce((s, i) => s + i.product.price * i.quantity, 0);
+  const totalItems    = items.reduce((s, i) => s + (Number(i.quantity) || 1), 0);
+  const totalPrice    = items.reduce((s, i) => {
+    const unitPrice = Number(i.product?.price || i.price_at_time || i.price) || 0;
+    return s + unitPrice * (Number(i.quantity) || 1);
+  }, 0);
 
   return (
     <CartContext.Provider value={{ items, addToCart, removeFromCart, removeByProductId, updateQuantity, clearCart, totalItems, totalPrice }}>

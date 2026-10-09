@@ -365,7 +365,7 @@ export default function AIProductStudio() {
         is_in_stock:    true,
         artisan_id:     targetArtisanId,
         artisan_name:   targetArtisanName,
-        status:         isDraft ? 'draft' : 'pending',
+        status:         isDraft ? 'draft' : 'approved',
         ai_generated:   catalog.isAIGenerated,
       };
 

@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { useRecommendations } from '../context/RecommendationContext';
 import { productAPI, reviewAPI, artisanAPI } from '../services/api';
+import { apiCache } from '../utils/apiCache';
 import ReviewModal from '../components/ReviewModal';
 import ProductCard from '../components/ProductCard';
 import { ProductCardSkeleton } from '../components/Skeleton';
@@ -163,6 +164,7 @@ export default function ProductDetail() {
 
   useEffect(() => {
     const handleSync = async () => {
+      apiCache.invalidateProducts();
       try {
         const { data } = await productAPI.getById(id);
         if (data && (data.id || data.name))

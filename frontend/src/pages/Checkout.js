@@ -376,6 +376,34 @@ export default function Checkout() {
     }
   }, [items.length, navigate]);
 
+  // Validate cart items on mount to ensure none are deleted / stale
+  useEffect(() => {
+    if (!items || items.length === 0) return;
+    const checkCart = async () => {
+      try {
+        await orderAPI.calculateTotal({
+          items: items.map(i => ({
+            product_id: i.product?.id || i.product_id || i.id,
+            quantity: Math.max(1, parseInt(i.quantity, 10) || 1),
+            size: i.size || 'Standard'
+          })).filter(i => Boolean(i.product_id)),
+          coupon_code: null
+        });
+      } catch (err) {
+        const errMsg = err.response?.data?.error || err.message || '';
+        const match = errMsg.match(/Product not found:\s*([a-zA-Z0-9_-]+)/i);
+        if (match) {
+          const missingId = match[1];
+          if (typeof removeByProductId === 'function') {
+            removeByProductId(missingId);
+          }
+          toast('An unavailable item was automatically removed from your cart.', { icon: 'ℹ️' });
+        }
+      }
+    };
+    checkCart();
+  }, []);
+
   if (items.length === 0) return null;
 
   const deliveryFee = 0;
@@ -788,11 +816,11 @@ export default function Checkout() {
         otp: verifiedOtp || null,
         email_otp_verified: true,
         items: items.map(i => ({
-          product_id:    i.product.id,
-          quantity:      i.quantity,
-          price_at_time: i.product.price,
-          size:          i.size,
-        })),
+          product_id:    i.product?.id || i.product_id || i.id,
+          quantity:      Math.max(1, parseInt(i.quantity, 10) || 1),
+          price_at_time: Number(i.product?.price || i.price_at_time || i.price) || 0,
+          size:          i.size || 'Standard',
+        })).filter(i => Boolean(i.product_id)),
       };
 
       const res = await orderAPI.create(orderData);

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import ProductCard from '../components/ProductCard';
 import LanguageSelector from '../components/LanguageSelector';
 import { useLanguage } from '../context/LanguageContext';
 import { useSettings } from '../context/SettingsContext';
 import { ProductCardSkeleton } from '../components/Skeleton';
 import { productAPI, categoryAPI } from '../services/api';
+import { apiCache } from '../utils/apiCache';
 import { useRecommendations } from '../context/RecommendationContext';
 import PersonalizedRecommendations from '../components/PersonalizedRecommendations';
 import { HANDICRAFT_CATEGORIES } from '../constants/handicraftsData';
@@ -22,6 +23,14 @@ import {
   HiArrowRight
 } from 'react-icons/hi';
 
+const normalizeCategoryStr = (str) =>
+  (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]/g, '');
+
 export default function ProductList() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState(HANDICRAFT_CATEGORIES);
@@ -32,6 +41,7 @@ export default function ProductList() {
   const { currentLang, currentLangMeta } = useLanguage();
   const { settings } = useSettings();
 
+  const { categorySlug } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = new URLSearchParams(location.search);
@@ -56,7 +66,7 @@ export default function ProductList() {
     }).catch(() => {});
   }, []);
 
-  const activeCategory = searchParams.get('category') || 'all';
+  const activeCategory = categorySlug || searchParams.get('category') || 'all';
   const activeSubcategory = searchParams.get('subcategory') || 'all';
   const searchQuery = searchParams.get('search') || '';
 
@@ -109,6 +119,7 @@ export default function ProductList() {
   // Real-time listener: auto-update when Admin changes products or categories
   useEffect(() => {
     const handleSync = () => {
+      apiCache.invalidateProducts();
       fetchProducts(true);
     };
     window.addEventListener('kala:sync:products_updated', handleSync);
@@ -121,12 +132,16 @@ export default function ProductList() {
 
   // Find active category details for Banner
   const currentCategoryInfo = useMemo(() => {
+    if (!activeCategory || activeCategory === 'all') return null;
+    const norm = normalizeCategoryStr(activeCategory);
     return (
-      categories.find(
-        (c) =>
-          c.slug?.toLowerCase() === activeCategory.toLowerCase() ||
-          c.name?.toLowerCase() === activeCategory.toLowerCase()
-      ) || null
+      categories.find((c) => {
+        return (
+          normalizeCategoryStr(c.slug) === norm ||
+          normalizeCategoryStr(c.name) === norm ||
+          normalizeCategoryStr(c.id) === norm
+        );
+      }) || null
     );
   }, [activeCategory, categories]);
 
@@ -159,36 +174,40 @@ export default function ProductList() {
 
     // 1. Category Filter
     if (activeCategory && activeCategory !== 'all') {
-      const catLower = activeCategory.toLowerCase();
+      const normActive = normalizeCategoryStr(activeCategory);
       const catObj = categories.find(
         (c) =>
-          (c.name || '').toLowerCase() === catLower ||
-          (c.slug || '').toLowerCase() === catLower
+          normalizeCategoryStr(c.name) === normActive ||
+          normalizeCategoryStr(c.slug) === normActive ||
+          normalizeCategoryStr(c.id) === normActive
       );
-      const targetName = catObj ? catObj.name.toLowerCase() : catLower;
+      const normTarget = catObj ? normalizeCategoryStr(catObj.name) : normActive;
 
       list = list.filter((p) => {
-        const pCat = (p.category || '').toLowerCase();
-        const pSub = (p.subcategory || '').toLowerCase();
+        const normPCat = normalizeCategoryStr(p.category);
+        const normPSub = normalizeCategoryStr(p.subcategory);
         return (
-          pCat === targetName ||
-          pCat.includes(catLower) ||
-          pSub === catLower ||
-          pSub.includes(catLower)
+          normPCat === normTarget ||
+          normPCat === normActive ||
+          normPCat.includes(normActive) ||
+          normActive.includes(normPCat) ||
+          normPSub === normActive ||
+          normPSub.includes(normActive)
         );
       });
     }
 
     // 1b. Subcategory Filter
     if (activeSubcategory && activeSubcategory !== 'all') {
-      const subLower = activeSubcategory.toLowerCase();
+      const normSub = normalizeCategoryStr(activeSubcategory);
       list = list.filter((p) => {
-        const pSub = (p.subcategory || '').toLowerCase();
-        const pName = (p.name || '').toLowerCase();
+        const normPSub = normalizeCategoryStr(p.subcategory);
+        const normPName = normalizeCategoryStr(p.name);
         return (
-          pSub.includes(subLower) ||
-          subLower.includes(pSub) ||
-          pName.includes(subLower)
+          normPSub === normSub ||
+          normPSub.includes(normSub) ||
+          normSub.includes(normPSub) ||
+          normPName.includes(normSub)
         );
       });
     }
@@ -650,9 +669,13 @@ export default function ProductList() {
                     </button>
                   </li>
                   {categories.map((cat) => {
+                    const normActive = normalizeCategoryStr(activeCategory);
                     const isCatActive =
-                      activeCategory.toLowerCase() === (cat.name || '').toLowerCase() ||
-                      activeCategory.toLowerCase() === (cat.slug || '').toLowerCase();
+                      normActive !== 'all' && (
+                        normActive === normalizeCategoryStr(cat.name) ||
+                        normActive === normalizeCategoryStr(cat.slug) ||
+                        normActive === normalizeCategoryStr(cat.id)
+                      );
 
                     return (
                       <li key={cat.id || cat.slug || cat.name} className="space-y-1">

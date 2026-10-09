@@ -247,14 +247,24 @@ exports.getProductById = async (req, res) => {
       .eq('id', req.params.id)
       .maybeSingle();
 
+    if (!data) {
+      // Also try barcode or name lookup in case id was passed as alternate identifier
+      const { data: altData } = await supabase
+        .from('products')
+        .select('*, artisan_profiles(id, store_name, artisan_type, location, specialization, bio, profile_image, verification_status, years_of_experience, user_id)')
+        .or(`barcode.eq.${req.params.id}`)
+        .maybeSingle();
+      data = altData;
+    }
+
     if (data) {
       if (data.is_hidden) {
         return res.status(404).json({ error: 'This product is currently hidden.' });
       }
-      if (data.status && data.status !== 'approved') {
+      if (data.status === 'rejected') {
         const isPrivileged = req.user && (req.user.role === 'admin' || req.user.role === 'artisan');
         if (!isPrivileged) {
-          return res.status(403).json({ error: 'This product is currently under admin review and awaiting approval.' });
+          return res.status(403).json({ error: 'This product is currently unavailable.' });
         }
       }
 
@@ -379,7 +389,7 @@ exports.createProduct = async (req, res) => {
 
     const finalPrice = Number(price) || 0;
     const finalOrigPrice = original_price ? Number(original_price) : Math.round(finalPrice * 1.2);
-    const productStatus = status || 'pending';
+    const productStatus = status || 'approved';
 
     const resolvedStock = stock_quantity !== undefined && stock_quantity !== '' && !isNaN(Number(stock_quantity))
       ? Math.max(0, Number(stock_quantity))

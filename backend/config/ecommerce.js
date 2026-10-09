@@ -15,7 +15,7 @@ const DEFAULTS = {
   free_delivery_above: 0,
   cod_enabled: true,
   cod_max_order_value: null, // Unlimited — no maximum cap on COD orders
-  cod_min_order_value: 100,
+  cod_min_order_value: null, // No minimum cap — users can place COD orders of any amount
   cancellation_window_hours: 12,
   reward_eligible_count: 8,
   platform_commission: 10, // %

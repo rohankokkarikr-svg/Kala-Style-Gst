@@ -2,7 +2,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'handloom-textiles',
     name: 'Handloom & Textiles',
-    slug: 'Handloom & Textiles',
+    slug: 'handloom-textiles',
     icon: '🧵',
     shortDesc: "Discover India's rich heritage of handwoven fabrics, sarees, shawls, and traditional textiles.",
     productCount: 12,
@@ -13,7 +13,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'home-decor',
     name: 'Home Décor & Furnishings',
-    slug: 'Home Décor & Furnishings',
+    slug: 'home-decor-furnishings',
     icon: '🏠',
     shortDesc: 'Elevate your living space with artisanal wall hangings, rugs, decorative lamps, and Indian crafts.',
     productCount: 12,
@@ -24,7 +24,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'handmade-jewelry',
     name: 'Handmade Jewelry & Accessories',
-    slug: 'Handmade Jewelry & Accessories',
+    slug: 'handmade-jewelry-accessories',
     icon: '💎',
     shortDesc: 'Adorn timeless silver, oxidized brass, Kundan, and terracotta handmade jewelry masterfully crafted by hand.',
     productCount: 12,
@@ -35,7 +35,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'pottery-terracotta',
     name: 'Pottery & Terracotta',
-    slug: 'Pottery & Terracotta',
+    slug: 'pottery-terracotta',
     icon: '🏺',
     shortDesc: 'Handcrafted clay pots, blue pottery vases, terracotta diyas, and authentic artisanal ceramics.',
     productCount: 12,
@@ -46,7 +46,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'wooden-handicrafts',
     name: 'Wooden Handicrafts',
-    slug: 'Wooden Handicrafts',
+    slug: 'wooden-handicrafts',
     icon: '🪵',
     shortDesc: 'Channapatna lac-turnery toys, intricately hand-carved teak sculptures, wall art, and heritage woodwork.',
     productCount: 12,
@@ -57,7 +57,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'traditional-paintings',
     name: 'Traditional Paintings & Wall Art',
-    slug: 'Traditional Paintings & Wall Art',
+    slug: 'traditional-paintings-wall-art',
     icon: '🖼️',
     shortDesc: 'Authentic Madhubani, Warli tribal art, Pattachitra, Gond, and Tanjore gold foil handmade paintings.',
     productCount: 12,
@@ -68,7 +68,7 @@ const HANDICRAFT_CATEGORIES = [
   {
     id: 'eco-friendly',
     name: 'Eco-Friendly & Natural Products',
-    slug: 'Eco-Friendly & Natural Products',
+    slug: 'eco-friendly-natural-products',
     icon: '🌿',
     shortDesc: 'Sustainable natural fiber baskets, golden jute rugs, bamboo tableware, and conscious handcrafted living.',
     productCount: 12,
