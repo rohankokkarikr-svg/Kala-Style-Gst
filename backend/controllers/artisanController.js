@@ -874,7 +874,13 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || status;
     }
 
-    const shippingStatusVal = status === 'delivered' ? 'DELIVERED' : (['dispatched', 'shipped', 'out_for_delivery'].includes(status) ? 'IN_TRANSIT' : undefined);
+    const shippingStatusVal = status === 'delivered'
+      ? 'DELIVERED'
+      : (['dispatched', 'shipped', 'out_for_delivery'].includes(status)
+          ? 'IN_TRANSIT'
+          : (status === 'cancelled' || status === 'rejected'
+              ? 'CANCELLED'
+              : (status === 'ready_for_pickup' ? 'READY_TO_SHIP' : 'PENDING')));
 
     // Broadcast realtime updates with complete IDs for customer & artisan views
     broadcastSync('ORDERS_UPDATED', {

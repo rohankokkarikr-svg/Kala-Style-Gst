@@ -485,6 +485,10 @@ exports.syncMasterOrderStatus = async (orderId) => {
       updatePayload.shipping_status = 'IN_TRANSIT';
     } else if (newStatus === 'ready_for_pickup') {
       updatePayload.shipping_status = 'READY_TO_SHIP';
+    } else if (newStatus === 'cancelled' || newStatus === 'rejected') {
+      updatePayload.shipping_status = 'CANCELLED';
+    } else if (newStatus === 'pending') {
+      updatePayload.shipping_status = 'PENDING';
     }
 
     const { error: updateErr } = await supabase

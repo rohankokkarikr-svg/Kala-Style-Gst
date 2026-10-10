@@ -586,7 +586,13 @@ exports.updateOrderStatus = async (req, res) => {
         .eq('id', id)
         .single();
 
-      const shippingStatusVal = mappedStatus === 'delivered' ? 'DELIVERED' : (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus) ? 'IN_TRANSIT' : undefined);
+      const shippingStatusVal = mappedStatus === 'delivered'
+        ? 'DELIVERED'
+        : (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus)
+            ? 'IN_TRANSIT'
+            : (mappedStatus === 'cancelled' || mappedStatus === 'rejected'
+                ? 'CANCELLED'
+                : (mappedStatus === 'ready_for_pickup' ? 'READY_TO_SHIP' : 'PENDING')));
 
       broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus });
       broadcastSync('ORDERS_UPDATED', {
