@@ -142,9 +142,14 @@ export default function AdminLayout() {
               <span className="text-[9px] px-1.5 py-0.2 rounded bg-gold-500/20 text-gold-400 font-medium">Platform Admin</span>
             </div>
           </div>
-          <Link to="/" target="_blank" title="View Storefront" className="text-gray-400 hover:text-gold-400 p-1">
-            <HiExternalLink className="w-4 h-4" />
-          </Link>
+          <div className="flex items-center gap-1">
+            <Link to="/artisan" title="Open Artisan Studio" className="text-gray-400 hover:text-gold-400 p-1 text-xs" target="_blank">
+              🎨
+            </Link>
+            <Link to="/" target="_blank" title="View Storefront" className="text-gray-400 hover:text-gold-400 p-1">
+              <HiExternalLink className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
 
         {/* Navigation List */}

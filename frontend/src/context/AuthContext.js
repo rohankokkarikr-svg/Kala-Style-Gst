@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
         setOauthError(null);
         // Step 2 & 13: Recover auth_intent from sessionStorage or localStorage (default: 'user')
         const storedIntent = sessionStorage.getItem('auth_intent') || localStorage.getItem('auth_intent');
-        const authIntent = storedIntent === 'artisan' ? 'artisan' : 'user';
+        const authIntent = storedIntent === 'admin' ? 'admin' : storedIntent === 'artisan' ? 'artisan' : 'user';
 
         // Recover auth_flow from sessionStorage or localStorage (support fallback flags)
         const storedFlow = sessionStorage.getItem('auth_flow') || localStorage.getItem('auth_flow');
@@ -543,11 +543,14 @@ export const AuthProvider = ({ children }) => {
       }
 
       // Normalize auth_intent & auth_flow
-      targetAuthIntent = String(targetAuthIntent).toLowerCase().trim() === 'artisan' ? 'artisan' : 'user';
+      const cleanIntent = String(targetAuthIntent).toLowerCase().trim();
+      targetAuthIntent = cleanIntent === 'admin' ? 'admin' : cleanIntent === 'artisan' ? 'artisan' : 'user';
       targetAuthFlow = String(targetAuthFlow).toLowerCase().trim() === 'signup' ? 'signup' : 'login';
 
-      // Fallback intent inference: if returnUrl points to artisan route, ensure intent is artisan
-      if (targetAuthIntent !== 'artisan' && targetReturnUrl && targetReturnUrl.startsWith('/artisan')) {
+      // Fallback intent inference: if returnUrl points to admin or artisan route
+      if (targetAuthIntent !== 'admin' && targetReturnUrl && targetReturnUrl.startsWith('/admin')) {
+        targetAuthIntent = 'admin';
+      } else if (targetAuthIntent !== 'artisan' && targetAuthIntent !== 'admin' && targetReturnUrl && targetReturnUrl.startsWith('/artisan')) {
         targetAuthIntent = 'artisan';
       }
 
@@ -740,7 +743,7 @@ export const AuthProvider = ({ children }) => {
   const currentUser = user;
   const currentRole = normalizeRole(currentUser?.role);
   const isAdmin = currentRole === 'admin';
-  const isArtisan = currentRole === 'artisan';
+  const isArtisan = currentRole === 'artisan' || currentRole === 'admin';
   const isAuthenticated = !!currentUser;
 
   return (

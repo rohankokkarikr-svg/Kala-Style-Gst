@@ -584,9 +584,9 @@ exports.syncSupabaseSession = async (req, res) => {
     const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
     const token = bodyToken || headerToken;
 
-    // Login portal intent: 'user' (customer) vs 'artisan'
+    // Login portal intent: 'user' (customer) vs 'artisan' vs 'admin'
     const rawIntent = (req.body?.auth_intent || req.query?.auth_intent || req.headers['x-auth-intent'] || '').toString().toLowerCase().trim();
-    const authIntent = rawIntent === 'artisan' ? 'artisan' : 'user';
+    const authIntent = rawIntent === 'admin' ? 'admin' : rawIntent === 'artisan' ? 'artisan' : 'user';
 
     // Auth flow: 'login' vs 'signup' (Default is 'login' to strictly prevent auto-creating accounts on the Welcome Back page)
     const rawFlow = (req.body?.auth_flow || req.query?.auth_flow || req.headers['x-auth-flow'] || req.body?.flow || '').toString().toLowerCase().trim();
@@ -601,6 +601,7 @@ exports.syncSupabaseSession = async (req, res) => {
     let verifiedUid = null;
     let googleName = null;
     let avatarUrl = null;
+    let sbAuthRole = null;
 
     try {
       const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
@@ -612,8 +613,13 @@ exports.syncSupabaseSession = async (req, res) => {
 
       // Extract user metadata provided by Supabase / Google OAuth
       const meta = sbUser.user_metadata || {};
+      const appMeta = sbUser.app_metadata || {};
       googleName = (meta.full_name || meta.name || meta.display_name || '').trim();
       avatarUrl = meta.avatar_url || meta.picture || null;
+      const rawMetaRole = (appMeta.role || meta.role || appMeta.user_role || meta.user_role || '').toString().toLowerCase().trim();
+      if (rawMetaRole === 'admin') {
+        sbAuthRole = 'admin';
+      }
     } catch (tokenErr) {
       console.error('[syncSupabaseSession] Token verification error:', tokenErr.message);
       return res.status(401).json({ error: 'Failed to verify Supabase session token' });
@@ -657,6 +663,13 @@ exports.syncSupabaseSession = async (req, res) => {
       if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
         return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
       }
+
+      // If Supabase Auth specifically has admin role configured in metadata, synchronize to public.users
+      if (sbAuthRole === 'admin') {
+        user.role = 'admin';
+        await supabase.from('users').update({ role: 'admin' }).eq('id', user.id);
+      }
+
       // Section 12, 13, 14, 20: Preserve existing role strictly! Never overwrite or downgrade existing role
       user.role = normalizeRole(user.role);
 
@@ -679,9 +692,11 @@ exports.syncSupabaseSession = async (req, res) => {
         console.warn('[syncSupabaseSession] Error checking artisan profile:', profErr?.message || profErr);
       }
 
-      // Section 6: Existing normal user logging in via Artisan portal must NOT be silently promoted
+      // Section 6: Existing normal user logging in via Artisan or Admin portal notice
       if (user.role === 'user' && authIntent === 'artisan') {
         portalNotice = 'Your Google account is registered as a customer. Please complete artisan registration to create an artisan account.';
+      } else if (user.role !== 'admin' && authIntent === 'admin') {
+        portalNotice = 'Your account does not have administrative privileges.';
       }
 
       // Section 11 & 19: Link supabase_uid if present and not yet linked or updated, preventing duplicate ownership

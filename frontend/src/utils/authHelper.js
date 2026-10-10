@@ -58,10 +58,18 @@ export const resolveSafeRedirect = (role, returnUrl) => {
     return home;
   }
 
-  // If target is root '/' or generic, redirect to canonical role home
+  // If target is root '/' or generic auth paths, redirect to canonical role home
   // (artisan -> /artisan, admin -> /admin, user -> /)
-  if (clean === '/') {
+  if (clean === '/' || clean === '/login' || clean === '/signup') {
     return home;
+  }
+
+  // Admin role boundary: An admin logging in should default to /admin and NEVER be redirected into /artisan
+  if (normRole === 'admin') {
+    if (clean === '/artisan' || clean.startsWith('/artisan/')) {
+      return '/admin';
+    }
+    return clean;
   }
 
   // Enforce role authorization on target path
@@ -69,7 +77,7 @@ export const resolveSafeRedirect = (role, returnUrl) => {
     return normRole === 'artisan' ? '/artisan' : '/';
   }
 
-  if (clean.startsWith('/artisan') && normRole !== 'artisan' && normRole !== 'admin') {
+  if (clean.startsWith('/artisan') && normRole !== 'artisan') {
     return '/';
   }
 

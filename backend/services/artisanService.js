@@ -105,11 +105,17 @@ exports.verifyArtisan = async (artisanId, reason = 'Verified by AI Admin Manager
 
   if (updateErr) throw new Error(`Database error verifying artisan: ${updateErr.message}`);
 
-  // 2. Ensure user role is 'artisan' so permissions are active
+  // 2. Ensure user role is 'artisan' so permissions are active (STRICT: Never downgrade admin users)
   if (artisan.user_id) {
-    await safeQuery(() =>
-      supabase.from('users').update({ role: 'artisan' }).eq('id', artisan.user_id)
+    const { data: userRow } = await safeQuery(() =>
+      supabase.from('users').select('role').eq('id', artisan.user_id).maybeSingle()
     );
+    const existingRole = (userRow?.role || '').toString().trim().toLowerCase();
+    if (existingRole !== 'admin') {
+      await safeQuery(() =>
+        supabase.from('users').update({ role: 'artisan' }).eq('id', artisan.user_id)
+      );
+    }
   }
 
   // 3. Broadcast realtime update to clients

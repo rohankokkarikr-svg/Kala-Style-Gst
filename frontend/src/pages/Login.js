@@ -30,6 +30,9 @@ export default function Login() {
   const stateFrom = typeof rawFrom === 'string' ? rawFrom : rawFrom?.pathname;
 
   const getInitialPortal = () => {
+    if (queryPortal === 'admin' || queryIntent === 'admin' || (queryFrom && queryFrom.startsWith('/admin')) || (stateFrom && stateFrom.startsWith('/admin'))) {
+      return 'admin';
+    }
     if (queryPortal === 'artisan' || queryIntent === 'artisan' || (queryFrom && queryFrom.startsWith('/artisan')) || (stateFrom && stateFrom.startsWith('/artisan'))) {
       return 'artisan';
     }
@@ -147,13 +150,27 @@ export default function Login() {
     // If account has admin role in Supabase database, grant admin dashboard access automatically
     if (role === 'admin') {
       toast.success('Authenticated as Administrator 🛡️');
-      const adminTarget = storedReturnUrl || stateFrom || queryFrom || '/admin';
-      const destination = resolveSafeRedirect('admin', adminTarget);
-      navigate(destination, { replace: true });
+      // For Admin: ensure destination is /admin unless they explicitly came for an /admin subroute (e.g. /admin/orders)
+      // An admin logging in should NEVER be bounced into /artisan!
+      let adminTarget = '/admin';
+      const potentialTarget = storedReturnUrl || stateFrom || queryFrom;
+      if (potentialTarget && potentialTarget.startsWith('/admin')) {
+        adminTarget = potentialTarget;
+      }
+      navigate(adminTarget, { replace: true });
       return;
     }
 
-    // Portal role boundaries enforcement for customers attempting artisan portal
+    // Portal role boundaries enforcement for customers attempting artisan or admin portal
+    if (portalMode === 'admin' && role !== 'admin') {
+      toast('Your account does not have administrative permissions.', {
+        icon: '🚫',
+        duration: 6000,
+      });
+      navigate(role === 'artisan' ? '/artisan' : '/', { replace: true });
+      return;
+    }
+
     if (portalMode === 'artisan' && role === 'user') {
       toast('Your account is registered as a customer. To sell your crafts, please register as an artisan.', {
         icon: '🎨',
@@ -235,9 +252,10 @@ export default function Login() {
       localStorage.setItem('auth_flow', 'login');
       sessionStorage.removeItem('auth_is_signup');
       localStorage.removeItem('auth_is_signup');
+      const isAdminPortal = portalMode === 'admin';
       const isArtisanPortal = portalMode === 'artisan';
-      const authIntent = isArtisanPortal ? 'artisan' : 'user';
-      const defaultReturn = isArtisanPortal ? '/artisan' : '/';
+      const authIntent = isAdminPortal ? 'admin' : isArtisanPortal ? 'artisan' : 'user';
+      const defaultReturn = isAdminPortal ? '/admin' : isArtisanPortal ? '/artisan' : '/';
       const returnUrl = stateFrom || queryFrom || defaultReturn;
       await signInWithGoogle(returnUrl, { authIntent });
     } catch (err) {
@@ -420,11 +438,15 @@ export default function Login() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-serif font-bold text-white">
-            {portalMode === 'artisan' ? 'Artisan Studio' : 'Welcome Back 👋'}
+            {portalMode === 'admin' ? 'Admin Control Center 🛡️' : portalMode === 'artisan' ? 'Artisan Studio 🎨' : 'Welcome Back 👋'}
           </h2>
 
           <p className="mt-2 text-xs sm:text-sm text-gray-400">
-            {portalMode === 'artisan' ? (
+            {portalMode === 'admin' ? (
+              <span>
+                Sign in with administrator privileges to manage <span className="gold-text font-medium">platform operations, artisans, & catalog</span>
+              </span>
+            ) : portalMode === 'artisan' ? (
               <span>
                 Sign in to manage your <span className="gold-text font-medium">handcrafts, AI tools, and orders</span>
               </span>
@@ -452,8 +474,8 @@ export default function Login() {
           </div>
         )}
 
-        {/* ─── Portal Switcher Tabs (Customer vs Artisan) ─── */}
-        <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">
+        {/* ─── Portal Switcher Tabs (Customer vs Artisan vs Admin) ─── */}
+        <div className="grid grid-cols-3 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">
           <button
             type="button"
             id="portal-customer-btn"
@@ -490,6 +512,25 @@ export default function Login() {
             }`}
           >
             🎨 Artisan Login
+          </button>
+
+          <button
+            type="button"
+            id="portal-admin-btn"
+            onClick={() => {
+              setPortalMode('admin');
+              setLoginError('');
+              setLoginNotFound(false);
+              setOtpError('');
+              setOtpNotFound(false);
+            }}
+            className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
+              portalMode === 'admin'
+                ? 'bg-gold-500 text-dark-950 shadow-gold font-bold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            👑 Admin Login
           </button>
         </div>
 

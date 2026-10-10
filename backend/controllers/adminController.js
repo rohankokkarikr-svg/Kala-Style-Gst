@@ -199,19 +199,27 @@ exports.updateArtisanStatus = async (req, res) => {
 
 exports.getCustomers = async (req, res) => {
   try {
-    const { search, status } = req.query;
-    const { data: users, error } = await safeQuery(() =>
-      supabase
+    const { search, status, role } = req.query;
+    const { data: users, error } = await safeQuery(() => {
+      let q = supabase
         .from('users')
         .select('id, name, email, role, created_at, status')
-        .eq('role', 'user')
-        .order('created_at', { ascending: false })
-    );
+        .order('created_at', { ascending: false });
+      if (role && role !== 'all') {
+        q = q.eq('role', role);
+      } else if (!role) {
+        q = q.eq('role', 'user');
+      }
+      return q;
+    });
 
     if (error) throw error;
 
-    // Filter customers strictly by role = 'user' (artisans and admins excluded)
-    let customers = (users || []).filter(u => u.role === 'user');
+    let customers = (users || []).filter(u => {
+      if (role && role !== 'all') return u.role === role;
+      if (!role) return u.role === 'user';
+      return true;
+    });
 
     if (status && status !== 'all') {
       customers = customers.filter(c => (c.status || 'active') === status);
@@ -256,17 +264,15 @@ exports.updateCustomerStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; // 'active', 'suspended'
 
-    // Server-side authorization guard: only update customer accounts (role = 'user')
     const { data, error } = await supabase
       .from('users')
       .update({ status })
       .eq('id', id)
-      .eq('role', 'user')
       .select()
       .single();
 
     if (error || !data) {
-      return res.status(404).json({ error: 'Customer not found or account is not a customer' });
+      return res.status(404).json({ error: 'User not found' });
     }
     await logActivity(req, `Customer Status Changed to ${status}`, 'Customer', id);
     res.json({ message: 'Customer status updated successfully', user: data });
@@ -1519,6 +1525,47 @@ exports.getAdminArtisanEarnings = async (req, res) => {
   } catch (err) {
     console.error('getAdminArtisanEarnings error:', err);
     res.status(500).json({ error: 'Failed to fetch artisan earnings' });
+  }
+};
+
+exports.updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body; // 'admin', 'artisan', 'user'
+
+    const cleanRole = (role || '').toString().trim().toLowerCase();
+    if (!['admin', 'artisan', 'user'].includes(cleanRole)) {
+      return res.status(400).json({ error: 'Invalid role. Must be admin, artisan, or user.' });
+    }
+
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update({ role: cleanRole })
+      .eq('id', id)
+      .select('id, name, email, role, status')
+      .single();
+
+    if (error || !updatedUser) {
+      return res.status(404).json({ error: 'User not found or role update failed' });
+    }
+
+    // Also update Supabase Auth user_metadata if user has a linked supabase_uid
+    const { data: fullUser } = await supabase.from('users').select('supabase_uid').eq('id', id).maybeSingle();
+    if (fullUser?.supabase_uid) {
+      try {
+        await supabase.auth.admin.updateUserById(fullUser.supabase_uid, {
+          user_metadata: { role: cleanRole }
+        });
+      } catch (sbErr) {
+        console.warn('[updateUserRole] Supabase Auth update notice:', sbErr.message);
+      }
+    }
+
+    await logActivity(req, `User Role Changed to ${cleanRole}`, 'User', id);
+    res.json({ message: `User role successfully updated to ${cleanRole}`, user: updatedUser });
+  } catch (err) {
+    console.error('updateUserRole error:', err);
+    res.status(500).json({ error: 'Failed to update user role' });
   }
 };
 
