@@ -283,6 +283,7 @@ export const adminAPI = {
   updateArtisanStatus:  (id, data) => { apiCache.invalidateArtisans(); return api.put(`/admin/artisans/${id}/status`, data); },
   getCustomers:         (params)   => api.get('/admin/customers', { params }),
   updateCustomerStatus: (id, data) => api.put(`/admin/customers/${id}/status`, data),
+  updateUserRole:       (id, data) => api.put(`/admin/users/${id}/role`, data),
   getProducts:          (params)   => api.get('/admin/products', { params }),
   updateProduct:        (id, data) => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}`, data); },
   approveProduct:       (id)       => { apiCache.invalidateProducts(); return api.put(`/admin/products/${id}/approve`); },

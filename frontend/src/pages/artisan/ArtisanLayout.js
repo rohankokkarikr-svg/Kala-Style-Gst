@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { HiChartPie, HiCollection, HiSparkles, HiShoppingBag, HiCurrencyRupee, HiUser, HiLogout, HiMenu, HiX, HiLightBulb } from 'react-icons/hi';
+import { HiChartPie, HiCollection, HiSparkles, HiShoppingBag, HiCurrencyRupee, HiUser, HiLogout, HiMenu, HiX, HiLightBulb, HiChartBar } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 import { artisanAPI } from '../../services/api';
 import NotificationCenter from '../../components/NotificationCenter';
@@ -88,9 +88,24 @@ export default function ArtisanLayout() {
             <div className="px-4 py-3 border-b border-dark-600 bg-dark-700/50">
               <p className="text-white font-semibold text-sm truncate">{user.name}</p>
               <p className="text-gold-400 text-xs">{profile?.store_name || user.artisan_profile?.store_name || 'Artisan'}</p>
-              <span className={'text-[10px] px-2 py-0.5 rounded-full mt-1 inline-block font-medium ' + (currentStatus === 'verified' ? 'bg-green-500/20 text-green-400' : currentStatus === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400')}>
-                {currentStatus === 'verified' ? '✓ Verified' : currentStatus === 'rejected' ? '✗ Rejected' : '⏳ Pending Verification'}
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                <span className={'text-[10px] px-2 py-0.5 rounded-full font-medium ' + (currentStatus === 'verified' ? 'bg-green-500/20 text-green-400' : currentStatus === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400')}>
+                  {currentStatus === 'verified' ? '✓ Verified' : currentStatus === 'rejected' ? '✗ Rejected' : '⏳ Pending Verification'}
+                </span>
+                {user.role === 'admin' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold-500/20 text-gold-400 border border-gold-500/40">
+                    👑 ADMIN
+                  </span>
+                )}
+              </div>
+              {user.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="flex items-center justify-center gap-2 mt-2.5 py-1.5 px-3 rounded-xl bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 font-bold text-xs transition-all shadow-gold"
+                >
+                  <HiChartBar className="w-4 h-4 text-gold-400" /> Switch to Admin Center 🛡️
+                </Link>
+              )}
             </div>
           )}
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -121,6 +136,16 @@ export default function ArtisanLayout() {
             <span className="font-serif font-bold text-white text-base md:text-lg">Artisan Workshop Studio</span>
           </div>
           <div className="flex items-center gap-3">
+            {user?.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-gold-300 hover:text-gold-200 bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 px-3 py-1.5 rounded-xl transition-all shadow-gold"
+                title="Switch to Admin Control Center"
+              >
+                <HiChartBar className="w-4 h-4 text-gold-400" />
+                <span>Admin Center 🛡️</span>
+              </Link>
+            )}
             <NotificationCenter />
             <Link to="/products" className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-gray-300 hover:text-gold-400 bg-dark-700/60 border border-dark-600 px-3 py-1.5 rounded-xl transition-all">
               Live Shop →

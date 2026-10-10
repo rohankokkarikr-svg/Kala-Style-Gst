@@ -19,6 +19,7 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [notifyModal, setNotifyModal] = useState(null);
   const [notifMessage, setNotifMessage] = useState('');
   const [sendingNotif, setSendingNotif] = useState(false);
@@ -26,7 +27,7 @@ export default function Customers() {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const { data } = await adminAPI.getCustomers({ search, status: statusFilter });
+      const { data } = await adminAPI.getCustomers({ search, status: statusFilter, role: roleFilter });
       setCustomers(data || []);
     } catch {
       toast.error('Failed to load customers');
@@ -37,7 +38,7 @@ export default function Customers() {
 
   useEffect(() => {
     fetchCustomers();
-  }, [statusFilter]);
+  }, [statusFilter, roleFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -52,6 +53,16 @@ export default function Customers() {
       setCustomers(prev => prev.map(c => c.id === id ? { ...c, status: nextStatus } : c));
     } catch {
       toast.error('Failed to update customer status');
+    }
+  };
+
+  const handleRoleChange = async (id, newRole) => {
+    try {
+      await adminAPI.updateUserRole(id, { role: newRole });
+      toast.success(`User role successfully changed to ${newRole}`);
+      setCustomers(prev => prev.map(c => c.id === id ? { ...c, role: newRole } : c));
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update user role');
     }
   };
 
@@ -115,20 +126,35 @@ export default function Customers() {
           </button>
         </form>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <HiFilter className="text-gray-500 w-4 h-4 shrink-0" />
           <span className="text-xs text-gray-400 shrink-0">Status:</span>
           {['all', 'active', 'suspended'].map(st => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`text-xs px-3 py-1.5 rounded-lg capitalize transition-all border ${
+              className={`text-xs px-2.5 py-1 rounded-lg capitalize transition-all border ${
                 statusFilter === st 
                   ? 'bg-gold-500/20 border-gold-500/50 text-gold-400 font-semibold' 
                   : 'border-dark-600 text-gray-400 hover:text-white'
               }`}
             >
               {st}
+            </button>
+          ))}
+
+          <span className="text-xs text-gray-400 shrink-0 ml-1">Role:</span>
+          {['all', 'user', 'artisan', 'admin'].map(r => (
+            <button
+              key={r}
+              onClick={() => setRoleFilter(r)}
+              className={`text-xs px-2.5 py-1 rounded-lg capitalize transition-all border ${
+                roleFilter === r 
+                  ? 'bg-gold-500/20 border-gold-500/50 text-gold-400 font-semibold' 
+                  : 'border-dark-600 text-gray-400 hover:text-white'
+              }`}
+            >
+              {r === 'all' ? 'All Roles' : r}
             </button>
           ))}
         </div>
@@ -146,6 +172,7 @@ export default function Customers() {
               <thead className="bg-dark-800/80 text-gray-400 border-b border-dark-600 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Role</th>
                   <th className="py-3 px-4">Orders Placed</th>
                   <th className="py-3 px-4">Total Spent</th>
                   <th className="py-3 px-4">Status</th>
@@ -166,6 +193,23 @@ export default function Customers() {
                           <p className="text-gray-400 text-[11px] truncate">{c.email}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <select
+                        value={c.role || 'user'}
+                        onChange={(e) => handleRoleChange(c.id, e.target.value)}
+                        className={`bg-dark-800 border text-xs rounded-lg px-2 py-1 font-semibold focus:outline-none cursor-pointer ${
+                          c.role === 'admin'
+                            ? 'border-gold-500/60 text-gold-400 bg-gold-500/10'
+                            : c.role === 'artisan'
+                            ? 'border-purple-500/60 text-purple-400 bg-purple-500/10'
+                            : 'border-dark-600 text-gray-300'
+                        }`}
+                      >
+                        <option value="user">User (Customer)</option>
+                        <option value="artisan">Artisan</option>
+                        <option value="admin">Admin 👑</option>
+                      </select>
                     </td>
                     <td className="py-3 px-4">
                       <span className="flex items-center gap-1.5 font-medium text-gray-200">

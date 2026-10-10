@@ -120,13 +120,29 @@ exports.getProducts = async (req, res) => {
       return res.json(productCache.all.data);
     }
 
+    // Determine if the caller is an artisan inspecting their own catalog or an admin
+    let callerOwnsArtisanQuery = false;
+    if (artisan_id && req.user) {
+      if (req.user.role === 'admin') {
+        callerOwnsArtisanQuery = true;
+      } else if (req.user.role === 'artisan') {
+        const { data: callerProfile } = await supabase
+          .from('artisan_profiles')
+          .select('id')
+          .eq('user_id', req.user.id)
+          .maybeSingle();
+        if (callerProfile && (callerProfile.id === artisan_id || req.user.id === artisan_id)) {
+          callerOwnsArtisanQuery = true;
+        }
+      }
+    }
+
     const { data, error } = await safeQuery(async () => {
       let query = supabase.from('products').select('*, artisan_profiles(id, store_name, location, specialization, verification_status)').order('created_at', { ascending: false });
 
-      // For public shoppers (no specific artisan query), strictly show approved, non-hidden products only
-      if (!artisan_id) {
-        query = query.neq('is_hidden', true);
-        query = query.or('status.eq.approved,status.is.null');
+      // Shoppers only see approved, visible products
+      if (!callerOwnsArtisanQuery) {
+        query = query.neq('is_hidden', true).eq('status', 'approved');
       }
 
       if (category && category !== 'all') {
@@ -182,9 +198,9 @@ exports.getProducts = async (req, res) => {
 
     let filteredData = data || [];
 
-    // Further sanitize raw data: shoppers only see approved, visible products
-    if (!artisan_id) {
-      filteredData = filteredData.filter(p => !p.is_hidden && (p.status === 'approved' || !p.status));
+    // Further sanitize raw data: shoppers strictly see approved, visible products
+    if (!callerOwnsArtisanQuery) {
+      filteredData = filteredData.filter(p => !p.is_hidden && p.status === 'approved');
     }
 
     // Exclude any legacy demo menswear products if present in DB
@@ -226,7 +242,7 @@ exports.getFeaturedProducts = async (req, res) => {
 
     if (error) throw error;
     
-    let filteredData = (data || []).filter(p => !p.is_hidden && (p.status === 'approved' || !p.status)).slice(0, 8);
+    let filteredData = (data || []).filter(p => !p.is_hidden && p.status === 'approved').slice(0, 8);
     
     productCache.featured = { data: filteredData, timestamp: Date.now() };
     
@@ -258,13 +274,24 @@ exports.getProductById = async (req, res) => {
     }
 
     if (data) {
-      if (data.is_hidden) {
-        return res.status(404).json({ error: 'This product is currently hidden.' });
-      }
-      if (data.status === 'rejected') {
-        const isPrivileged = req.user && (req.user.role === 'admin' || req.user.role === 'artisan');
-        if (!isPrivileged) {
-          return res.status(403).json({ error: 'This product is currently unavailable.' });
+      if (data.is_hidden || data.status !== 'approved') {
+        let isAuthorizedViewer = false;
+        if (req.user) {
+          if (req.user.role === 'admin') {
+            isAuthorizedViewer = true;
+          } else if (req.user.role === 'artisan') {
+            const { data: prof } = await supabase
+              .from('artisan_profiles')
+              .select('id')
+              .eq('user_id', req.user.id)
+              .maybeSingle();
+            if (prof && (data.artisan_id === prof.id || data.artisan_id === req.user.id)) {
+              isAuthorizedViewer = true;
+            }
+          }
+        }
+        if (!isAuthorizedViewer) {
+          return res.status(404).json({ error: 'This product is currently unavailable.' });
         }
       }
 
@@ -333,73 +360,103 @@ exports.createProduct = async (req, res) => {
   try {
     const {
       name, description, price, original_price, category, subcategory, sizes,
-      stock_quantity = 0, is_in_stock = true, image_url, barcode,
+      stock_quantity, image_url, barcode,
       artisan_id, is_handmade, material, style, ai_generated, ai_suggested_price, tags,
       status, images
     } = req.body;
 
-    // Reliably resolve artisan_id from authenticated user session or body
-    let targetArtisanId = artisan_id || null;
+    if (!name || typeof name !== 'string' || name.trim().length < 3) {
+      return res.status(400).json({ error: 'Product name must be at least 3 characters long.' });
+    }
 
-    if (req.user) {
-      if (req.user.role === 'artisan') {
-        // Authenticated artisan always attributes product to their own artisan profile
+    const numPrice = Number(price);
+    if (isNaN(numPrice) || numPrice <= 0 || !isFinite(numPrice)) {
+      return res.status(400).json({ error: 'Product price must be a positive number.' });
+    }
+
+    let finalOrigPrice = null;
+    if (original_price !== undefined && original_price !== null && original_price !== '') {
+      const numOrig = Number(original_price);
+      if (isNaN(numOrig) || numOrig <= 0 || !isFinite(numOrig)) {
+        return res.status(400).json({ error: 'Original price must be a positive number.' });
+      }
+      finalOrigPrice = numOrig;
+    } else {
+      finalOrigPrice = Math.round(numPrice * 1.2);
+    }
+
+    // Resolve stock: strict non-negative integer, default to 0 (never invent stock)
+    let resolvedStock = 0;
+    if (stock_quantity !== undefined && stock_quantity !== null && stock_quantity !== '') {
+      const parsedStock = parseInt(stock_quantity, 10);
+      if (isNaN(parsedStock) || parsedStock < 0) {
+        return res.status(400).json({ error: 'Stock quantity must be a non-negative integer.' });
+      }
+      resolvedStock = parsedStock;
+    }
+    const resolvedInStock = resolvedStock > 0;
+
+    // Reliably resolve artisan_id from authenticated user session
+    let targetArtisanId = null;
+    let productStatus = 'pending'; // Default: state machine always starts at pending
+
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required to create product.' });
+    }
+
+    if (req.user.role === 'artisan') {
+      // Authenticated artisan always derives artisan profile from session
+      let { data: profile } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      if (!profile) {
+        // Auto-create profile if missing, strictly with 'pending' verification status (never 'verified')
+        const { data: newProfile } = await supabase
+          .from('artisan_profiles')
+          .insert([{
+            user_id: req.user.id,
+            store_name: req.user.name || 'Artisan Studio',
+            artisan_type: 'Artisan',
+            verification_status: 'pending'
+          }])
+          .select('id')
+          .single();
+        targetArtisanId = newProfile?.id || req.user.id;
+      } else {
+        targetArtisanId = profile.id;
+      }
+
+      // Artisans can NEVER set product status or bypass pending moderation
+      productStatus = 'pending';
+    } else if (req.user.role === 'admin') {
+      if (artisan_id) {
+        let { data: targetProfile } = await supabase
+          .from('artisan_profiles')
+          .select('id')
+          .or(`id.eq.${artisan_id},user_id.eq.${artisan_id}`)
+          .maybeSingle();
+        targetArtisanId = targetProfile?.id || artisan_id;
+      } else {
         let { data: profile } = await supabase
           .from('artisan_profiles')
           .select('id')
           .eq('user_id', req.user.id)
           .maybeSingle();
-
-        if (!profile) {
-          // Auto-create profile if missing so product is never orphaned
-          const { data: newProfile } = await supabase
-            .from('artisan_profiles')
-            .insert([{
-              user_id: req.user.id,
-              store_name: req.user.name || 'Artisan Studio',
-              artisan_type: 'Artisan',
-              verification_status: 'verified'
-            }])
-            .select('id')
-            .single();
-          targetArtisanId = newProfile?.id || req.user.id;
-        } else {
-          targetArtisanId = profile.id;
-        }
-      } else if (req.user.role === 'admin') {
-        // If admin specified an artisan_id, honor it!
-        if (artisan_id) {
-          let { data: targetProfile } = await supabase
-            .from('artisan_profiles')
-            .select('id')
-            .or(`id.eq.${artisan_id},user_id.eq.${artisan_id}`)
-            .maybeSingle();
-          targetArtisanId = targetProfile?.id || artisan_id;
-        } else {
-          // If admin didn't specify, check if admin has an artisan profile or use first artisan
-          let { data: profile } = await supabase
-            .from('artisan_profiles')
-            .select('id')
-            .eq('user_id', req.user.id)
-            .maybeSingle();
-          targetArtisanId = profile?.id || null;
-        }
+        targetArtisanId = profile?.id || null;
       }
+      // Admin may optionally specify status, defaulting to approved
+      productStatus = status || 'approved';
+    } else {
+      return res.status(403).json({ error: 'Only artisans and administrators can create products.' });
     }
 
-    const finalPrice = Number(price) || 0;
-    const finalOrigPrice = original_price ? Number(original_price) : Math.round(finalPrice * 1.2);
-    const productStatus = status || 'approved';
-
-    const resolvedStock = stock_quantity !== undefined && stock_quantity !== '' && !isNaN(Number(stock_quantity))
-      ? Math.max(0, Number(stock_quantity))
-      : 10;
-    const resolvedInStock = resolvedStock > 0;
-
     const insertPayload = {
-      name,
-      description,
-      price: finalPrice,
+      name: name.trim(),
+      description: description || '',
+      price: numPrice,
       original_price: finalOrigPrice,
       category: category || 'Handicrafts',
       subcategory: subcategory || null,
@@ -434,7 +491,9 @@ exports.createProduct = async (req, res) => {
 
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
-    broadcastSync('PRODUCTS_UPDATED', { action: 'create', product: data });
+    if (data.status === 'approved') {
+      broadcastSync('PRODUCTS_UPDATED', { action: 'create', product: data });
+    }
 
     try {
       const { emitEvent } = require('../ai/aiEventBus');
@@ -453,7 +512,6 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-
 exports.updateProduct = async (req, res) => {
   try {
     const { 
@@ -463,36 +521,121 @@ exports.updateProduct = async (req, res) => {
       images
     } = req.body;
 
-    const updatePayload = {};
-    if (name !== undefined) updatePayload.name = name;
-    if (description !== undefined) updatePayload.description = description;
-    if (price !== undefined) updatePayload.price = Number(price);
-    if (original_price !== undefined) updatePayload.original_price = original_price ? Number(original_price) : null;
-    if (category !== undefined) updatePayload.category = category;
-    if (subcategory !== undefined) updatePayload.subcategory = subcategory;
-    if (sizes !== undefined) updatePayload.sizes = sizes;
-    if (stock_quantity !== undefined) {
-      const numStock = Number(stock_quantity);
-      updatePayload.stock_quantity = isNaN(numStock) ? 0 : Math.max(0, numStock);
-      updatePayload.is_in_stock = updatePayload.stock_quantity > 0;
-    } else if (is_in_stock !== undefined) {
-      updatePayload.is_in_stock = Boolean(is_in_stock);
+    // 1. Fetch existing product
+    const { data: existing, error: fetchErr } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return res.status(404).json({ error: 'Product not found' });
     }
-    if (image_url !== undefined) updatePayload.image_url = image_url;
-    if (barcode !== undefined) updatePayload.barcode = barcode ? barcode.trim() : null;
-    if (artisan_id !== undefined) updatePayload.artisan_id = artisan_id;
-    if (is_handmade !== undefined) updatePayload.is_handmade = Boolean(is_handmade);
-    if (material !== undefined) updatePayload.material = material;
-    if (style !== undefined) updatePayload.style = style;
-    if (ai_generated !== undefined) updatePayload.ai_generated = ai_generated;
-    if (ai_suggested_price !== undefined) updatePayload.ai_suggested_price = ai_suggested_price;
-    if (tags !== undefined) updatePayload.tags = tags;
-    if (status !== undefined) updatePayload.status = status;
+
+    // 2. Enforce Ownership: only admin or product's owning artisan
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin) {
+      const { data: prof } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user?.id)
+        .maybeSingle();
+
+      const ownsProduct = prof && (existing.artisan_id === prof.id || existing.artisan_id === req.user?.id);
+      if (!ownsProduct) {
+        return res.status(403).json({ error: 'Unauthorized: You can only edit your own products' });
+      }
+    }
+
+    const updatePayload = {};
+
+    // Check if moderation-relevant fields changed
+    let moderationFieldsChanged = false;
+
+    if (name !== undefined && name !== existing.name) {
+      updatePayload.name = name;
+      moderationFieldsChanged = true;
+    }
+    if (description !== undefined && description !== existing.description) {
+      updatePayload.description = description;
+      moderationFieldsChanged = true;
+    }
+    if (price !== undefined) {
+      const numPrice = Number(price);
+      if (isNaN(numPrice) || numPrice <= 0 || !isFinite(numPrice)) {
+        return res.status(400).json({ error: 'Price must be a positive number.' });
+      }
+      if (numPrice !== Number(existing.price)) {
+        updatePayload.price = numPrice;
+        moderationFieldsChanged = true;
+      }
+    }
+    if (original_price !== undefined) {
+      const numOrig = original_price ? Number(original_price) : null;
+      if (numOrig !== null && (isNaN(numOrig) || numOrig <= 0)) {
+        return res.status(400).json({ error: 'Original price must be a positive number.' });
+      }
+      updatePayload.original_price = numOrig;
+    }
+    if (category !== undefined && category !== existing.category) {
+      updatePayload.category = category;
+      moderationFieldsChanged = true;
+    }
+    if (subcategory !== undefined && subcategory !== existing.subcategory) {
+      updatePayload.subcategory = subcategory;
+      moderationFieldsChanged = true;
+    }
+    if (material !== undefined && material !== existing.material) {
+      updatePayload.material = material;
+      moderationFieldsChanged = true;
+    }
+    if (style !== undefined && style !== existing.style) {
+      updatePayload.style = style;
+      moderationFieldsChanged = true;
+    }
+    if (image_url !== undefined && image_url !== existing.image_url) {
+      updatePayload.image_url = image_url;
+      moderationFieldsChanged = true;
+    }
     if (images !== undefined) {
       const imgArr = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
       updatePayload.images = imgArr;
       if (!updatePayload.image_url && imgArr.length > 0) {
         updatePayload.image_url = imgArr[0];
+      }
+      moderationFieldsChanged = true;
+    }
+
+    // Stock-only changes
+    if (stock_quantity !== undefined) {
+      const numStock = parseInt(stock_quantity, 10);
+      if (isNaN(numStock) || numStock < 0) {
+        return res.status(400).json({ error: 'Stock quantity must be a non-negative integer.' });
+      }
+      updatePayload.stock_quantity = numStock;
+      updatePayload.is_in_stock = numStock > 0;
+    } else if (is_in_stock !== undefined) {
+      updatePayload.is_in_stock = Boolean(is_in_stock);
+    }
+    if (sizes !== undefined) updatePayload.sizes = sizes;
+    if (barcode !== undefined) updatePayload.barcode = barcode ? barcode.trim() : null;
+    if (is_handmade !== undefined) updatePayload.is_handmade = Boolean(is_handmade);
+    if (ai_generated !== undefined) updatePayload.ai_generated = ai_generated;
+    if (ai_suggested_price !== undefined) updatePayload.ai_suggested_price = ai_suggested_price;
+    if (tags !== undefined) updatePayload.tags = tags;
+
+    // Moderation state rules:
+    if (isAdmin) {
+      if (status !== undefined) updatePayload.status = status;
+      if (artisan_id !== undefined) updatePayload.artisan_id = artisan_id;
+    } else {
+      // Artisans can NEVER self-approve or reassign artisan_id
+      delete updatePayload.status;
+      delete updatePayload.artisan_id;
+
+      // If artisan modifies moderation-relevant fields on an approved product, send back to pending review
+      if (moderationFieldsChanged && existing.status === 'approved') {
+        updatePayload.status = 'pending';
       }
     }
 
@@ -522,6 +665,32 @@ exports.updateProduct = async (req, res) => {
 
 exports.deleteProduct = async (req, res) => {
   try {
+    // 1. Fetch existing product
+    const { data: existing, error: fetchErr } = await supabase
+      .from('products')
+      .select('id, artisan_id')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // 2. Enforce Ownership: only admin or product's owning artisan
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin) {
+      const { data: prof } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user?.id)
+        .maybeSingle();
+
+      const ownsProduct = prof && (existing.artisan_id === prof.id || existing.artisan_id === req.user?.id);
+      if (!ownsProduct) {
+        return res.status(403).json({ error: 'Unauthorized: You can only delete your own products' });
+      }
+    }
+
     const { error } = await supabase
       .from('products')
       .delete()
@@ -540,12 +709,12 @@ exports.deleteProduct = async (req, res) => {
 
 // Helper for bulletproof upload: attempts Cloudinary first (if configured), falls back to Supabase Storage
 const processMediaUpload = async (req) => {
-  const { cloudinary } = require('../config/cloudinary');
-  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
-  const apiKey = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
-  let apiSecret = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
+  const { cloudinary, isCloudinaryConfigured } = require('../config/cloudinary');
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+  let apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
   apiSecret = apiSecret.replace(/^["']|["']$/g, '');
-  const hasCloudinary = Boolean(cloudName && !cloudName.startsWith('your_') && apiKey && apiSecret);
+  const hasCloudinary = isCloudinaryConfigured();
 
   if (process.env.NODE_ENV === 'test' || process.env.MOCK_CLOUDINARY === 'true') {
     return 'https://res.cloudinary.com/mock-cloud/image/upload/mock-artisan-photo.jpg';

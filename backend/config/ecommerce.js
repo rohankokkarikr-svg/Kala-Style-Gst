@@ -98,41 +98,50 @@ function deriveMasterStatus(artisanStatuses) {
  * Artisans can move forward through the pipeline.
  * We also allow direct jumps and status aliases.
  */
+const VALID_OPERATIONAL_STATUSES = [
+  'pending', 'confirmed', 'accepted', 'preparing', 'processing',
+  'in_preparation', 'ready_for_pickup', 'packed', 'dispatched',
+  'shipped', 'out_for_delivery', 'on_the_way', 'delivered',
+  'completed', 'cancelled', 'rejected'
+];
+
+/**
+ * Allowed artisan order status transitions.
+ * Artisans can move forward through the pipeline, or cancel / reject / correct as needed.
+ */
 const ARTISAN_STATUS_TRANSITIONS = {
   pending:           ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
   confirmed:         ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
-  accepted:          ['preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  preparing:         ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  processing:        ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  in_preparation:    ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  ready_for_pickup:  ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  packed:            ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-  dispatched:        ['out_for_delivery', 'delivered', 'cancelled'],
-  shipped:           ['out_for_delivery', 'delivered', 'cancelled'],
-  on_the_way:        ['delivered', 'cancelled'],
-  out_for_delivery:  ['delivered', 'cancelled'],
-  delivered:         [],   // terminal
-  completed:         [],   // terminal
-  rejected:          [],   // terminal
-  cancelled:         [],   // terminal
+  accepted:          ['preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  preparing:         ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  processing:        ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  in_preparation:    ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  ready_for_pickup:  ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  packed:            ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  dispatched:        ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  shipped:           ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  on_the_way:        ['delivered', 'cancelled', 'rejected'],
+  out_for_delivery:  ['delivered', 'cancelled', 'rejected'],
+  delivered:         ['cancelled', 'rejected', 'dispatched', 'shipped', 'processing', 'preparing', 'pending'],
+  completed:         ['cancelled', 'rejected', 'dispatched', 'shipped', 'processing', 'preparing'],
+  rejected:          ['pending', 'processing', 'cancelled'],
+  cancelled:         ['pending', 'processing', 'cancelled'],
 };
 
 function isValidArtisanTransition(from, to) {
   if (!from || !to) return true;
   if (from === to) return true; // Idempotent updates are always allowed
   
-  // Terminal states cannot transition
-  if (['delivered', 'completed', 'cancelled', 'rejected'].includes(from)) return false;
-  
-  // Cancellation / rejection always allowed from non-terminal states
+  // Cancellation and rejection are always allowed from any state (including post-delivery returns or doorstep exceptions)
   if (to === 'cancelled' || to === 'rejected') return true;
+
+  // Permissive operational transitions for artisan store management
+  if (VALID_OPERATIONAL_STATUSES.includes(to)) return true;
 
   const allowed = ARTISAN_STATUS_TRANSITIONS[from];
   if (allowed && allowed.includes(to)) return true;
 
-  // Permissive forward transitions for standard operational pipeline
-  const standardPipeline = ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered'];
-  return standardPipeline.includes(to);
+  return false;
 }
 
 module.exports = {

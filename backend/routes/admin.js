@@ -15,9 +15,10 @@ router.get('/overview', adminController.getOverview);
 router.get('/artisans', adminController.getArtisans);
 router.put('/artisans/:id/status', adminController.updateArtisanStatus);
 
-// 3. Customers
+// 3. Customers & User Role Management
 router.get('/customers', adminController.getCustomers);
 router.put('/customers/:id/status', adminController.updateCustomerStatus);
+router.put('/users/:id/role', adminController.updateUserRole);
 
 // 4. Products
 router.get('/products', adminController.getProducts);

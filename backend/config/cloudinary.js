@@ -1,19 +1,27 @@
 const cloudinary = require('cloudinary');
 const multer = require('multer');
 
-const CLOUD_NAME = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
-const API_KEY = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
-let API_SECRET = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
+const CLOUD_NAME = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+const API_KEY = (process.env.CLOUDINARY_API_KEY || '').trim();
+let API_SECRET = (process.env.CLOUDINARY_API_SECRET || '').trim();
 
 // Strip surrounding quotes if entered in hosting dashboard
 API_SECRET = API_SECRET.replace(/^["']|["']$/g, '');
 
-cloudinary.v2.config({
-  cloud_name: CLOUD_NAME,
-  api_key: API_KEY,
-  api_secret: API_SECRET,
-  secure: true
-});
+const isCloudinaryConfigured = () => Boolean(
+  CLOUD_NAME && !CLOUD_NAME.startsWith('your_') &&
+  API_KEY && !API_KEY.startsWith('your_') &&
+  API_SECRET && !API_SECRET.startsWith('your_')
+);
+
+if (isCloudinaryConfigured()) {
+  cloudinary.v2.config({
+    cloud_name: CLOUD_NAME,
+    api_key: API_KEY,
+    api_secret: API_SECRET,
+    secure: true
+  });
+}
 
 // Memory storage for stream processing
 const storage = multer.memoryStorage();
@@ -68,6 +76,6 @@ const upload = multer({
   fileFilter
 });
 
-module.exports = { cloudinary: cloudinary.v2, upload, fileFilter };
+module.exports = { cloudinary: cloudinary.v2, upload, fileFilter, isCloudinaryConfigured };
 
 

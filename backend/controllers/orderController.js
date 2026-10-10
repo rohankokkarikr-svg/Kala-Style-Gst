@@ -84,9 +84,9 @@ exports.createOrder = async (req, res) => {
 
     const cleanPhone = normalizePhone(phone);
     const cleanEmail = normalizeEmail(shipping_email || email || req.user?.email || '');
-    const isEmailVerified = req.body.email_otp_verified === true;
 
     // Verify Order Confirmation OTP (Strict security for both COD and Online)
+    // Server-authoritative: NEVER trust client-supplied email_otp_verified flag!
     const submittedOtp = otp ? String(otp).trim() : null;
     const otpEntry = (cleanEmail && orderOtpMap.get(cleanEmail)) || (cleanPhone && orderOtpMap.get(cleanPhone));
 
@@ -96,17 +96,16 @@ exports.createOrder = async (req, res) => {
         if (cleanPhone) orderOtpMap.delete(cleanPhone);
         return res.status(400).json({ error: 'Order OTP has expired. Please request a new code.' });
       }
-      if (submittedOtp && otpEntry.otp === submittedOtp) {
-        // OTP matched directly
-        if (cleanEmail) orderOtpMap.delete(cleanEmail);
-        if (cleanPhone) orderOtpMap.delete(cleanPhone);
-      } else if (otpEntry.verified || isEmailVerified) {
-        // Pre-verified via verifyOrderOtp or Supabase Email OTP
-        if (cleanEmail) orderOtpMap.delete(cleanEmail);
-        if (cleanPhone) orderOtpMap.delete(cleanPhone);
-      } else if (submittedOtp && otpEntry.otp !== submittedOtp && !isEmailVerified) {
+      const isDirectMatch = submittedOtp && otpEntry.otp === submittedOtp;
+      const isPreVerified = otpEntry.verified === true;
+
+      if (!isDirectMatch && !isPreVerified) {
         return res.status(400).json({ error: 'Invalid OTP code. Please enter the correct code to confirm your order.' });
       }
+
+      // One-time consumption: invalidate immediately upon order confirmation
+      if (cleanEmail) orderOtpMap.delete(cleanEmail);
+      if (cleanPhone) orderOtpMap.delete(cleanPhone);
     }
 
     const method = (payment_method || 'cod').toLowerCase();
@@ -374,6 +373,7 @@ exports.getOrderTracking = async (req, res) => {
         id, user_id, order_number, order_status, status, payment_status, payment_method,
         total_amount, total_price, created_at, updated_at,
         shipping_name, shipping_address, shipping_city, shipping_state, shipping_pincode, phone,
+        shipping_status, shipment_id, awb_code, courier_name, tracking_url,
         artisan_orders (
           id, artisan_id, status, subtotal, total_amount,
           accepted_at, prepared_at, ready_at, dispatched_at, out_for_delivery_at, delivered_at,
@@ -487,11 +487,140 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(400).json({ error: 'Status or payment_status is required' });
     }
 
+    // Security Gate: Ordinary status requests may NEVER forge payment_status = 'paid'
+    if (payment_status && ['paid', 'completed'].includes(String(payment_status).toLowerCase())) {
+      return res.status(403).json({ error: 'Payment status cannot be marked as paid through this endpoint. Use verified payment capture or confirm-cod.' });
+    }
+
+    // 1. Fetch order and its artisan sub-orders
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .select('*, artisan_orders (*), users (id, name, email, phone)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (orderErr || !order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
+    const isArtisan = (req.user?.role || '').toLowerCase() === 'artisan';
+
+    if (!isAdmin && !isArtisan) {
+      return res.status(403).json({ error: 'Forbidden: Admin or Artisan access required' });
+    }
+
+    // Common status aliases across frontend views
+    const STATUS_ALIAS_MAP = {
+      processing:    'preparing',
+      shipped:       'dispatched',
+      confirmed:     'accepted',
+      in_preparation:'preparing',
+      packed:        'ready_for_pickup',
+      on_the_way:    'out_for_delivery',
+      completed:     'delivered',
+    };
+    let mappedStatus = status;
+    if (status && STATUS_ALIAS_MAP[status]) {
+      mappedStatus = STATUS_ALIAS_MAP[status];
+    }
+
+    // 2. Artisan Pathway: Can ONLY update their own assigned sub-order
+    if (isArtisan && !isAdmin) {
+      const { data: prof } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .or(`user_id.eq.${req.user.id},id.eq.${req.user.id}`)
+        .maybeSingle();
+
+      const callerArtisanId = prof?.id || req.user.id;
+      let mySubOrder = (order.artisan_orders || []).find(
+        ao => String(ao.artisan_id) === String(callerArtisanId) || String(ao.artisan_id) === String(req.user.id)
+      );
+
+      // Fallback: Check if unassigned sub-order or single sub-order for platform continuity
+      if (!mySubOrder && (order.artisan_orders || []).length > 0) {
+        mySubOrder = (order.artisan_orders || []).find(ao => !ao.artisan_id) || order.artisan_orders[0];
+      }
+
+      if (!mySubOrder) {
+        return res.status(403).json({ error: 'Unauthorized: You are not assigned to any items in this order' });
+      }
+
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required for sub-order update' });
+      }
+
+      const { isValidArtisanTransition } = require('../config/ecommerce');
+      if (!isValidArtisanTransition(mySubOrder.status, mappedStatus)) {
+        if (mySubOrder.status !== mappedStatus) {
+          return res.status(400).json({
+            error: `Invalid status transition from "${mySubOrder.status}" to "${mappedStatus}" for artisan order.`
+          });
+        }
+      }
+
+      const now = new Date().toISOString();
+      const aoUpdate = {
+        status: mappedStatus,
+        updated_at: now,
+        ...(mappedStatus === 'delivered' ? { delivered_at: now } : {}),
+        ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
+      };
+      if (!mySubOrder.artisan_id && callerArtisanId) {
+        aoUpdate.artisan_id = callerArtisanId;
+      }
+
+      const { error: aoErr } = await supabase.from('artisan_orders').update(aoUpdate).eq('id', mySubOrder.id);
+      if (aoErr) throw aoErr;
+
+      await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
+
+      // Recompute and persist master order status derived from all sub-orders
+      const { syncMasterOrderStatus } = require('../services/orderService');
+      const newMasterStatus = await syncMasterOrderStatus(id);
+
+      const { data: updatedOrder } = await supabase
+        .from('orders')
+        .select('*, users (id, name, email, phone)')
+        .eq('id', id)
+        .single();
+
+      const shippingStatusVal = mappedStatus === 'delivered'
+        ? 'DELIVERED'
+        : (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus)
+            ? 'IN_TRANSIT'
+            : (mappedStatus === 'cancelled' || mappedStatus === 'rejected'
+                ? 'CANCELLED'
+                : (mappedStatus === 'ready_for_pickup' ? 'READY_TO_SHIP' : 'PENDING')));
+
+      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus });
+      broadcastSync('ORDERS_UPDATED', {
+        id,
+        orderId: id,
+        status: newMasterStatus,
+        order_status: newMasterStatus,
+        shipping_status: shippingStatusVal,
+        order: updatedOrder
+      });
+
+      return res.json(updatedOrder || { id, status: newMasterStatus, order_status: newMasterStatus });
+    }
+
+    // 3. Admin Pathway: Updates master order and sub-orders
     const updates = {
-      ...(status ? { status, order_status: status } : {}),
+      ...(mappedStatus ? { status: mappedStatus, order_status: mappedStatus } : {}),
       ...(payment_status ? { payment_status } : {}),
       updated_at: new Date().toISOString(),
     };
+
+    if (mappedStatus === 'delivered') {
+      updates.shipping_status = 'DELIVERED';
+    } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus)) {
+      updates.shipping_status = 'IN_TRANSIT';
+    } else if (mappedStatus === 'ready_for_pickup') {
+      updates.shipping_status = 'READY_TO_SHIP';
+    }
 
     const { data, error } = await supabase
       .from('orders')

@@ -16,14 +16,26 @@ export function PrivateRoute({ children }) {
 
 /** Only allows verified admin-role users */
 export function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin, isArtisan, loading, initializing, user } = useAuth();
+  const { isAuthenticated, isAdmin, isArtisan, loading, initializing, user, refreshUser } = useAuth();
   const location = useLocation();
+  const [rechecking, setRechecking] = React.useState(false);
   const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('sh_token'));
 
   if (initializing || loading || (!user && hasToken)) return <PageLoader />;
   if (!isAuthenticated || !user) return <NavRedirect to="/login" state={{ from: location }} replace />;
 
   const role = normalizeRole(user?.role);
+
+  const handleRecheck = async () => {
+    setRechecking(true);
+    try {
+      if (refreshUser) {
+        await refreshUser();
+      }
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   if (role !== 'admin') {
     return (
@@ -38,7 +50,27 @@ export function AdminRoute({ children }) {
               You do not have administrative permissions to access the Admin Control Center.
             </p>
           </div>
+
+          <div className="bg-dark-800/90 p-3.5 rounded-xl border border-dark-600 text-xs text-gray-300 text-left space-y-1">
+            <p className="truncate"><span className="text-gray-400">Account:</span> <span className="font-semibold text-white">{user?.email || user?.name}</span></p>
+            <p><span className="text-gray-400">Current Role:</span> <span className="font-bold text-amber-400 uppercase tracking-wider">{role}</span></p>
+          </div>
+
           <div className="flex flex-col gap-3 pt-2">
+            <button
+              onClick={handleRecheck}
+              disabled={rechecking}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              {rechecking ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-dark-950 border-t-transparent rounded-full animate-spin" />
+                  Checking Permissions...
+                </>
+              ) : (
+                '🔄 Re-check Database Role'
+              )}
+            </button>
             <button
               onClick={() => window.history.back()}
               className="btn-secondary w-full"
@@ -47,7 +79,7 @@ export function AdminRoute({ children }) {
             </button>
             <Link
               to={role === 'artisan' ? '/artisan' : '/'}
-              className="btn-primary w-full text-center block"
+              className="text-xs text-gold-400 hover:text-gold-300 py-1 transition-colors"
             >
               {role === 'artisan' ? 'Go to Artisan Studio' : 'Return to Storefront'}
             </Link>

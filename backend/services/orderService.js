@@ -36,35 +36,90 @@ exports.generateOrderNumber = () => {
  * @returns {{ items: Array, subtotal: number, error?: string }}
  */
 exports.calculateOrderTotals = async (items) => {
-  const productIds = items.map(i => i.product_id).filter(Boolean);
-  if (productIds.length === 0) return { error: 'No valid product IDs provided' };
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'No order items provided' };
+  }
 
-  const { data: dbProducts, error } = await supabase
-    .from('products')
-    .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden')
-    .in('id', productIds);
+  const rawIds = items.map(i => String(i.product_id || i.id || '').trim()).filter(Boolean);
+  if (rawIds.length === 0) return { error: 'No valid product IDs provided' };
 
-  if (error) return { error: 'Failed to fetch product details: ' + error.message };
+  // Separate valid UUIDs from non-UUID identifiers (such as barcodes or legacy SKU codes)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidList = Array.from(new Set(rawIds.filter(id => uuidRegex.test(id))));
+  const nonUuidList = Array.from(new Set(rawIds.filter(id => !uuidRegex.test(id))));
+
+  let dbProducts = [];
+
+  // 1. Primary lookup by UUID
+  if (uuidList.length > 0) {
+    const { data: byId, error: idErr } = await supabase
+      .from('products')
+      .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden, barcode')
+      .in('id', uuidList);
+
+    if (idErr) {
+      console.error('[orderService] Product lookup error by UUID:', idErr.message);
+      return { error: 'Failed to fetch product details: ' + idErr.message };
+    }
+    if (byId) dbProducts.push(...byId);
+  }
+
+  // 2. Fallback lookup by barcode for any non-UUID identifiers
+  if (nonUuidList.length > 0) {
+    const { data: byBarcode, error: barcodeErr } = await supabase
+      .from('products')
+      .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden, barcode')
+      .in('barcode', nonUuidList);
+
+    if (!barcodeErr && byBarcode) {
+      dbProducts.push(...byBarcode);
+    }
+  }
 
   const productMap = {};
-  for (const p of (dbProducts || [])) productMap[p.id] = p;
+  for (const p of dbProducts) {
+    if (p.id) {
+      productMap[p.id] = p;
+      productMap[p.id.toLowerCase()] = p;
+    }
+    if (p.barcode) {
+      productMap[p.barcode] = p;
+      productMap[p.barcode.toLowerCase()] = p;
+    }
+  }
 
   const enrichedItems = [];
   let subtotal = 0;
 
   for (const item of items) {
-    const prod = productMap[item.product_id];
-    if (!prod) return { error: `Product not found: ${item.product_id}` };
-    const hasStock = prod.stock_quantity !== null ? Number(prod.stock_quantity) > 0 : prod.is_in_stock !== false;
-    if (!hasStock) {
-      return { error: `"${prod.name}" is out of stock` };
+    const rawId = String(item.product_id || item.id || '').trim();
+    const prod = productMap[rawId] || productMap[rawId.toLowerCase()];
+    if (!prod) return { error: `Product not found: ${rawId}` };
+
+    // Strictly verify product is approved and visible
+    if (prod.status !== 'approved' || prod.is_hidden) {
+      return { error: `"${prod.name}" is not currently available for purchase.` };
     }
-    const qty = Math.max(1, parseInt(item.quantity) || 1);
-    if (prod.stock_quantity !== null && qty > prod.stock_quantity) {
-      return { error: `Insufficient stock for "${prod.name}". Only ${prod.stock_quantity} left.` };
+
+    const rawQty = item.quantity;
+    const qty = parseInt(rawQty, 10);
+    if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(rawQty))) {
+      return { error: `Invalid quantity for "${prod.name}". Quantity must be a positive integer.` };
+    }
+    if (qty > 100) {
+      return { error: `Quantity for "${prod.name}" exceeds maximum allowed order limit of 100.` };
+    }
+
+    const hasStock = prod.stock_quantity !== null ? Number(prod.stock_quantity) >= qty : prod.is_in_stock !== false;
+    if (!hasStock || (prod.stock_quantity !== null && Number(prod.stock_quantity) < qty)) {
+      return { error: `Insufficient stock for "${prod.name}". Only ${prod.stock_quantity ?? 0} left.` };
     }
 
     const unitPrice = parseFloat(prod.price);
+    if (isNaN(unitPrice) || unitPrice <= 0 || !isFinite(unitPrice)) {
+      return { error: `Invalid price configuration for "${prod.name}".` };
+    }
+
     const totalPrice = unitPrice * qty;
     subtotal += totalPrice;
 
@@ -321,15 +376,42 @@ exports.createMasterOrder = async ({
   paymentRecord = payment;
 
   // 10. Deduct inventory (strictly non-negative atomic row-level locked deduction)
+  const successfullyDeducted = [];
+  let deductionFailed = false;
+  let failedProductName = '';
+
   for (const item of enrichedItems) {
     try {
       const deducted = await exports.atomicDeductStock(item.product_id, item.quantity);
       if (!deducted) {
-        console.warn(`[orderService] Stock deduction notice: product ${item.product_id} may have limited inventory.`);
+        deductionFailed = true;
+        failedProductName = item.product_name_snapshot;
+        break;
       }
+      successfullyDeducted.push({ product_id: item.product_id, quantity: item.quantity });
     } catch (err) {
-      console.error(`[orderService] Stock update error for product ${item.product_id}:`, err.message);
+      deductionFailed = true;
+      failedProductName = item.product_name_snapshot;
+      break;
     }
+  }
+
+  // If inventory reservation failed, fail the order and undo prior writes!
+  if (deductionFailed) {
+    // 1. Compensate and restore any inventory items deducted before the failure
+    for (const d of successfullyDeducted) {
+      await exports.atomicRestoreStock(d.product_id, d.quantity);
+    }
+
+    // 2. Roll back created database records
+    if (paymentRecord?.id) {
+      await supabase.from('payments').delete().eq('id', paymentRecord.id);
+    }
+    await supabase.from('artisan_orders').delete().eq('order_id', order.id);
+    await supabase.from('order_items').delete().eq('order_id', order.id);
+    await supabase.from('orders').delete().eq('id', order.id);
+
+    return { error: `Insufficient stock for "${failedProductName}". Order could not be placed.` };
   }
 
   // 11. Record in sales table
@@ -376,22 +458,50 @@ exports.createMasterOrder = async ({
  */
 exports.syncMasterOrderStatus = async (orderId) => {
   try {
-    const { data: artisanOrders } = await supabase
+    const { data: artisanOrders, error: fetchErr } = await supabase
       .from('artisan_orders')
       .select('status')
       .eq('order_id', orderId);
+
+    if (fetchErr) {
+      console.error('[orderService] syncMasterOrderStatus fetch error:', fetchErr.message);
+      return;
+    }
 
     if (!artisanOrders || artisanOrders.length === 0) return;
 
     const statuses = artisanOrders.map(ao => ao.status);
     const newStatus = deriveMasterStatus(statuses);
 
-    await supabase
+    const updatePayload = {
+      order_status: newStatus,
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    };
+
+    if (newStatus === 'delivered') {
+      updatePayload.shipping_status = 'DELIVERED';
+    } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(newStatus)) {
+      updatePayload.shipping_status = 'IN_TRANSIT';
+    } else if (newStatus === 'ready_for_pickup') {
+      updatePayload.shipping_status = 'READY_TO_SHIP';
+    } else if (newStatus === 'cancelled' || newStatus === 'rejected') {
+      updatePayload.shipping_status = 'CANCELLED';
+    } else if (newStatus === 'pending') {
+      updatePayload.shipping_status = 'PENDING';
+    }
+
+    const { error: updateErr } = await supabase
       .from('orders')
-      .update({ order_status: newStatus, status: newStatus, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq('id', orderId);
 
-    console.log(`[orderService] Master order ${orderId} status → ${newStatus}`);
+    if (updateErr) {
+      console.error('[orderService] syncMasterOrderStatus update error:', updateErr.message);
+    } else {
+      console.log(`[orderService] Master order ${orderId} status → ${newStatus} (shipping_status: ${updatePayload.shipping_status || 'unchanged'})`);
+    }
+
     return newStatus;
   } catch (err) {
     console.error('[orderService] syncMasterOrderStatus error:', err.message);

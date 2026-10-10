@@ -101,6 +101,16 @@ const createOrderHandler = async (req, res) => {
 
     if (!rzpResult.success) {
       console.error('[create-order] Razorpay API error:', rzpResult.error);
+      // Compensate: restore reserved stock and clean up pending unconfirmed order
+      try {
+        await restoreInventory(order.id);
+        await supabase.from('order_items').delete().eq('order_id', order.id);
+        await supabase.from('artisan_orders').delete().eq('order_id', order.id);
+        await supabase.from('payments').delete().eq('order_id', order.id);
+        await supabase.from('orders').delete().eq('id', order.id);
+      } catch (rollbackErr) {
+        console.error('[create-order] Rollback error after Razorpay failure:', rollbackErr.message);
+      }
       return res.status(500).json({
         error: 'Failed to initiate payment gateway. Please try again or choose Cash on Delivery.',
       });
@@ -558,12 +568,17 @@ router.post('/webhook', async (req, res) => {
  * POST /api/payments/refund
  * Initiates Razorpay refund for online payments. Protected endpoint.
  */
-router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
+router.post('/refund', protect, async (req, res) => {
   try {
     const { orderId, amount, reason } = req.body;
 
     if (!orderId) {
       return res.status(400).json({ error: 'Order ID is required for refund' });
+    }
+
+    // Role check: Only admin or authorized assigned artisan
+    if (req.user.role !== 'admin' && req.user.role !== 'artisan') {
+      return res.status(403).json({ error: 'Access denied: Insufficient privileges to request refunds' });
     }
 
     // 1. Fetch order and payment
@@ -574,6 +589,29 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
       .maybeSingle();
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // If caller is an artisan, prove they are assigned to this order
+    if (req.user.role === 'artisan') {
+      const { data: profile } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      const possibleIds = [req.user.id];
+      if (profile && profile.id) possibleIds.push(profile.id);
+
+      const { data: assignedSubOrder } = await supabase
+        .from('artisan_orders')
+        .select('id')
+        .eq('order_id', orderId)
+        .in('artisan_id', possibleIds)
+        .maybeSingle();
+
+      if (!assignedSubOrder) {
+        return res.status(403).json({ error: 'Unauthorized: You are not assigned to this order' });
+      }
+    }
 
     const { data: payment } = await supabase
       .from('payments')
@@ -590,8 +628,27 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
       return res.status(400).json({ error: 'No Razorpay payment ID on record for this order' });
     }
 
+    // Amount validation
+    const alreadyRefunded = Number(payment.refund_amount || 0);
+    const orderTotal = Number(order.total_amount || 0);
+    const maxRefundable = Math.max(0, orderTotal - alreadyRefunded);
+
+    if (maxRefundable <= 0) {
+      return res.status(400).json({ error: 'Order has already been fully refunded' });
+    }
+
+    const refundAmount = (amount !== undefined && amount !== null && amount !== '') ? Number(amount) : maxRefundable;
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      return res.status(400).json({ error: 'Refund amount must be a positive finite number' });
+    }
+
+    if (refundAmount > maxRefundable) {
+      return res.status(400).json({
+        error: `Requested refund (₹${refundAmount}) exceeds maximum refundable balance (₹${maxRefundable})`,
+      });
+    }
+
     // 2. Call Razorpay refund API
-    const refundAmount = amount ? Number(amount) : order.total_amount;
     const rzpRefund = await createRefund(providerPaymentId, refundAmount, {
       reason: reason || 'Customer cancellation',
       order_id: orderId,
@@ -604,14 +661,16 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
 
     const refundObj = rzpRefund.refund;
     const now = new Date().toISOString();
+    const newRefundTotal = alreadyRefunded + refundAmount;
+    const isFullRefund = newRefundTotal >= orderTotal;
 
     // 3. Update database
     await supabase
       .from('payments')
       .update({
         refund_id: refundObj.id,
-        refund_amount: refundAmount,
-        status: refundAmount < order.total_amount ? 'partially_refunded' : 'refunded',
+        refund_amount: newRefundTotal,
+        status: isFullRefund ? 'refunded' : 'partially_refunded',
         refunded_at: now,
         updated_at: now,
       })
@@ -620,8 +679,9 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
     await supabase
       .from('orders')
       .update({
-        payment_status: 'refunded',
-        order_status: 'cancelled',
+        payment_status: isFullRefund ? 'refunded' : 'partially_refunded',
+        order_status: isFullRefund ? 'cancelled' : order.order_status,
+        status: isFullRefund ? 'cancelled' : order.status,
         updated_at: now,
       })
       .eq('id', orderId);
@@ -629,8 +689,27 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
     // 4. Reverse loyalty reward if granted
     await reverseRewardIfNeeded(orderId);
 
-    broadcastSync('PAYMENTS_UPDATED', { orderId, status: 'refunded', refund_id: refundObj.id });
-    broadcastSync('ORDERS_UPDATED', { orderId, order_status: 'cancelled', payment_status: 'refunded' });
+    // 5. Audit log
+    try {
+      await supabase.from('activity_logs').insert([{
+        action: 'PAYMENT_REFUND',
+        actor_id: req.user.id,
+        actor_role: req.user.role,
+        entity_id: orderId,
+        details: JSON.stringify({
+          refund_id: refundObj.id,
+          amount: refundAmount,
+          reason: reason || 'Customer cancellation',
+          is_full: isFullRefund,
+        }),
+        created_at: now,
+      }]);
+    } catch (auditErr) {
+      console.warn('[refund] Activity log notice:', auditErr.message);
+    }
+
+    broadcastSync('PAYMENTS_UPDATED', { orderId, status: isFullRefund ? 'refunded' : 'partially_refunded', refund_id: refundObj.id });
+    broadcastSync('ORDERS_UPDATED', { orderId, order_status: isFullRefund ? 'cancelled' : order.order_status, payment_status: isFullRefund ? 'refunded' : 'partially_refunded' });
 
     res.json({
       success: true,
@@ -650,7 +729,7 @@ router.post('/refund', protect, artisanOrAdmin, async (req, res) => {
 // ─── 5. GET PAYMENT DETAILS ───────────────────────────────────────────────────
 /**
  * GET /api/payments/:orderId
- * Returns payment state for a given order (restricted to buyer, artisan, or admin).
+ * Returns payment state for a given order (restricted to buyer, assigned artisan, or admin).
  */
 router.get('/:orderId', protect, async (req, res) => {
   try {
@@ -666,15 +745,28 @@ router.get('/:orderId', protect, async (req, res) => {
 
     // Authorization check
     if (order.user_id !== req.user.id && req.user.role !== 'admin') {
-      // Check if user is artisan on this order
-      const { data: artOrder } = await supabase
-        .from('artisan_orders')
-        .select('id')
-        .eq('order_id', orderId)
-        .eq('artisan_id', req.user.id)
-        .maybeSingle();
+      let isAssigned = false;
+      if (req.user.role === 'artisan') {
+        const { data: profile } = await supabase
+          .from('artisan_profiles')
+          .select('id')
+          .eq('user_id', req.user.id)
+          .maybeSingle();
 
-      if (!artOrder) {
+        const possibleIds = [req.user.id];
+        if (profile && profile.id) possibleIds.push(profile.id);
+
+        const { data: artOrder } = await supabase
+          .from('artisan_orders')
+          .select('id')
+          .eq('order_id', orderId)
+          .in('artisan_id', possibleIds)
+          .maybeSingle();
+
+        if (artOrder) isAssigned = true;
+      }
+
+      if (!isAssigned) {
         return res.status(403).json({ error: 'Unauthorized to view this payment' });
       }
     }

@@ -188,6 +188,18 @@ export default function Navbar() {
               {/* Notification Center */}
               <NotificationCenter />
 
+              {/* Dedicated Admin Center Button in Navbar Header */}
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs font-bold transition-all shadow-gold"
+                  title="Open Admin Control Center"
+                >
+                  <HiChartBar className="w-4 h-4 text-gold-400" />
+                  <span>Admin Center</span>
+                </Link>
+              )}
+
               {/* User Avatar / Sign In */}
               {user ? (
                 <div className="relative group">
