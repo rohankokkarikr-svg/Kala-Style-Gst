@@ -43,8 +43,13 @@ exports.getApprovedReviews = async (req, res) => {
 
     let results = Array.isArray(data) ? data : [];
 
-    // Ensure reviews returned are strictly approved
-    results = results.filter((r) => r.is_approved === true);
+    // Ensure reviews returned are strictly approved and enrich is_verified_buyer
+    results = results
+      .filter((r) => r.is_approved === true)
+      .map(r => ({
+        ...r,
+        is_verified_buyer: r.is_verified_buyer !== undefined ? Boolean(r.is_verified_buyer) : Boolean(r.user_id)
+      }));
 
     res.json(results);
   } catch (error) {
@@ -79,7 +84,12 @@ exports.getAllReviews = async (req, res) => {
       throw error;
     }
 
-    res.json(data || []);
+    const enriched = (data || []).map(r => ({
+      ...r,
+      is_verified_buyer: r.is_verified_buyer !== undefined ? Boolean(r.is_verified_buyer) : Boolean(r.user_id)
+    }));
+
+    res.json(enriched);
   } catch (error) {
     console.error('Failed to fetch admin reviews:', error.message || error);
     res.status(500).json({ error: 'Failed to fetch reviews' });
@@ -166,6 +176,7 @@ exports.submitReview = async (req, res) => {
 
     // 4. Moderate new reviews before publication (is_approved: false)
     const newReview = {
+      product_id: matchedProduct.id,
       user_id: userId,
       customer_name: sanitizedName,
       product_name: matchedProduct.name,
@@ -177,22 +188,35 @@ exports.submitReview = async (req, res) => {
 
     let savedData = null;
 
-    // Try insert with is_verified_buyer column if supported
+    const isColumnError = (err) => {
+      if (!err) return false;
+      const code = String(err.code || '');
+      const msg = String(err.message || '').toLowerCase();
+      return (
+        code === '42703' ||
+        code === 'PGRST204' ||
+        msg.includes('is_verified_buyer') ||
+        msg.includes('schema cache') ||
+        msg.includes('column')
+      );
+    };
+
+    // Try insert with is_verified_buyer column if supported; fallback cleanly if column doesn't exist
     try {
       const { data: inserted, error: insertErr } = await supabase
         .from('reviews')
         .insert([{ ...newReview, is_verified_buyer: isVerifiedPurchase }])
         .select()
-        .single();
+        .maybeSingle();
 
       if (insertErr) {
-        if (insertErr.code === '42703') {
-          // Column is_verified_buyer does not exist in schema, fallback to base columns
+        if (isColumnError(insertErr)) {
+          // Column is_verified_buyer does not exist in schema cache, fallback to base columns
           const { data: fallbackInserted, error: fallbackErr } = await supabase
             .from('reviews')
             .insert([newReview])
             .select()
-            .single();
+            .maybeSingle();
 
           if (fallbackErr) throw fallbackErr;
           savedData = { ...fallbackInserted, is_verified_buyer: isVerifiedPurchase };
@@ -210,10 +234,19 @@ exports.submitReview = async (req, res) => {
           throw insertErr;
         }
       } else {
-        savedData = inserted;
+        savedData = { ...inserted, is_verified_buyer: isVerifiedPurchase };
       }
     } catch (insertException) {
-      if (insertException.code === '42P01') {
+      if (isColumnError(insertException)) {
+        const { data: fallbackInserted, error: fallbackErr } = await supabase
+          .from('reviews')
+          .insert([newReview])
+          .select()
+          .maybeSingle();
+
+        if (fallbackErr) throw fallbackErr;
+        savedData = { ...fallbackInserted, is_verified_buyer: isVerifiedPurchase };
+      } else if (insertException.code === '42P01') {
         const memReview = {
           ...newReview,
           id: 'mem-' + Date.now(),
