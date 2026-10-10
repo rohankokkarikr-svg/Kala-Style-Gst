@@ -4,8 +4,9 @@ import { apiCache } from "../utils/apiCache";
 import toast from "react-hot-toast";
 import {
   HiX, HiPhotograph, HiUpload, HiTrash, HiStar, HiCheck,
-  HiArrowUp, HiArrowDown, HiRefresh, HiLink,
+  HiArrowUp, HiArrowDown, HiRefresh, HiLink, HiCamera
 } from "react-icons/hi";
+import LiveCameraModal from "./LiveCameraModal";
 
 function extractImages(prod) {
   if (!prod) return [];
@@ -97,6 +98,7 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState(() => extractImages(product)[0] || "");
   const [urlInput, setUrlInput] = useState("");
+  const [showCamera, setShowCamera] = useState(false);
 
   useEffect(() => {
     setPreview(images[primaryIdx] || images[0] || "");
@@ -190,6 +192,21 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
     setUploading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images.length]);
+
+  const handleCameraPhoto = async (file) => {
+    if (!file) return;
+    if (images.length >= 10) {
+      toast.error("Maximum 10 images allowed. Please remove an image first.");
+      return;
+    }
+    setUploading(true);
+    const u = await uploadFile(file);
+    if (u) {
+      setImages(prev => [...prev, u]);
+      toast.success("Live camera photo added! 📸");
+    }
+    setUploading(false);
+  };
 
   const onDrop = useCallback((e) => {
     e.preventDefault();
@@ -439,6 +456,18 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
                     <p className="text-gray-400 text-xs">
                       Drag &amp; drop or click to browse &middot; Auto-optimized for web &middot; JPG, PNG, WebP
                     </p>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowCamera(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-gradient-luxury text-dark-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-gold hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+                      >
+                        <HiCamera className="w-4 h-4" /> 📸 Take Photo with Live Camera
+                      </button>
+                    </div>
                     <p className="text-gray-500 text-[11px]">
                       {10 - images.length} image slot{10 - images.length !== 1 ? "s" : ""} remaining
                     </p>
@@ -514,6 +543,13 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
           </div>
         </div>
       </div>
+
+      {/* Live Camera Modal */}
+      <LiveCameraModal
+        isOpen={showCamera}
+        onClose={() => setShowCamera(false)}
+        onCapturePhoto={handleCameraPhoto}
+      />
     </div>
   );
 }

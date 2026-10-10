@@ -3,6 +3,7 @@ import { artisanAPI, productAPI, aiAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { HiCamera, HiSparkles, HiEye } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import LiveCameraModal from '../../components/LiveCameraModal';
 
 const LANGUAGES = ['English', 'Hindi', 'Kannada', 'Tamil', 'Telugu', 'Marathi', 'Bengali'];
 const ARTISAN_TYPES = ['Weaver / Handloom', 'Tailor / Clothing Maker', 'Jewelry Maker', 'Embroidery Artist', 'Bag Maker', 'General Artisan'];
@@ -14,6 +15,7 @@ export default function ArtisanProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
   const [generatingBio, setGeneratingBio] = useState(false);
   const fileInputRef = useRef();
 
@@ -163,6 +165,28 @@ export default function ArtisanProfile() {
     }
   };
 
+  const handleCameraPhoto = async (file) => {
+    if (!file) return;
+    setUploadingImg(true);
+    const toastId = toast.loading('Uploading camera photo to Cloudinary ☁️...');
+    try {
+      const uploadedUrl = await uploadImageSmart(file);
+      if (uploadedUrl) {
+        set('profile_image', uploadedUrl);
+        const updatedForm = { ...form, profile_image: uploadedUrl };
+        await artisanAPI.updateProfile(updatedForm);
+        setProfile(p => ({ ...p, profile_image: uploadedUrl }));
+        toast.success('Live camera photo uploaded & saved! 📸✨', { id: toastId });
+      }
+    } catch (err) {
+      console.error('Camera photo upload error:', err);
+      const errMsg = err.response?.data?.error || err.message || 'Failed to upload photo';
+      toast.error(errMsg, { id: toastId });
+    } finally {
+      setUploadingImg(false);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
@@ -208,14 +232,24 @@ export default function ArtisanProfile() {
             <h4 className="text-sm font-semibold text-white">Artisan Profile / Store Photo</h4>
             <p className="text-xs text-gray-400 mb-2">Stored permanently on Cloudinary ☁️</p>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingImg}
-              className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5"
-            >
-              <HiCamera className="w-4 h-4" /> {uploadingImg ? 'Uploading...' : 'Upload to Cloudinary'}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImg}
+                className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5"
+              >
+                <HiCamera className="w-4 h-4" /> {uploadingImg ? 'Uploading...' : 'Upload Photo'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCamera(true)}
+                disabled={uploadingImg}
+                className="px-3 py-1.5 bg-gradient-luxury text-dark-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-gold hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              >
+                📸 Take Live Photo
+              </button>
+            </div>
           </div>
         </div>
 
@@ -361,6 +395,13 @@ export default function ArtisanProfile() {
           {saving ? 'Saving & Syncing in Real-Time...' : '💾 Save Profile & Real-Time Sync'}
         </button>
       </form>
+
+      {/* Live Camera Modal */}
+      <LiveCameraModal
+        isOpen={showCamera}
+        onClose={() => setShowCamera(false)}
+        onCapturePhoto={handleCameraPhoto}
+      />
     </div>
   );
 }

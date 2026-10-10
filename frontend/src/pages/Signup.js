@@ -4,6 +4,7 @@ import { FcGoogle } from 'react-icons/fc';
 import { HiEye, HiEyeOff } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
+import GlassyOtpCard from '../components/GlassyOtpCard';
 import toast from 'react-hot-toast';
 
 export default function Signup() {
@@ -29,6 +30,7 @@ export default function Signup() {
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [isOtpSuccess, setIsOtpSuccess] = useState(false);
   const [otpError, setOtpError] = useState('');
 
   const { signup, cancelSignup, sendOtp, verifyOtp, signInWithGoogle } = useAuth();
@@ -203,14 +205,18 @@ export default function Signup() {
         sbUid
       );
 
+      setIsOtpSuccess(true);
       toast.success(
         role === 'artisan'
           ? '🎨 Artisan account verified and created! Welcome to KalaStyle Studio!'
           : `✨ Account verified! Welcome to KalaStyle AI, ${name}!`
       );
 
-      navigate(role === 'artisan' ? '/artisan' : '/');
+      setTimeout(() => {
+        navigate(role === 'artisan' ? '/artisan' : '/');
+      }, 1600);
     } catch (err) {
+      setIsOtpSuccess(false);
       const errMsg = err.response?.data?.error || err.message || 'Verification failed. Please check the code.';
       setOtpError(errMsg);
       toast.error(errMsg);
@@ -285,7 +291,11 @@ export default function Signup() {
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center py-12 px-3 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-6 card p-5 sm:p-10 border border-dark-500 shadow-2xl">
+      <div className={`w-full space-y-6 card border border-dark-500 shadow-2xl transition-all duration-300 ${
+        step === 'otp'
+          ? 'max-w-lg p-4 sm:p-8'
+          : 'max-w-md p-5 sm:p-10'
+      }`}>
         {/* Brand Header */}
         <div>
           <div className="flex justify-center mb-4">
@@ -507,91 +517,30 @@ export default function Signup() {
 
         {/* ─── STEP 2: OTP VERIFICATION STEP ─────────────────── */}
         {step === 'otp' && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <label className="block text-xs font-semibold text-gray-300 mb-3 tracking-widest uppercase">
-                Enter the {OTP_LENGTH}-digit OTP verification code
-              </label>
-
-              {/* 8 Segmented Numeric Boxes */}
-              <div
-                className="flex justify-center gap-1 sm:gap-1.5"
-                onPaste={handleOtpPaste}
-              >
-                {otp.map((digit, index) => (
-                  <input
-                    key={index}
-                    ref={(el) => (otpInputsRef.current[index] = el)}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={1}
-                    value={digit}
-                    aria-label={`Digit ${index + 1}`}
-                    onChange={(e) => handleOtpChange(index, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                    onPaste={handleOtpPaste}
-                    className="w-7 sm:w-10 h-10 sm:h-12 text-center text-sm sm:text-xl font-bold font-mono bg-dark-800 border border-dark-400 rounded-lg text-gold-400 focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/50 transition-all shrink-0 p-0"
-                  />
-                ))}
-              </div>
-
-              {otpError && (
-                <p className="mt-3 text-xs text-red-400 font-medium text-center">
-                  ⚠️ {otpError}
-                </p>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleCompleteRegistration()}
-              disabled={loading || otp.filter(Boolean).join('').length !== OTP_LENGTH}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-dark-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Verifying & Creating Account...</span>
-                </>
-              ) : (
-                <span>Verify & Open Account</span>
-              )}
-            </button>
-
-            {/* Resend Cooldown & Edit Info */}
-            <div className="flex flex-col items-center gap-2 pt-1 text-sm">
-              <div className="text-gray-400 text-xs">
-                {countdown > 0 ? (
-                  <span>
-                    Didn't receive the code?{' '}
-                    <span className="text-gold-400 font-medium">Resend OTP in {countdown}s</span>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendOtp}
-                    disabled={loading}
-                    className="text-gold-400 hover:text-gold-300 font-medium hover:underline cursor-pointer"
-                  >
-                    Didn't receive the code? Resend OTP
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (cancelSignup) cancelSignup();
-                  setStep('details');
-                  setOtpError('');
-                }}
-                className="text-xs text-gray-500 hover:text-gray-300 hover:underline cursor-pointer pt-1"
-              >
-                ← Edit Registration Details
-              </button>
-            </div>
-          </div>
+          <GlassyOtpCard
+            otp={otp}
+            setOtp={setOtp}
+            length={OTP_LENGTH}
+            email={maskEmail(email)}
+            countdown={countdown}
+            isLoading={loading}
+            isSuccess={isOtpSuccess}
+            error={otpError}
+            onVerify={handleCompleteRegistration}
+            onResend={handleResendOtp}
+            onChangeEmail={() => {
+              if (cancelSignup) cancelSignup();
+              setStep('details');
+              setOtpError('');
+              setIsOtpSuccess(false);
+            }}
+            changeEmailLabel="← Edit Registration Details"
+            submitLabel="Verify & Open Account"
+            onChange={handleOtpChange}
+            onKeyDown={handleOtpKeyDown}
+            onPaste={handleOtpPaste}
+            otpInputsRef={otpInputsRef}
+          />
         )}
 
         {/* Footer Navigation */}

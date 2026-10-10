@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { HiMicrophone, HiSparkles, HiCheck, HiX, HiRefresh, HiChevronRight, HiChevronLeft, HiGlobe, HiCurrencyRupee, HiPhotograph } from 'react-icons/hi';
+import { HiMicrophone, HiSparkles, HiCheck, HiX, HiRefresh, HiChevronRight, HiChevronLeft, HiGlobe, HiCurrencyRupee, HiPhotograph, HiCamera } from 'react-icons/hi';
 import { aiAPI, productAPI, categoryAPI, adminAPI, apiCache } from '../../services/api';
+import LiveCameraModal from '../../components/LiveCameraModal';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -79,6 +80,7 @@ export default function AIProductStudio() {
   const [imageUrl, setImageUrl] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
 
   // Step 2 — Description & Language
   const [description, setDescription] = useState('');
@@ -186,6 +188,13 @@ export default function AIProductStudio() {
     setImagePreview(URL.createObjectURL(file));
     await uploadToCloudinary(file);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCameraPhoto = async (file) => {
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    await uploadToCloudinary(file);
+  };
 
   // ── Step 2: Voice Input ────────────────────────────────────────────────────
 
@@ -455,6 +464,18 @@ export default function AIProductStudio() {
                 <div>
                   <p className="text-white font-medium">Drag & drop your product photo here</p>
                   <p className="text-gray-500 text-sm mt-1">or click to browse — JPG, PNG, WEBP</p>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCamera(true);
+                    }}
+                    className="px-4 py-2 bg-gradient-luxury text-dark-950 font-bold rounded-xl text-xs inline-flex items-center gap-1.5 shadow-gold hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    <HiCamera className="w-4 h-4" /> 📸 Take Photo with Live Camera
+                  </button>
                 </div>
               </div>
             )}
@@ -850,6 +871,13 @@ export default function AIProductStudio() {
           </button>
         </div>
       )}
+
+      {/* Live Camera Modal */}
+      <LiveCameraModal
+        isOpen={showCamera}
+        onClose={() => setShowCamera(false)}
+        onCapturePhoto={handleCameraPhoto}
+      />
     </div>
   );
 }

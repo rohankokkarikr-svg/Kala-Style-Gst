@@ -7,6 +7,7 @@ import { orderAPI, couponAPI } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
+import GlassyOtpCard from '../components/GlassyOtpCard';
 import {
   HiShieldCheck, HiTruck, HiUser, HiPhone, HiLocationMarker,
   HiCheckCircle, HiArrowRight, HiArrowLeft, HiTag, HiExclamationCircle,
@@ -172,6 +173,7 @@ export default function Checkout() {
   const [showOtpModal, setShowOtpModal]   = useState(false);
   const [otpValue, setOtpValue]           = useState(Array(OTP_LENGTH).fill('')); // 8-digit OTP matching Login
   const [otpLoading, setOtpLoading]       = useState(false);
+  const [isOtpSuccess, setIsOtpSuccess]   = useState(false);
   const [otpSending, setOtpSending]       = useState(false);
   const [otpCountdown, setOtpCountdown]   = useState(60);
   const [canResendOtp, setCanResendOtp]   = useState(false);
@@ -732,17 +734,21 @@ export default function Checkout() {
     }
 
     setOtpCountdown(0);
-    setShowOtpModal(false);
+    setIsOtpSuccess(true);
     toast.success('Email OTP verified successfully! 🎉');
 
-    // 2. Execute Order Creation with OTP confirmation
-    try {
-      await executeOrderCreation(code);
-    } catch (orderErr) {
-      console.error('Order creation failed:', orderErr);
-    } finally {
-      setOtpLoading(false);
-    }
+    setTimeout(async () => {
+      setShowOtpModal(false);
+      setIsOtpSuccess(false);
+      // 2. Execute Order Creation with OTP confirmation
+      try {
+        await executeOrderCreation(code);
+      } catch (orderErr) {
+        console.error('Order creation failed:', orderErr);
+      } finally {
+        setOtpLoading(false);
+      }
+    }, 1600);
   };
 
   /* ─── Execute Order Creation ─── */
@@ -1598,93 +1604,31 @@ export default function Checkout() {
                 <HiX className="w-5 h-5" />
               </button>
 
-              {/* Modal Header */}
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-gold-500/10 border border-gold-500/30 flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-gold-500/10">
-                  <HiMail className="w-8 h-8 text-gold-400" />
-                </div>
-                <span className="text-xs uppercase tracking-widest text-gold-400 font-bold px-3 py-1 rounded-full bg-gold-500/10 border border-gold-500/20">
-                  Email Security Verification
-                </span>
-                <h3 className="text-2xl font-serif font-bold text-white mt-2">
-                  Enter {OTP_LENGTH}-Digit OTP
-                </h3>
-                <p className="text-xs sm:text-sm text-gray-300 mt-2 max-w-sm mx-auto leading-relaxed">
-                  We have dispatched an {OTP_LENGTH}-digit confirmation code to your registered email{' '}
-                  <strong className="text-gold-400">{maskEmail(form.email || user?.email)}</strong> to confirm your order of{' '}
-                  <strong className="text-white">₹{finalTotal.toLocaleString()}</strong> ({paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}).
-                </p>
-              </div>
-
-              {/* 8 Digit Segmented Input Boxes */}
-              <div className="flex justify-center items-center gap-1 sm:gap-1.5 mb-4" onPaste={handleOtpInputPaste}>
-                {otpValue.map((digit, index) => (
-                  <input
-                    key={index}
-                    ref={(el) => (otpInputsRef.current[index] = el)}
-                    id={`order-otp-box-${index}`}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={1}
-                    value={digit}
-                    aria-label={`Digit ${index + 1}`}
-                    onChange={(e) => handleOtpInputChange(index, e.target.value)}
-                    onKeyDown={(e) => handleOtpInputKeyDown(index, e)}
-                    onPaste={handleOtpInputPaste}
-                    className="w-8 sm:w-11 h-11 sm:h-13 text-center text-base sm:text-xl font-bold font-mono bg-dark-900 border-2 border-dark-600 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30 text-gold-400 rounded-xl transition-all shrink-0 p-0"
-                  />
-                ))}
-              </div>
-
-              {otpError && (
-                <p className="text-center text-red-400 text-xs mb-3 flex items-center justify-center gap-1">
-                  <HiExclamationCircle className="w-4 h-4 shrink-0" />
-                  {otpError}
-                </p>
-              )}
-
-              {/* Resend Timer matching Login page */}
-              <div className="text-center text-xs text-gray-400 mb-6">
-                {!canResendOtp && otpCountdown > 0 ? (
-                  <span>
-                    Didn't receive the code?{' '}
-                    <span className="text-gold-400 font-mono font-medium">Resend OTP in {otpCountdown}s</span>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendOrderOtp}
-                    disabled={otpSending}
-                    className="text-gold-400 hover:text-gold-300 font-semibold underline flex items-center gap-1 mx-auto cursor-pointer"
-                  >
-                    <HiRefresh className="w-3.5 h-3.5" /> Didn't receive the code? Resend OTP
-                  </button>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-2.5">
-                <button
-                  type="button"
-                  onClick={() => handleVerifyAndConfirmOrder()}
-                  disabled={otpLoading || otpValue.filter(Boolean).length !== OTP_LENGTH}
-                  className="w-full btn-primary py-3.5 text-base font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer"
-                >
-                  {otpLoading ? (
-                    <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Verifying & Placing Order...</>
-                  ) : (
-                    <><HiShieldCheck className="w-5 h-5" /> Verify OTP & Confirm Order</>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowOtpModal(false)}
-                  className="w-full py-2.5 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  Cancel / Edit Delivery Details
-                </button>
-              </div>
+              {/* Glassy OTP Card with typing and success animations */}
+              <GlassyOtpCard
+                otp={otpValue}
+                setOtp={setOtpValue}
+                length={OTP_LENGTH}
+                email={maskEmail(form.email || user?.email)}
+                subtitle={`We sent an 8-digit confirmation code to ${maskEmail(form.email || user?.email)} for order amount ₹${finalTotal.toLocaleString()}`}
+                countdown={otpCountdown}
+                isLoading={otpLoading}
+                isSuccess={isOtpSuccess}
+                error={otpError}
+                onVerify={handleVerifyAndConfirmOrder}
+                onResend={handleResendOrderOtp}
+                onChangeEmail={() => setShowOtpModal(false)}
+                changeEmailLabel="Cancel / Edit Delivery Details"
+                submitLabel="Verify OTP & Confirm Order"
+                verifyingLabel="Verifying & Placing Order..."
+                successLabel="Verified & Secured"
+                onChange={handleOtpInputChange}
+                onKeyDown={handleOtpInputKeyDown}
+                onPaste={handleOtpInputPaste}
+                otpInputsRef={otpInputsRef}
+                compact={true}
+                className="bg-transparent border-0 shadow-none !p-0"
+              />
 
               {/* Shiprocket Delivery Guarantee footer */}
               <div className="mt-5 pt-4 border-t border-dark-700/60 flex items-center justify-center gap-2 text-[11px] text-gray-400 text-center">
