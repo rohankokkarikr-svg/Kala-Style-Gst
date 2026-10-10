@@ -36,25 +36,65 @@ exports.generateOrderNumber = () => {
  * @returns {{ items: Array, subtotal: number, error?: string }}
  */
 exports.calculateOrderTotals = async (items) => {
-  const productIds = items.map(i => i.product_id).filter(Boolean);
-  if (productIds.length === 0) return { error: 'No valid product IDs provided' };
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'No order items provided' };
+  }
 
-  const { data: dbProducts, error } = await supabase
-    .from('products')
-    .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden')
-    .in('id', productIds);
+  const rawIds = items.map(i => String(i.product_id || i.id || '').trim()).filter(Boolean);
+  if (rawIds.length === 0) return { error: 'No valid product IDs provided' };
 
-  if (error) return { error: 'Failed to fetch product details: ' + error.message };
+  // Separate valid UUIDs from non-UUID identifiers (such as barcodes or legacy SKU codes)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidList = Array.from(new Set(rawIds.filter(id => uuidRegex.test(id))));
+  const nonUuidList = Array.from(new Set(rawIds.filter(id => !uuidRegex.test(id))));
+
+  let dbProducts = [];
+
+  // 1. Primary lookup by UUID
+  if (uuidList.length > 0) {
+    const { data: byId, error: idErr } = await supabase
+      .from('products')
+      .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden, barcode')
+      .in('id', uuidList);
+
+    if (idErr) {
+      console.error('[orderService] Product lookup error by UUID:', idErr.message);
+      return { error: 'Failed to fetch product details: ' + idErr.message };
+    }
+    if (byId) dbProducts.push(...byId);
+  }
+
+  // 2. Fallback lookup by barcode for any non-UUID identifiers
+  if (nonUuidList.length > 0) {
+    const { data: byBarcode, error: barcodeErr } = await supabase
+      .from('products')
+      .select('id, name, price, stock_quantity, is_in_stock, image_url, artisan_id, status, is_hidden, barcode')
+      .in('barcode', nonUuidList);
+
+    if (!barcodeErr && byBarcode) {
+      dbProducts.push(...byBarcode);
+    }
+  }
 
   const productMap = {};
-  for (const p of (dbProducts || [])) productMap[p.id] = p;
+  for (const p of dbProducts) {
+    if (p.id) {
+      productMap[p.id] = p;
+      productMap[p.id.toLowerCase()] = p;
+    }
+    if (p.barcode) {
+      productMap[p.barcode] = p;
+      productMap[p.barcode.toLowerCase()] = p;
+    }
+  }
 
   const enrichedItems = [];
   let subtotal = 0;
 
   for (const item of items) {
-    const prod = productMap[item.product_id];
-    if (!prod) return { error: `Product not found: ${item.product_id}` };
+    const rawId = String(item.product_id || item.id || '').trim();
+    const prod = productMap[rawId] || productMap[rawId.toLowerCase()];
+    if (!prod) return { error: `Product not found: ${rawId}` };
 
     // Strictly verify product is approved and visible
     if (prod.status !== 'approved' || prod.is_hidden) {

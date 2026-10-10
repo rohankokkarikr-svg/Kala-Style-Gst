@@ -572,7 +572,7 @@ export default function Checkout() {
     try {
       await orderAPI.calculateTotal({
         items: items.map(i => ({
-          product_id: i.product?.id || i.product_id,
+          product_id: i.product?.id || i.product_id || i.id,
           quantity: i.quantity,
           size: i.size
         })),
@@ -583,10 +583,12 @@ export default function Checkout() {
       const productNotFoundMatch = errMsg.match(/Product not found:\s*([a-zA-Z0-9_-]+)/i);
       if (productNotFoundMatch) {
         const missingId = productNotFoundMatch[1];
+        const missingItem = items.find(i => (i.product?.id || i.product_id || i.id) === missingId);
+        const itemName = missingItem?.product?.name ? `"${missingItem.product.name}"` : 'An item in your cart';
         if (typeof removeByProductId === 'function') {
           removeByProductId(missingId);
         }
-        toast.error('An item in your cart is no longer available and has been removed. Please review your cart.', {
+        toast.error(`${itemName} is no longer available and has been removed. Please review your cart.`, {
           duration: 5000,
           id: 'cart-stale-item'
         });
@@ -859,10 +861,12 @@ export default function Checkout() {
       const productNotFoundMatch = errMsg.match(/Product not found:\s*([a-zA-Z0-9_-]+)/i);
       if (productNotFoundMatch) {
         const missingId = productNotFoundMatch[1];
+        const missingItem = items.find(i => (i.product?.id || i.product_id || i.id) === missingId);
+        const itemName = missingItem?.product?.name ? `"${missingItem.product.name}"` : 'An item in your cart';
         if (typeof removeByProductId === 'function') {
           removeByProductId(missingId);
         }
-        toast.error('An item in your cart is no longer available and has been removed. Please review your cart.', {
+        toast.error(`${itemName} is no longer available and has been removed. Please review your cart.`, {
           duration: 5000,
           id: 'cart-stale-item'
         });

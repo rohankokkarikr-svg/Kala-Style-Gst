@@ -154,11 +154,12 @@ app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'Style Heaven Backend API', uptime: process.uptime() });
 });
 
-// Health check — also checks if Supabase is reachable
+// Health check — also checks if Supabase is reachable and database queries succeed
 app.get('/health', async (req, res) => {
   let supabaseStatus = 'unknown';
+  let dbQueryStatus = 'unknown';
   try {
-    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co';
     if (supabaseUrl) {
       const host = new URL(supabaseUrl).hostname;
       await new Promise((resolve, reject) => {
@@ -168,6 +169,10 @@ app.get('/health', async (req, res) => {
         });
       });
       supabaseStatus = 'reachable';
+
+      const supabaseClient = require('./config/supabase');
+      const { data: testRows, error: dbErr } = await supabaseClient.from('products').select('id').limit(1);
+      dbQueryStatus = dbErr ? `query_error: ${dbErr.message}` : 'connected';
     } else {
       supabaseStatus = 'not_configured';
     }
@@ -175,16 +180,17 @@ app.get('/health', async (req, res) => {
     supabaseStatus = `unreachable (${e.code || e.message})`;
   }
 
-  const isHealthy = supabaseStatus === 'reachable';
+  const isHealthy = supabaseStatus === 'reachable' && !dbQueryStatus.startsWith('query_error');
   res.status(isHealthy ? 200 : 503).json({ 
     status: isHealthy ? 'ok' : 'degraded', 
     time: new Date(),
     node: process.version,
     env: process.env.NODE_ENV,
     supabase: supabaseStatus,
+    database_query: dbQueryStatus,
     message: isHealthy
       ? 'All systems operational'
-      : '⚠️  Cannot reach Supabase. Check your project URL in .env or resume the project at supabase.com'
+      : '⚠️  Cannot reach Supabase or database query failed. Check your project URL and service role key.'
   });
 });
 
