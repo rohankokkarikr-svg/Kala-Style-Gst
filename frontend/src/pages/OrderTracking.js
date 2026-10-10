@@ -241,7 +241,7 @@ export default function OrderTracking() {
   // 1. Broad DOM & Multi-device Sync Listener
   useEffect(() => {
     const handler = (e) => {
-      const payload = e.detail?.payload || {};
+      const payload = e.detail?.payload || e.detail || {};
       const targetId = payload.id || payload.orderId || payload.order_id || payload.order_number;
       if (
         !targetId ||

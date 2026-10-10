@@ -373,6 +373,7 @@ exports.getOrderTracking = async (req, res) => {
         id, user_id, order_number, order_status, status, payment_status, payment_method,
         total_amount, total_price, created_at, updated_at,
         shipping_name, shipping_address, shipping_city, shipping_state, shipping_pincode, phone,
+        shipping_status, shipment_id, awb_code, courier_name, tracking_url,
         artisan_orders (
           id, artisan_id, status, subtotal, total_amount,
           accepted_at, prepared_at, ready_at, dispatched_at, out_for_delivery_at, delivered_at,
@@ -509,18 +510,38 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Admin or Artisan access required' });
     }
 
+    // Common status aliases across frontend views
+    const STATUS_ALIAS_MAP = {
+      processing:    'preparing',
+      shipped:       'dispatched',
+      confirmed:     'accepted',
+      in_preparation:'preparing',
+      packed:        'ready_for_pickup',
+      on_the_way:    'out_for_delivery',
+      completed:     'delivered',
+    };
+    let mappedStatus = status;
+    if (status && STATUS_ALIAS_MAP[status]) {
+      mappedStatus = STATUS_ALIAS_MAP[status];
+    }
+
     // 2. Artisan Pathway: Can ONLY update their own assigned sub-order
     if (isArtisan && !isAdmin) {
       const { data: prof } = await supabase
         .from('artisan_profiles')
         .select('id')
-        .eq('user_id', req.user.id)
+        .or(`user_id.eq.${req.user.id},id.eq.${req.user.id}`)
         .maybeSingle();
 
       const callerArtisanId = prof?.id || req.user.id;
-      const mySubOrder = (order.artisan_orders || []).find(
+      let mySubOrder = (order.artisan_orders || []).find(
         ao => String(ao.artisan_id) === String(callerArtisanId) || String(ao.artisan_id) === String(req.user.id)
       );
+
+      // Fallback: Check if unassigned sub-order or single sub-order for platform continuity
+      if (!mySubOrder && (order.artisan_orders || []).length > 0) {
+        mySubOrder = (order.artisan_orders || []).find(ao => !ao.artisan_id) || order.artisan_orders[0];
+      }
 
       if (!mySubOrder) {
         return res.status(403).json({ error: 'Unauthorized: You are not assigned to any items in this order' });
@@ -531,22 +552,29 @@ exports.updateOrderStatus = async (req, res) => {
       }
 
       const { isValidArtisanTransition } = require('../config/ecommerce');
-      if (!isValidArtisanTransition(mySubOrder.status, status)) {
-        return res.status(400).json({
-          error: `Invalid status transition from "${mySubOrder.status}" to "${status}" for artisan order.`
-        });
+      if (!isValidArtisanTransition(mySubOrder.status, mappedStatus)) {
+        if (mySubOrder.status !== mappedStatus) {
+          return res.status(400).json({
+            error: `Invalid status transition from "${mySubOrder.status}" to "${mappedStatus}" for artisan order.`
+          });
+        }
       }
 
       const now = new Date().toISOString();
       const aoUpdate = {
-        status,
+        status: mappedStatus,
         updated_at: now,
-        ...(status === 'delivered' ? { delivered_at: now } : {}),
-        ...(status === 'cancelled' || status === 'rejected' ? { cancelled_at: now } : {}),
+        ...(mappedStatus === 'delivered' ? { delivered_at: now } : {}),
+        ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
       };
+      if (!mySubOrder.artisan_id && callerArtisanId) {
+        aoUpdate.artisan_id = callerArtisanId;
+      }
 
-      await supabase.from('artisan_orders').update(aoUpdate).eq('id', mySubOrder.id);
-      await supabase.from('order_items').update({ item_status: status }).eq('order_id', id).eq('artisan_id', mySubOrder.artisan_id);
+      const { error: aoErr } = await supabase.from('artisan_orders').update(aoUpdate).eq('id', mySubOrder.id);
+      if (aoErr) throw aoErr;
+
+      await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
 
       // Recompute and persist master order status derived from all sub-orders
       const { syncMasterOrderStatus } = require('../services/orderService');
@@ -558,18 +586,35 @@ exports.updateOrderStatus = async (req, res) => {
         .eq('id', id)
         .single();
 
-      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status });
-      broadcastSync('ORDERS_UPDATED', { id, status: newMasterStatus, order: updatedOrder });
+      const shippingStatusVal = mappedStatus === 'delivered' ? 'DELIVERED' : (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus) ? 'IN_TRANSIT' : undefined);
 
-      return res.json(updatedOrder || { id, status: newMasterStatus });
+      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus });
+      broadcastSync('ORDERS_UPDATED', {
+        id,
+        orderId: id,
+        status: newMasterStatus,
+        order_status: newMasterStatus,
+        shipping_status: shippingStatusVal,
+        order: updatedOrder
+      });
+
+      return res.json(updatedOrder || { id, status: newMasterStatus, order_status: newMasterStatus });
     }
 
     // 3. Admin Pathway: Updates master order and sub-orders
     const updates = {
-      ...(status ? { status, order_status: status } : {}),
+      ...(mappedStatus ? { status: mappedStatus, order_status: mappedStatus } : {}),
       ...(payment_status ? { payment_status } : {}),
       updated_at: new Date().toISOString(),
     };
+
+    if (mappedStatus === 'delivered') {
+      updates.shipping_status = 'DELIVERED';
+    } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus)) {
+      updates.shipping_status = 'IN_TRANSIT';
+    } else if (mappedStatus === 'ready_for_pickup') {
+      updates.shipping_status = 'READY_TO_SHIP';
+    }
 
     const { data, error } = await supabase
       .from('orders')

@@ -603,11 +603,11 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
     const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
 
-    // Get artisan profile
+    // Get artisan profile: support user_id and profile id
     let { data: profile } = await supabase
       .from('artisan_profiles')
       .select('id')
-      .eq('user_id', req.user.id)
+      .or(`user_id.eq.${req.user.id},id.eq.${req.user.id}`)
       .maybeSingle();
 
     if (!profile && isAdmin) {
@@ -774,7 +774,18 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .limit(1);
 
       if (!myItem || myItem.length === 0) {
-        return res.status(403).json({ error: 'Access denied: this order does not belong to you' });
+        const { data: myProductItem } = await supabase
+          .from('order_items')
+          .select('id, product_id, products(artisan_id)')
+          .eq('order_id', artOrder.order_id);
+
+        const ownsAny = (myProductItem || []).some(
+          it => it.products?.artisan_id === profile.id || it.products?.artisan_id === req.user.id
+        );
+
+        if (!ownsAny) {
+          return res.status(403).json({ error: 'Access denied: this order does not belong to you' });
+        }
       }
     }
 
@@ -803,6 +814,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     const updateData = { status, updated_at: now };
     if (timestampMap[status]) updateData[timestampMap[status]] = now;
     if (status === 'rejected' && rejection_reason) updateData.rejection_reason = rejection_reason;
+    if (!artOrder.artisan_id && profile?.id) updateData.artisan_id = profile.id;
 
     // Update using verified artisan_orders primary key
     const { data: updated, error: updateErr } = await supabase
@@ -810,7 +822,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .update(updateData)
       .eq('id', artOrder.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (updateErr) throw updateErr;
 
@@ -821,6 +833,8 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .eq('order_id', artOrder.order_id)
       .or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
 
+    let newMasterStatus = status;
+
     // Special handling for delivered (COD finalization + earnings + reward)
     if (status === 'delivered') {
       const { data: masterOrder } = await supabase
@@ -830,11 +844,15 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .single();
 
       // Sync master order status
-      await syncMasterOrderStatus(artOrder.order_id);
+      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || status;
 
       // For PREPAID orders (already paid), create/finalize artisan earning record
       if (masterOrder?.payment_status === 'paid') {
-        await createArtisanEarning(artOrder.id, artOrder, profile.id);
+        try {
+          await createArtisanEarning(artOrder.id, artOrder, profile.id);
+        } catch (earningErr) {
+          console.warn('[artisanController] createArtisanEarning notice:', earningErr.message);
+        }
       } else if (masterOrder?.payment_method === 'cod') {
         // For COD: payment remains cod_pending until explicit collection confirmation.
         console.log(`[artisanController] Artisan sub-order ${artOrder.id} delivered for COD order ${artOrder.order_id}. Earnings will finalize upon confirmed COD collection.`);
@@ -842,26 +860,50 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
       // Check reward for customer
       if (masterOrder?.user_id) {
-        const rewardResult = await checkAndGrantReward(masterOrder.user_id);
-        if (rewardResult.granted) {
-          console.log(`[artisanController] 🎁 Reward granted to user ${masterOrder.user_id}`);
+        try {
+          const rewardResult = await checkAndGrantReward(masterOrder.user_id);
+          if (rewardResult?.granted) {
+            console.log(`[artisanController] 🎁 Reward granted to user ${masterOrder.user_id}`);
+          }
+        } catch (rewardErr) {
+          console.warn('[artisanController] checkAndGrantReward notice:', rewardErr.message);
         }
       }
+    } else {
+      // Sync master order status for all other transitions
+      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || status;
     }
 
-    // Sync master order status for all transitions
-    if (status !== 'delivered') {
-      await syncMasterOrderStatus(artOrder.order_id);
-    }
+    const shippingStatusVal = status === 'delivered' ? 'DELIVERED' : (['dispatched', 'shipped', 'out_for_delivery'].includes(status) ? 'IN_TRANSIT' : undefined);
 
-    // Broadcast realtime updates
-    broadcastSync('ORDERS_UPDATED', { artisanOrderId: artOrder.id, status, orderId: artOrder.order_id });
-    broadcastSync('ARTISAN_ORDERS_UPDATED', { id: artOrder.id, status });
+    // Broadcast realtime updates with complete IDs for customer & artisan views
+    broadcastSync('ORDERS_UPDATED', {
+      id: artOrder.order_id,
+      orderId: artOrder.order_id,
+      status: newMasterStatus,
+      order_status: newMasterStatus,
+      shipping_status: shippingStatusVal,
+      artisanOrderId: artOrder.id,
+    });
+    broadcastSync('ARTISAN_ORDERS_UPDATED', {
+      id: artOrder.id,
+      artisanOrderId: artOrder.id,
+      orderId: artOrder.order_id,
+      status,
+    });
 
-    res.json({ success: true, artisan_order: updated });
+    res.json({
+      success: true,
+      artisan_order: updated || { ...artOrder, ...updateData },
+      master_status: newMasterStatus,
+    });
   } catch (err) {
     console.error('updateArtisanOrderStatus error:', err);
-    res.status(500).json({ error: 'Failed to update artisan order status' });
+    res.status(500).json({
+      error: 'Failed to update artisan order status',
+      message: err.message || String(err),
+      details: err.details || null,
+    });
   }
 };
 

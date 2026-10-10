@@ -458,22 +458,46 @@ exports.createMasterOrder = async ({
  */
 exports.syncMasterOrderStatus = async (orderId) => {
   try {
-    const { data: artisanOrders } = await supabase
+    const { data: artisanOrders, error: fetchErr } = await supabase
       .from('artisan_orders')
       .select('status')
       .eq('order_id', orderId);
+
+    if (fetchErr) {
+      console.error('[orderService] syncMasterOrderStatus fetch error:', fetchErr.message);
+      return;
+    }
 
     if (!artisanOrders || artisanOrders.length === 0) return;
 
     const statuses = artisanOrders.map(ao => ao.status);
     const newStatus = deriveMasterStatus(statuses);
 
-    await supabase
+    const updatePayload = {
+      order_status: newStatus,
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    };
+
+    if (newStatus === 'delivered') {
+      updatePayload.shipping_status = 'DELIVERED';
+    } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(newStatus)) {
+      updatePayload.shipping_status = 'IN_TRANSIT';
+    } else if (newStatus === 'ready_for_pickup') {
+      updatePayload.shipping_status = 'READY_TO_SHIP';
+    }
+
+    const { error: updateErr } = await supabase
       .from('orders')
-      .update({ order_status: newStatus, status: newStatus, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq('id', orderId);
 
-    console.log(`[orderService] Master order ${orderId} status → ${newStatus}`);
+    if (updateErr) {
+      console.error('[orderService] syncMasterOrderStatus update error:', updateErr.message);
+    } else {
+      console.log(`[orderService] Master order ${orderId} status → ${newStatus} (shipping_status: ${updatePayload.shipping_status || 'unchanged'})`);
+    }
+
     return newStatus;
   } catch (err) {
     console.error('[orderService] syncMasterOrderStatus error:', err.message);

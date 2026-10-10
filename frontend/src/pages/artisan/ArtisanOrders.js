@@ -136,6 +136,7 @@ export default function ArtisanOrders() {
   };
 
   // Handle artisan sub-order status machine transition
+  // Handle artisan sub-order status machine transition
   const handleArtisanSubOrderStatus = async (artisanOrderId, newStatus, orderId) => {
     if (!artisanOrderId || !newStatus) return;
     setUpdatingId(artisanOrderId);
@@ -151,10 +152,26 @@ export default function ArtisanOrders() {
       }
       toast.success(`✅ Status updated to "${newStatus}"!`);
       // Optimistically update
-      setOrders(prev => prev.map(ao => ao.id === artisanOrderId ? { ...ao, status: newStatus } : ao));
-      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', { detail: { artisanOrderId, status: newStatus } }));
+      setOrders(prev => prev.map(ao => ao.id === artisanOrderId ? { ...ao, status: newStatus, item_status: newStatus } : ao));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
+        detail: {
+          id: artisanOrderId,
+          artisanOrderId,
+          orderId,
+          status: newStatus,
+          payload: { id: artisanOrderId, artisanOrderId, orderId, status: newStatus }
+        }
+      }));
+      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
+        detail: {
+          id: orderId,
+          orderId,
+          status: newStatus,
+          payload: { id: orderId, orderId, status: newStatus }
+        }
+      }));
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to update status');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update status');
       fetchOrders();
     } finally {
       setUpdatingId(null);
@@ -175,8 +192,8 @@ export default function ArtisanOrders() {
           ...item,
           status: newStatus,
           item_status: newStatus,
-          orders: item.orders ? { ...item.orders, status: newStatus } : undefined,
-          order: item.order ? { ...item.order, status: newStatus } : undefined
+          orders: item.orders ? { ...item.orders, status: newStatus, order_status: newStatus } : undefined,
+          order: item.order ? { ...item.order, status: newStatus, order_status: newStatus } : undefined
         };
       }
       return item;
@@ -208,18 +225,35 @@ export default function ArtisanOrders() {
             ...item,
             status: newStatus,
             item_status: newStatus,
-            orders: item.orders ? { ...item.orders, status: newStatus } : undefined,
-            order: item.order ? { ...item.order, status: newStatus } : undefined
+            orders: item.orders ? { ...item.orders, status: newStatus, order_status: newStatus } : undefined,
+            order: item.order ? { ...item.order, status: newStatus, order_status: newStatus } : undefined
           };
         }
         return item;
       }));
 
-      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: { orderId, status: newStatus, artisanOrderId } }));
-      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', { detail: { artisanOrderId, status: newStatus } }));
+      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
+        detail: {
+          id: orderId,
+          orderId,
+          status: newStatus,
+          order_status: newStatus,
+          artisanOrderId,
+          payload: { id: orderId, orderId, status: newStatus, order_status: newStatus, artisanOrderId }
+        }
+      }));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
+        detail: {
+          id: artisanOrderId,
+          artisanOrderId,
+          orderId,
+          status: newStatus,
+          payload: { id: artisanOrderId, artisanOrderId, orderId, status: newStatus }
+        }
+      }));
     } catch (err) {
       console.error('Failed to update order status:', err);
-      toast.error(err.response?.data?.error || 'Failed to update order status');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update order status');
       fetchOrders();
     } finally {
       setUpdatingId(null);
@@ -245,8 +279,6 @@ export default function ArtisanOrders() {
     on_the_way: 'shipped',
     completed: 'delivered',
     partially_delivered: 'delivered',
-    confirmed: 'pending',
-    order_received: 'pending',
   };
 
   const normalizeArtisanStatus = (st) => {

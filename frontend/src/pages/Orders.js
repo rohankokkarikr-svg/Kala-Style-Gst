@@ -66,12 +66,15 @@ export default function Orders() {
   // 1. Real-time listener: auto-update order status when Admin or Artisan updates status
   useEffect(() => {
     const handleSync = (e) => {
-      const payload = e.detail?.payload;
-      if (payload?.id && payload?.status) {
-        setOrders(prev => prev.map(o => o.id === payload.id ? {
+      const payload = e.detail?.payload || e.detail;
+      const targetId = payload?.id || payload?.orderId || payload?.order_id;
+      if (targetId && (payload?.status || payload?.order_status)) {
+        const nextStatus = payload.order_status || payload.status;
+        setOrders(prev => prev.map(o => (o.id === targetId || o.order_number === targetId) ? {
           ...o,
-          status: payload.status,
-          order_status: payload.status,
+          status: nextStatus,
+          order_status: nextStatus,
+          ...(payload.shipping_status ? { shipping_status: payload.shipping_status } : {}),
           ...(payload.payment_status ? { payment_status: payload.payment_status } : {})
         } : o));
       } else {
@@ -233,9 +236,16 @@ export default function Orders() {
                     </p>
                   )}
                 </div>
-                <span className={`badge border px-3 py-1 uppercase tracking-wider text-xs font-bold ${getStatusColor(order.status)}`}>
-                  {renderStatusText(order.status)}
-                </span>
+                {(() => {
+                  const effectiveStatus = (order.shipping_status === 'DELIVERED' || order.order_status === 'delivered' || order.status === 'delivered')
+                    ? 'delivered'
+                    : (order.order_status || order.status || 'pending');
+                  return (
+                    <span className={`badge border px-3 py-1 uppercase tracking-wider text-xs font-bold ${getStatusColor(effectiveStatus)}`}>
+                      {renderStatusText(effectiveStatus)}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
 
