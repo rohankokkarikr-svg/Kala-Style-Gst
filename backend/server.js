@@ -171,8 +171,15 @@ app.get('/health', async (req, res) => {
       supabaseStatus = 'reachable';
 
       const supabaseClient = require('./config/supabase');
-      const { data: testRows, error: dbErr } = await supabaseClient.from('products').select('id').limit(1);
-      dbQueryStatus = dbErr ? `query_error: ${dbErr.message}` : 'connected';
+      const { error: dbErr } = await supabaseClient.from('products').select('id').limit(1);
+      const { error: ordErr } = await supabaseClient.from('orders').select('id').limit(1);
+      if (dbErr) {
+        dbQueryStatus = `products_query_error: ${dbErr.message}`;
+      } else if (ordErr) {
+        dbQueryStatus = `orders_query_error: ${ordErr.message}`;
+      } else {
+        dbQueryStatus = 'connected';
+      }
     } else {
       supabaseStatus = 'not_configured';
     }
