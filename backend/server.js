@@ -89,12 +89,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'x-auth-intent'],
 }));
 
-// Permissive Helmet configuration (no CSP restrictions)
+// Re-enable protective security headers with clickjacking and sniffing guards
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: false, // REST API serving JSON, avoid blocking Razorpay popup or client assets
   crossOriginResourcePolicy: false,
   crossOriginEmbedderPolicy: false,
-  frameguard: false,
+  frameguard: { action: 'sameorigin' }, // Protects against clickjacking attacks
+  noSniff: true,
+  xssFilter: true,
 }));
 app.use(compression());
 app.use(morgan('dev'));

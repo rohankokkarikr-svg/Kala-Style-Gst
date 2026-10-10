@@ -55,16 +55,31 @@ exports.calculateOrderTotals = async (items) => {
   for (const item of items) {
     const prod = productMap[item.product_id];
     if (!prod) return { error: `Product not found: ${item.product_id}` };
-    const hasStock = prod.stock_quantity !== null ? Number(prod.stock_quantity) > 0 : prod.is_in_stock !== false;
-    if (!hasStock) {
-      return { error: `"${prod.name}" is out of stock` };
+
+    // Strictly verify product is approved and visible
+    if (prod.status !== 'approved' || prod.is_hidden) {
+      return { error: `"${prod.name}" is not currently available for purchase.` };
     }
-    const qty = Math.max(1, parseInt(item.quantity) || 1);
-    if (prod.stock_quantity !== null && qty > prod.stock_quantity) {
-      return { error: `Insufficient stock for "${prod.name}". Only ${prod.stock_quantity} left.` };
+
+    const rawQty = item.quantity;
+    const qty = parseInt(rawQty, 10);
+    if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(rawQty))) {
+      return { error: `Invalid quantity for "${prod.name}". Quantity must be a positive integer.` };
+    }
+    if (qty > 100) {
+      return { error: `Quantity for "${prod.name}" exceeds maximum allowed order limit of 100.` };
+    }
+
+    const hasStock = prod.stock_quantity !== null ? Number(prod.stock_quantity) >= qty : prod.is_in_stock !== false;
+    if (!hasStock || (prod.stock_quantity !== null && Number(prod.stock_quantity) < qty)) {
+      return { error: `Insufficient stock for "${prod.name}". Only ${prod.stock_quantity ?? 0} left.` };
     }
 
     const unitPrice = parseFloat(prod.price);
+    if (isNaN(unitPrice) || unitPrice <= 0 || !isFinite(unitPrice)) {
+      return { error: `Invalid price configuration for "${prod.name}".` };
+    }
+
     const totalPrice = unitPrice * qty;
     subtotal += totalPrice;
 
@@ -321,15 +336,42 @@ exports.createMasterOrder = async ({
   paymentRecord = payment;
 
   // 10. Deduct inventory (strictly non-negative atomic row-level locked deduction)
+  const successfullyDeducted = [];
+  let deductionFailed = false;
+  let failedProductName = '';
+
   for (const item of enrichedItems) {
     try {
       const deducted = await exports.atomicDeductStock(item.product_id, item.quantity);
       if (!deducted) {
-        console.warn(`[orderService] Stock deduction notice: product ${item.product_id} may have limited inventory.`);
+        deductionFailed = true;
+        failedProductName = item.product_name_snapshot;
+        break;
       }
+      successfullyDeducted.push({ product_id: item.product_id, quantity: item.quantity });
     } catch (err) {
-      console.error(`[orderService] Stock update error for product ${item.product_id}:`, err.message);
+      deductionFailed = true;
+      failedProductName = item.product_name_snapshot;
+      break;
     }
+  }
+
+  // If inventory reservation failed, fail the order and undo prior writes!
+  if (deductionFailed) {
+    // 1. Compensate and restore any inventory items deducted before the failure
+    for (const d of successfullyDeducted) {
+      await exports.atomicRestoreStock(d.product_id, d.quantity);
+    }
+
+    // 2. Roll back created database records
+    if (paymentRecord?.id) {
+      await supabase.from('payments').delete().eq('id', paymentRecord.id);
+    }
+    await supabase.from('artisan_orders').delete().eq('order_id', order.id);
+    await supabase.from('order_items').delete().eq('order_id', order.id);
+    await supabase.from('orders').delete().eq('id', order.id);
+
+    return { error: `Insufficient stock for "${failedProductName}". Order could not be placed.` };
   }
 
   // 11. Record in sales table

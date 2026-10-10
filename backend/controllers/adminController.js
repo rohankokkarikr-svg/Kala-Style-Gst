@@ -415,8 +415,11 @@ exports.approveProduct = async (req, res) => {
       .eq('id', id)
       .maybeSingle();
 
-    const currentStock = existing?.stock_quantity != null ? Number(existing.stock_quantity) : 10;
-    const finalStock = currentStock > 0 ? currentStock : 10;
+    // CRITICAL FIX: Approval MUST NEVER invent stock!
+    // If stock is zero, product remains unavailable until artisan explicitly adds stock.
+    const currentStock = existing?.stock_quantity != null ? Number(existing.stock_quantity) : 0;
+    const finalStock = Math.max(0, currentStock);
+    const finalInStock = finalStock > 0;
 
     const { data, error } = await supabase
       .from('products')
@@ -424,7 +427,7 @@ exports.approveProduct = async (req, res) => {
         status: 'approved',
         rejection_reason: null,
         is_hidden: false,
-        is_in_stock: true,
+        is_in_stock: finalInStock,
         stock_quantity: finalStock,
       })
       .eq('id', id)

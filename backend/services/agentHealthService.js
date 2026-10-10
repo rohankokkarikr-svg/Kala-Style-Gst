@@ -87,8 +87,8 @@ async function checkAIService() {
 async function checkPaymentService() {
   const startMs = Date.now();
   try {
-    const keyId = (process.env.RAZORPAY_KEY_ID || 'rzp_live_TgKmH9jZyyQY6M').trim();
-    const keySecret = (process.env.RAZORPAY_KEY_SECRET || '2KT4MT3WvfuaX3eeYpUkUlkI').trim();
+    const keyId = (process.env.RAZORPAY_KEY_ID || '').trim();
+    const keySecret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
 
     if (!keyId || keyId.startsWith('your_') || !keySecret || keySecret.startsWith('your_')) {
       return {
@@ -125,9 +125,9 @@ async function checkPaymentService() {
 async function checkStorageService() {
   const startMs = Date.now();
   try {
-    const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || 'dcmmxmikz').trim();
-    const apiKey = (process.env.CLOUDINARY_API_KEY || '149393542854794').trim();
-    let apiSecret = (process.env.CLOUDINARY_API_SECRET || '_CBARObUZS9wuKFB3zi1Kuzb58k').trim();
+    const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+    const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+    let apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
     apiSecret = apiSecret.replace(/^["']|["']$/g, '');
 
     if (!cloudName || cloudName.startsWith('your_') || !apiKey || !apiSecret) {

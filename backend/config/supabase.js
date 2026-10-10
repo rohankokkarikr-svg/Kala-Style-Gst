@@ -8,11 +8,13 @@ if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
 
-const supabaseUrl = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg').trim();
+const supabaseUrl = (process.env.SUPABASE_URL || (process.env.NODE_ENV === 'test' ? 'https://test-placeholder.supabase.co' : '')).trim();
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_KEY || (process.env.NODE_ENV === 'test' ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_test_key' : '')).trim();
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-  console.warn('⚠️ Notice: Using built-in Supabase credentials fallback');
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('CRITICAL CONFIGURATION ERROR: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables.');
+  }
 }
 
 /**

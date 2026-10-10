@@ -1,9 +1,14 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SEED_MUTATION !== 'true') {
+  console.error('❌ SAFETY REFUSAL: Seed script cannot run without ALLOW_SEED_MUTATION=true and must never run in production.');
+  process.exit(1);
+}
+
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 
-// ─── Config ──────────────────────────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,

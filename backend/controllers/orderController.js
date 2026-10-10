@@ -84,9 +84,9 @@ exports.createOrder = async (req, res) => {
 
     const cleanPhone = normalizePhone(phone);
     const cleanEmail = normalizeEmail(shipping_email || email || req.user?.email || '');
-    const isEmailVerified = req.body.email_otp_verified === true;
 
     // Verify Order Confirmation OTP (Strict security for both COD and Online)
+    // Server-authoritative: NEVER trust client-supplied email_otp_verified flag!
     const submittedOtp = otp ? String(otp).trim() : null;
     const otpEntry = (cleanEmail && orderOtpMap.get(cleanEmail)) || (cleanPhone && orderOtpMap.get(cleanPhone));
 
@@ -96,17 +96,16 @@ exports.createOrder = async (req, res) => {
         if (cleanPhone) orderOtpMap.delete(cleanPhone);
         return res.status(400).json({ error: 'Order OTP has expired. Please request a new code.' });
       }
-      if (submittedOtp && otpEntry.otp === submittedOtp) {
-        // OTP matched directly
-        if (cleanEmail) orderOtpMap.delete(cleanEmail);
-        if (cleanPhone) orderOtpMap.delete(cleanPhone);
-      } else if (otpEntry.verified || isEmailVerified) {
-        // Pre-verified via verifyOrderOtp or Supabase Email OTP
-        if (cleanEmail) orderOtpMap.delete(cleanEmail);
-        if (cleanPhone) orderOtpMap.delete(cleanPhone);
-      } else if (submittedOtp && otpEntry.otp !== submittedOtp && !isEmailVerified) {
+      const isDirectMatch = submittedOtp && otpEntry.otp === submittedOtp;
+      const isPreVerified = otpEntry.verified === true;
+
+      if (!isDirectMatch && !isPreVerified) {
         return res.status(400).json({ error: 'Invalid OTP code. Please enter the correct code to confirm your order.' });
       }
+
+      // One-time consumption: invalidate immediately upon order confirmation
+      if (cleanEmail) orderOtpMap.delete(cleanEmail);
+      if (cleanPhone) orderOtpMap.delete(cleanPhone);
     }
 
     const method = (payment_method || 'cod').toLowerCase();
@@ -487,6 +486,85 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(400).json({ error: 'Status or payment_status is required' });
     }
 
+    // Security Gate: Ordinary status requests may NEVER forge payment_status = 'paid'
+    if (payment_status && ['paid', 'completed'].includes(String(payment_status).toLowerCase())) {
+      return res.status(403).json({ error: 'Payment status cannot be marked as paid through this endpoint. Use verified payment capture or confirm-cod.' });
+    }
+
+    // 1. Fetch order and its artisan sub-orders
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .select('*, artisan_orders (*), users (id, name, email, phone)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (orderErr || !order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
+    const isArtisan = (req.user?.role || '').toLowerCase() === 'artisan';
+
+    if (!isAdmin && !isArtisan) {
+      return res.status(403).json({ error: 'Forbidden: Admin or Artisan access required' });
+    }
+
+    // 2. Artisan Pathway: Can ONLY update their own assigned sub-order
+    if (isArtisan && !isAdmin) {
+      const { data: prof } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      const callerArtisanId = prof?.id || req.user.id;
+      const mySubOrder = (order.artisan_orders || []).find(
+        ao => String(ao.artisan_id) === String(callerArtisanId) || String(ao.artisan_id) === String(req.user.id)
+      );
+
+      if (!mySubOrder) {
+        return res.status(403).json({ error: 'Unauthorized: You are not assigned to any items in this order' });
+      }
+
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required for sub-order update' });
+      }
+
+      const { isValidArtisanTransition } = require('../config/ecommerce');
+      if (!isValidArtisanTransition(mySubOrder.status, status)) {
+        return res.status(400).json({
+          error: `Invalid status transition from "${mySubOrder.status}" to "${status}" for artisan order.`
+        });
+      }
+
+      const now = new Date().toISOString();
+      const aoUpdate = {
+        status,
+        updated_at: now,
+        ...(status === 'delivered' ? { delivered_at: now } : {}),
+        ...(status === 'cancelled' || status === 'rejected' ? { cancelled_at: now } : {}),
+      };
+
+      await supabase.from('artisan_orders').update(aoUpdate).eq('id', mySubOrder.id);
+      await supabase.from('order_items').update({ item_status: status }).eq('order_id', id).eq('artisan_id', mySubOrder.artisan_id);
+
+      // Recompute and persist master order status derived from all sub-orders
+      const { syncMasterOrderStatus } = require('../services/orderService');
+      const newMasterStatus = await syncMasterOrderStatus(id);
+
+      const { data: updatedOrder } = await supabase
+        .from('orders')
+        .select('*, users (id, name, email, phone)')
+        .eq('id', id)
+        .single();
+
+      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status });
+      broadcastSync('ORDERS_UPDATED', { id, status: newMasterStatus, order: updatedOrder });
+
+      return res.json(updatedOrder || { id, status: newMasterStatus });
+    }
+
+    // 3. Admin Pathway: Updates master order and sub-orders
     const updates = {
       ...(status ? { status, order_status: status } : {}),
       ...(payment_status ? { payment_status } : {}),
