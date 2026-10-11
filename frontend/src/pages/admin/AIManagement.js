@@ -624,7 +624,7 @@ export default function AIManagement() {
                 <HiLightningBolt className="w-5 h-5 text-gold-400" /> Operational Directives
               </h3>
               <p className="text-xs text-gray-400">
-                The AI executes real database modifications and Twilio WhatsApp dispatches through authorized tools.
+                The AI executes real database modifications and automated notifications through authorized tools.
               </p>
               <div className="space-y-2">
                 {QUICK_PROMPTS.map((qp, idx) => (

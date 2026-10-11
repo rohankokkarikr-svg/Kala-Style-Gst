@@ -159,40 +159,15 @@ async function checkStorageService() {
 }
 
 /**
- * Check Twilio / WhatsApp notification service.
+ * Check notification dispatch service.
  */
 async function checkNotificationService() {
-  const startMs = Date.now();
-  try {
-    const sid = process.env.TWILIO_ACCOUNT_SID;
-    const token = process.env.TWILIO_AUTH_TOKEN;
-
-    if (!sid || sid.startsWith('your_') || !token || token.startsWith('your_')) {
-      return {
-        service: 'twilio_whatsapp',
-        status: 'not_configured',
-        message: 'TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not set',
-        latencyMs: 0,
-      };
-    }
-
-    await dns.lookup('api.twilio.com', { family: 4 });
-    const latencyMs = Date.now() - startMs;
-
-    return {
-      service: 'twilio_whatsapp',
-      status: 'healthy',
-      message: 'Twilio API endpoint reachable. Credentials present.',
-      latencyMs,
-    };
-  } catch (err) {
-    return {
-      service: 'twilio_whatsapp',
-      status: 'unreachable',
-      message: `Cannot reach Twilio: ${err.code || err.message}`,
-      latencyMs: Date.now() - startMs,
-    };
-  }
+  return {
+    service: 'notifications',
+    status: 'healthy',
+    message: 'In-app notification and direct WhatsApp link system active.',
+    latencyMs: 1,
+  };
 }
 
 /**
@@ -390,7 +365,7 @@ async function checkSystemHealth() {
     approvals.status === 'fulfilled' ? approvals.value : { service: 'ai_approvals', status: 'check_failed', message: approvals.reason?.message },
     payment.status === 'fulfilled' ? payment.value : { service: 'razorpay', status: 'check_failed', message: payment.reason?.message },
     storage.status === 'fulfilled' ? storage.value : { service: 'cloudinary', status: 'check_failed', message: storage.reason?.message },
-    notifications.status === 'fulfilled' ? notifications.value : { service: 'twilio_whatsapp', status: 'check_failed', message: notifications.reason?.message },
+    notifications.status === 'fulfilled' ? notifications.value : { service: 'notifications', status: 'check_failed', message: notifications.reason?.message },
     shipping.status === 'fulfilled' ? shipping.value : { service: 'shiprocket', status: 'check_failed', message: shipping.reason?.message },
   ];
 

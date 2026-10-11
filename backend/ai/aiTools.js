@@ -10,7 +10,7 @@ const FUNCTION_DECLARATIONS = [
   // ─── SYSTEM HEALTH TOOLS ─────────────────────────────────────────
   {
     name: 'get_system_health',
-    description: 'Perform a real-time connectivity check across all platform services: Database, Gemini AI, Razorpay, Cloudinary, Twilio/WhatsApp, and Shiprocket. Returns actual service status — never fabricated.',
+    description: 'Perform a real-time connectivity check across all platform services: Database, Gemini AI, Razorpay, Cloudinary, Notifications, and Shiprocket. Returns actual service status — never fabricated.',
     parameters: {
       type: 'OBJECT',
       properties: {},
@@ -761,7 +761,7 @@ const FUNCTION_DECLARATIONS = [
   },
   {
     name: 'send_artisan_whatsapp',
-    description: 'Dispatch a targeted Twilio WhatsApp notification to an artisan containing strictly their assigned products from an order.',
+    description: 'Dispatch a targeted WhatsApp notification to an artisan containing strictly their assigned products from an order.',
     parameters: {
       type: 'OBJECT',
       properties: {

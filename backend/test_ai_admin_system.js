@@ -50,7 +50,7 @@ async function runTests() {
   assert(connStatus.status === 'online', 'Google Gemini client online and operational', connStatus.status);
   assert(typeof getModel() === 'string' && getModel().length > 0, 'Model identifier configured correctly');
   assert(!JSON.stringify(connStatus).includes(process.env.SUPABASE_SERVICE_KEY || 'MISSING'), 'Supabase service key NOT leaked in status');
-  assert(!JSON.stringify(connStatus).includes(process.env.TWILIO_AUTH_TOKEN || 'MISSING'), 'Twilio Auth Token NOT leaked in status');
+  assert(!JSON.stringify(connStatus).includes(process.env.JWT_SECRET || 'MISSING'), 'JWT Secret NOT leaked in status');
 
   // ── TEST 2: Strict Structured Tool Schemas ───────────────────────
   console.log('\n--- TEST 2: Strict Structured Tool Definitions ---');

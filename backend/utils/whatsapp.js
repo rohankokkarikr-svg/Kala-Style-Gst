@@ -1,5 +1,3 @@
-const twilio = require('twilio');
-
 // Helper to extract effective payment method
 const getEffectivePaymentMethod = (order) => {
   let pm = order.payment_method || '';
@@ -43,76 +41,23 @@ const formatPhone = (phoneStr) => {
   return '+' + digits;
 };
 
-// Initialize Twilio client supporting both Auth Token and API Key configurations
-const getTwilioClient = () => {
-  let accountSid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
-  if (accountSid.startsWith('SAC')) {
-    accountSid = accountSid.slice(1);
-  }
-  const authToken = (process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_API_SECRET || '').trim();
-  const apiKeySid = (process.env.TWILIO_API_KEY_SID || (accountSid?.startsWith('SK') ? accountSid : null))?.trim();
-  const mainAccountSid = (process.env.TWILIO_MAIN_ACCOUNT_SID || (accountSid?.startsWith('AC') ? accountSid : null))?.trim();
-
-  if (!authToken || authToken.startsWith('your_')) {
-    return null;
-  }
-
-  try {
-    // Case 1: Using API Key (SK...) with Main Account SID (AC...)
-    if (apiKeySid && apiKeySid.startsWith('SK') && mainAccountSid && mainAccountSid.startsWith('AC')) {
-      return twilio(apiKeySid, authToken, { accountSid: mainAccountSid });
-    }
-
-    // Case 2: Standard Account SID (AC...) + Auth Token
-    if (accountSid && accountSid.startsWith('AC')) {
-      return twilio(accountSid, authToken);
-    }
-
-    return null;
-  } catch (err) {
-    console.error('❌ Twilio initialization error:', err.message);
-    return null;
-  }
-};
-
 /**
- * Send WhatsApp message to multiple recipients using Twilio API
+ * Send WhatsApp notification to recipients.
+ * Logs message and generates direct wa.me links without requiring external gateway APIs.
  */
 const sendWhatsappToRecipients = async (recipientPhones, messageBody) => {
-  console.log('\n--- [WHATSAPP OUTGOING MESSAGE (Twilio)] ---');
+  console.log('\n--- [WHATSAPP OUTGOING NOTIFICATION] ---');
   console.log(messageBody);
-  console.log('--------------------------------------------\n');
+  console.log('----------------------------------------\n');
 
-  const client = getTwilioClient();
-  const rawFrom = process.env.TWILIO_WHATSAPP_FROM || process.env.TWILIO_WHATSAPP_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+14155238886';
-  const fromNumber = rawFrom.startsWith('whatsapp:') ? rawFrom : `whatsapp:${rawFrom.replace(/\s+/g, '')}`;
+  const uniquePhones = Array.from(new Set((recipientPhones || []).map(formatPhone).filter(Boolean)));
+  const results = uniquePhones.map(phone => ({
+    phone,
+    success: true,
+    directLink: getWhatsappDirectLink(phone, messageBody),
+  }));
 
-  if (!client) {
-    console.warn('⚠️ Twilio credentials missing in .env! (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)');
-    console.warn('👉 Please configure TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in backend/.env');
-    return { success: false, reason: 'Twilio credentials missing' };
-  }
-
-  const results = [];
-  const uniquePhones = Array.from(new Set(recipientPhones.map(formatPhone).filter(Boolean)));
-
-  for (const phone of uniquePhones) {
-    const toFormatted = `whatsapp:${phone.replace(/\s+/g, '')}`;
-    try {
-      const message = await client.messages.create({
-        from: fromNumber,
-        to: toFormatted,
-        body: messageBody
-      });
-      console.log(`✅ WhatsApp message sent via Twilio to ${toFormatted}! (SID: ${message.sid})`);
-      results.push({ phone, to: toFormatted, success: true, sid: message.sid });
-    } catch (err) {
-      console.error(`❌ Twilio WhatsApp send failed for ${toFormatted}:`, err.message);
-      results.push({ phone, to: toFormatted, success: false, error: err.message });
-    }
-  }
-
-  return { success: results.some(r => r.success), results };
+  return { success: true, results };
 };
 
 // Generate direct wa.me fallback link

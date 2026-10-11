@@ -100,25 +100,25 @@ exports.sendArtisanOrderWhatsApp = async ({ artisanId, orderId, notificationType
     email: order.users?.email || '',
   };
 
-  // 5. Send WhatsApp notification via Twilio
-  let twilioResult;
+  // 5. Send WhatsApp notification
+  let dispatchResult;
   try {
     if (notificationType === 'NEW_ORDER' && order.payment_method === 'cod') {
-      twilioResult = await sendCODOrderNotification(artisanPhone, artisan.store_name, order, items, customer);
+      dispatchResult = await sendCODOrderNotification(artisanPhone, artisan.store_name, order, items, customer);
     } else if (notificationType === 'UTR_SUBMITTED') {
-      twilioResult = await sendArtisanUtrSubmittedNotification(artisanPhone, artisan.store_name, order, customer.name);
+      dispatchResult = await sendArtisanUtrSubmittedNotification(artisanPhone, artisan.store_name, order, customer.name);
     } else {
-      twilioResult = await sendArtisanOrderNotification(artisanPhone, artisan.store_name, order, items, customer);
+      dispatchResult = await sendArtisanOrderNotification(artisanPhone, artisan.store_name, order, items, customer);
     }
   } catch (err) {
-    console.error(`[whatsappService] Twilio call failed for artisan ${artisan.store_name}:`, err.message);
-    twilioResult = { success: false, error: err.message };
+    console.error(`[whatsappService] Dispatch failed for artisan ${artisan.store_name}:`, err.message);
+    dispatchResult = { success: false, error: err.message };
   }
 
   // 6. Record in whatsapp_notifications table
-  const status = twilioResult?.success ? 'sent' : 'failed';
-  const sid = twilioResult?.results?.[0]?.sid || twilioResult?.sid || null;
-  const errMsg = twilioResult?.results?.[0]?.error || twilioResult?.error || (twilioResult?.success ? null : 'Failed to deliver');
+  const status = dispatchResult?.success ? 'sent' : 'failed';
+  const sid = dispatchResult?.results?.[0]?.sid || dispatchResult?.sid || null;
+  const errMsg = dispatchResult?.results?.[0]?.error || dispatchResult?.error || (dispatchResult?.success ? null : 'Failed to deliver');
 
   try {
     await safeQuery(() =>
@@ -221,10 +221,10 @@ exports.sendShippingDispatchWhatsApp = async ({ orderId, shipment }) => {
 
     const customerName = order.shipping_name || order.users?.name || 'Customer';
 
-    const twilioResult = await sendShippingDispatchNotification(customerPhone, customerName, order, shipment);
-    const status = twilioResult?.success ? 'sent' : 'failed';
-    const sid = twilioResult?.results?.[0]?.sid || twilioResult?.sid || null;
-    const errMsg = twilioResult?.results?.[0]?.error || (twilioResult?.success ? null : 'Failed to deliver');
+    const dispatchResult = await sendShippingDispatchNotification(customerPhone, customerName, order, shipment);
+    const status = dispatchResult?.success ? 'sent' : 'failed';
+    const sid = dispatchResult?.results?.[0]?.sid || dispatchResult?.sid || null;
+    const errMsg = dispatchResult?.results?.[0]?.error || (dispatchResult?.success ? null : 'Failed to deliver');
 
     await safeQuery(() =>
       supabase.from('whatsapp_notifications').upsert({

@@ -1230,7 +1230,7 @@ exports.sendOrderOtp = async (req, res) => {
     const methodLabel = isCod ? 'Cash on Delivery (COD)' : 'UPI / Online Payment';
     const messageBody = `🛍️ *KalaStyle AI — Order Confirmation OTP*\n\nYour 8-digit security code to confirm your order of ₹${Number(amount || 0).toLocaleString()} (${methodLabel}) is:\n\n*${otp}*\n\n⏱️ Valid for 10 minutes. Please enter this code on the checkout screen to confirm and place your order. Do not share this OTP with anyone.`;
 
-    // Attempt Twilio WhatsApp delivery if configured
+    // Attempt WhatsApp delivery if configured
     let deliveredChannels = [];
     if (cleanPhone) {
       try {

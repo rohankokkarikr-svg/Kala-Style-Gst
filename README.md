@@ -59,9 +59,9 @@ KalaStyle AI is a startup-grade, production-hardened full-stack web platform con
               │
    ┌──────────┴──────────┬─────────────────┬────────────────┐
    ▼                     ▼                 ▼                ▼
-[Supabase (PostgreSQL)] [Razorpay API]  [Cloudinary]  [Twilio/WhatsApp]
-- Atomic Inventory RPC   - Create Order   - Media CDN   - Order Alerts
-- Sequential Migrations  - Timing-Safe    - MIME Guards - Artisan Routing
+[Supabase (PostgreSQL)] [Razorpay API]  [Cloudinary]
+- Atomic Inventory RPC   - Create Order   - Media CDN
+- Sequential Migrations  - Timing-Safe    - MIME Guards
 - Role-Based RLS          Verification
 ```
 
@@ -77,7 +77,7 @@ KalaStyle AI is a startup-grade, production-hardened full-stack web platform con
 | **Payments** | Razorpay Standard Checkout & Webhooks (HMAC SHA-256) |
 | **Artificial Intelligence** | Google Gemini 2.5 Flash (`@google/genai`, Structured Function Tool Calling) |
 | **Media & Storage** | Cloudinary (Secure Uploads with MIME & Extension Whitelists) |
-| **Messaging & Alerts** | Twilio WhatsApp API (with safe non-blocking fallback) |
+| **Messaging & Alerts** | In-App Notifications & Direct WhatsApp Links |
 | **Realtime** | Centralized Socket.IO & Supabase Event Broadcasts |
 
 ---
@@ -153,11 +153,6 @@ GEMINI_API_KEY=your_google_gemini_api_key
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
-
-# Notifications (Twilio WhatsApp — Optional)
-TWILIO_ACCOUNT_SID=your_twilio_sid
-TWILIO_AUTH_TOKEN=your_twilio_token
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ```
 
 ### Frontend (`frontend/.env`)

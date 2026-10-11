@@ -43,7 +43,7 @@ Service Layer (all real data, no fabrication):
   ├── artisanService.js         (artisan CRUD)
   ├── productService.js         (product CRUD)
   ├── analyticsReportService.js (business metrics)
-  ├── whatsappService.js        (Twilio notifications)
+  ├── whatsappService.js        (WhatsApp notifications)
   ├── complaintService.js       (complaint management)
   ├── agentHealthService.js     (NEW: real service checks)
   ├── agentApprovalService.js   (NEW: approval workflow)
