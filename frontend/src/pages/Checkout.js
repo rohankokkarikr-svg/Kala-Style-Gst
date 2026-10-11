@@ -750,42 +750,17 @@ export default function Checkout() {
       } finally {
         setOtpLoading(false);
       }
-    }, 1600);
+    }, 250);
   };
 
   /* ─── Execute Order Creation ─── */
   const executeOrderCreation = async (verifiedOtp) => {
     setLoading(true);
     try {
+      // Use pre-captured location without blocking critical order placement
       let activeLat = liveLocation?.lat || (verifyResult?.lat ? parseFloat(verifyResult.lat) : null);
       let activeLng = liveLocation?.lng || (verifyResult?.lng ? parseFloat(verifyResult.lng) : null);
       let activeMapUrl = liveLocation?.mapUrl || (activeLat && activeLng ? `https://www.google.com/maps?q=${activeLat},${activeLng}` : null);
-
-      if (!activeLat && navigator.geolocation) {
-        try {
-          const quickPos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 4000,
-              maximumAge: 60000
-            });
-          });
-          if (quickPos?.coords) {
-            activeLat = quickPos.coords.latitude;
-            activeLng = quickPos.coords.longitude;
-            activeMapUrl = `https://www.google.com/maps?q=${activeLat},${activeLng}`;
-            setLiveLocation({
-              lat: activeLat,
-              lng: activeLng,
-              mapUrl: activeMapUrl,
-              accuracy: quickPos.coords.accuracy || null,
-              source: 'gps'
-            });
-          }
-        } catch (geoErr) {
-          console.warn('Quick GPS capture during checkout skipped/unavailable:', geoErr);
-        }
-      }
 
       const addressTokens = [
         form.address.trim(),
@@ -847,18 +822,13 @@ export default function Checkout() {
         });
       } else {
         clearCart();
-        setShowLoadingPopup(true);
-        setPopupText("Preparing secure payment gateway...");
-        
-        setTimeout(() => {
-          setPopupText("Opening Razorpay Secure Checkout...");
-          setTimeout(() => {
-            setShowLoadingPopup(false);
-            navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
-              state: { razorpay: createdOrder.razorpay }
-            });
-          }, 500);
-        }, 700);
+        // Immediately navigate to PaymentGateway with pre-populated order state for zero-latency launch
+        navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
+          state: {
+            order: createdOrder,
+            razorpay: createdOrder.razorpay,
+          },
+        });
       }
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to place order. Please try again.';

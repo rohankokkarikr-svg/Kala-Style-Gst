@@ -354,45 +354,49 @@ export const AuthProvider = ({ children }) => {
 
     let data = null;
 
-    // 1. Try via backend proxy FIRST
+    // 1. Direct browser Supabase client FIRST (blazing fast 1-hop latency ~150-250ms)
     try {
-      const res = await authAPI.verifyOtp({ email: cleanEmail, token: cleanToken });
-      if (res.data?.success && res.data?.data) {
-        data = res.data.data;
+      const res = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanToken,
+        type: 'email',
+      });
+
+      if (res.error) {
+        const msg = (res.error.message || '').toLowerCase();
+        if (msg.includes('expired')) {
+          throw new Error('This OTP has expired. Please request a new OTP.');
+        } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('incorrect') || msg.includes('wrong')) {
+          throw new Error('The OTP is incorrect. Please try again.');
+        } else if (res.error.status === 429 || msg.includes('too many') || msg.includes('attempts')) {
+          throw new Error('Too many attempts. Please wait and try again later.');
+        }
+        // If it's a network/connection error, fall through to backend proxy
+        console.warn('Direct Supabase verifyOtp returned error, attempting backend proxy:', res.error.message);
+      } else if (res.data) {
+        data = res.data;
       }
-    } catch (backendErr) {
-      console.warn('Backend verifyOtp fallback triggered:', backendErr?.response?.data || backendErr.message);
-      if (backendErr.response?.data?.error) {
-        throw new Error(backendErr.response.data.error);
+    } catch (directErr) {
+      // If error is genuine token mismatch or expiry, fail immediately without slow fallback
+      if (directErr.message?.includes('incorrect') || directErr.message?.includes('expired') || directErr.message?.includes('attempts')) {
+        throw directErr;
       }
+      console.warn('Direct Supabase verifyOtp error, falling back to backend proxy:', directErr.message);
     }
 
-    // 2. Direct browser Supabase client fallback if backend didn't return data
+    // 2. Backend proxy fallback (for cases where client network or ad-blocker blocks Supabase)
     if (!data) {
       try {
-        const res = await supabase.auth.verifyOtp({
-          email: cleanEmail,
-          token: cleanToken,
-          type: 'email',
-        });
-
-        if (res.error) {
-          const msg = (res.error.message || '').toLowerCase();
-          if (msg.includes('expired')) {
-            throw new Error('This OTP has expired. Please request a new OTP.');
-          } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('incorrect') || msg.includes('wrong')) {
-            throw new Error('The OTP is incorrect. Please try again.');
-          } else if (res.error.status === 429 || msg.includes('too many') || msg.includes('attempts')) {
-            throw new Error('Too many attempts. Please wait and try again later.');
-          } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('connection')) {
-            throw new Error('Unable to connect. Please check your internet connection and try again.');
-          } else {
-            throw new Error(res.error.message || 'Something went wrong. Please try again.');
-          }
+        const res = await authAPI.verifyOtp({ email: cleanEmail, token: cleanToken });
+        if (res.data?.success && res.data?.data) {
+          data = res.data.data;
         }
-        data = res.data;
-      } catch (err) {
-        throw new Error(err.message || 'Something went wrong. Please try again.');
+      } catch (backendErr) {
+        console.warn('Backend verifyOtp failed:', backendErr?.response?.data || backendErr.message);
+        if (backendErr.response?.data?.error) {
+          throw new Error(backendErr.response.data.error);
+        }
+        throw new Error(backendErr.message || 'Something went wrong while verifying OTP.');
       }
     }
 

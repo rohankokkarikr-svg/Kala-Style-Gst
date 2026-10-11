@@ -22,9 +22,17 @@ export default function PaymentGateway() {
   const searchParams = new URLSearchParams(location.search);
   const orderId = searchParams.get('orderId');
 
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [submitted, setSubmitted] = useState(false);
+  // Get pre-populated order and razorpay data passed from Checkout via navigate state
+  const passedOrder = location.state?.order || null;
+  const razorpayData = location.state?.razorpay || null;
+
+  const [order, setOrder] = useState(passedOrder);
+  const [loading, setLoading] = useState(!passedOrder);
+  const [submitted, setSubmitted] = useState(
+    passedOrder?.payment_status === 'paid' ||
+    passedOrder?.status === 'confirmed' ||
+    passedOrder?.status === 'processing'
+  );
   const [razorpayLaunching, setRazorpayLaunching] = useState(false);
   const [gatewayError, setGatewayError] = useState(null);
   const [switchingCOD, setSwitchingCOD] = useState(false);
@@ -32,9 +40,6 @@ export default function PaymentGateway() {
   const [utrNumber, setUtrNumber] = useState('');
   const [submittingUTR, setSubmittingUTR] = useState(false);
   const hasAutoLaunchedRef = useRef(false);
-
-  // Get razorpay data passed from Checkout via navigate state
-  const razorpayData = location.state?.razorpay || null;
 
   // Load Razorpay official script
   const loadRazorpayScript = () =>
@@ -192,7 +197,7 @@ export default function PaymentGateway() {
       launchRazorpay(
         {
           order_id: order.razorpay_order_id,
-          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
+          key_id: razorpayData?.key_id || order?.razorpay?.key_id || process.env.REACT_APP_RAZORPAY_KEY_ID || '',
           amount: Math.max(100, Math.round(Number(order.total_amount || order.total_price || 0) * 100)),
           currency: 'INR',
         },
@@ -219,7 +224,7 @@ export default function PaymentGateway() {
     }
   }, [order, submitted, razorpayData, launchRazorpay, orderId]);
 
-  // Load Order details on mount
+  // Load Order details on mount (background refresh if passedOrder already present)
   useEffect(() => {
     if (!orderId) {
       toast.error('Invalid order reference');
@@ -230,7 +235,7 @@ export default function PaymentGateway() {
     const fetchOrder = async () => {
       try {
         const { data } = await orderAPI.getById(orderId);
-        setOrder(data);
+        setOrder(prev => ({ ...(prev || {}), ...data }));
         if (
           data?.payment_status === 'paid' ||
           data?.status === 'confirmed' ||
@@ -239,15 +244,17 @@ export default function PaymentGateway() {
           setSubmitted(true);
         }
       } catch (err) {
-        toast.error('Failed to load transaction details');
-        navigate('/cart');
+        if (!passedOrder) {
+          toast.error('Failed to load transaction details');
+          navigate('/cart');
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchOrder();
-  }, [orderId, navigate]);
+  }, [orderId, navigate, passedOrder]);
 
   // Trigger manual Razorpay checkout on button click
   const handleTriggerRazorpay = async () => {

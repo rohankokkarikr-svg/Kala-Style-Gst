@@ -162,115 +162,112 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    // Notifications: Send complete order details to Admin WhatsApp
-    let whatsappLink = null;
-    try {
-      const settings = getSiteSettings();
-      if (settings.orderNotifications !== false) {
-        const { data: fullOrder } = await supabase
-          .from('orders')
-          .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
-          .eq('id', order.id)
-          .single();
-        const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917676558335';
-        const wsRes = await sendOrderWhatsappNotification(
-          targetAdminPhone, fullOrder || order, req.user?.name || 'Customer'
-        );
-        if (wsRes) whatsappLink = wsRes.directLink;
-      }
-    } catch (wsErr) {
-      console.error('[createOrder] WhatsApp notification error:', wsErr.message);
-    }
-
-    // Artisan notifications
-    try {
-      const { sendArtisanOrderNotification } = require('../utils/whatsapp');
-      for (const artOrder of (artisanOrders || [])) {
-        if (!artOrder.artisan_id) continue;
-        const { data: artProfile } = await supabase
-          .from('artisan_profiles')
-          .select('id, store_name, user_id, users(name, phone)')
-          .eq('id', artOrder.artisan_id)
-          .maybeSingle();
-        const artPhone = artProfile?.users?.phone;
-        if (artPhone) {
-          const artItems = (await supabase.from('order_items').select('*, products(id,name,price,image_url)').eq('order_id', order.id).eq('artisan_id', artOrder.artisan_id)).data || [];
-          await sendArtisanOrderNotification(artPhone, artProfile?.store_name || 'Artisan', order, artItems, { name: req.user?.name, phone: order.phone, email: req.user?.email });
-        }
-      }
-    } catch (artNotifyErr) {
-      console.error('[createOrder] Artisan notify error:', artNotifyErr.message);
-    }
-
-    // Real-time In-App Notifications for Customer, Artisans, and Admin
-    try {
-      const orderNum = order.order_number || String(order.id).substring(0, 8);
-      // 1. Customer Notification
-      await createSystemNotification({
-        title: `Order #${orderNum} Confirmed! 🎉`,
-        message: `Your order for ₹${order.total_amount || order.total_price} has been successfully placed. Artisans are preparing your handcrafted items.`,
-        target_audience: 'specific',
-        target_user_id: user_id,
-        sender_id: null,
-      });
-
-      // 2. Admin Notification
-      await createSystemNotification({
-        title: `New Order Placed: #${orderNum}`,
-        message: `Customer ${req.user?.name || 'User'} placed order #${orderNum} worth ₹${order.total_amount || order.total_price} (${normalizedMethod.toUpperCase()}).`,
-        target_audience: 'admins',
-        sender_id: user_id,
-      });
-
-      // 3. Artisans Notifications
-      for (const artOrder of (artisanOrders || [])) {
-        if (!artOrder.artisan_id) continue;
-        const { data: artProfile } = await supabase
-          .from('artisan_profiles')
-          .select('user_id, store_name')
-          .eq('id', artOrder.artisan_id)
-          .maybeSingle();
-
-        if (artProfile?.user_id) {
-          await createSystemNotification({
-            title: `New Order #${orderNum} for ${artProfile.store_name || 'Your Workshop'}!`,
-            message: `You have received an order for your handcrafted products (Subtotal: ₹${artOrder.subtotal || artOrder.total_amount || 0}). Please prepare for dispatch.`,
-            target_audience: 'specific',
-            target_user_id: artProfile.user_id,
-            sender_id: user_id,
-          });
-        }
-      }
-    } catch (notifErr) {
-      console.warn('[createOrder] In-app notification creation error:', notifErr.message);
-    }
-
-    // Realtime broadcast
-    broadcastSync('ORDERS_UPDATED', { action: 'create', orderId: order.id });
-    broadcastSync('PAYMENTS_UPDATED', { action: 'create', orderId: order.id });
-
-    // Autonomous AI Event Processing
-    try {
-      const { emitEvent } = require('../ai/aiEventBus');
-      emitEvent('ORDER_CREATED', 'order', order.id, {
-        total_amount: order.total_amount,
-        payment_method: normalizedMethod,
-        user_id,
-      });
-    } catch (e) {}
-
-    // Auto-create Shiprocket logistics shipment for COD order (non-blocking)
-    if (normalizedMethod === 'cod') {
+    // Non-blocking Background Tasks: Admin/Artisan WhatsApp, In-App Notifications, Shiprocket & AI Bus
+    setImmediate(async () => {
+      // 1. Send complete order details to Admin WhatsApp
       try {
-        const shippingService = require('../services/shipping/shippingService');
-        shippingService
-          .createShipmentFromOrder(order.id)
-          .then((sRes) => console.log(`[createOrder] ✅ Auto Shiprocket shipment created for COD order ${order.id}:`, sRes.shipment?.id))
-          .catch((sErr) => console.warn(`[createOrder] Auto Shiprocket COD shipment notice:`, sErr.message));
-      } catch (shpErr) {
-        console.warn('[createOrder] Shiprocket shipment creation error:', shpErr.message);
+        const settings = getSiteSettings();
+        if (settings.orderNotifications !== false) {
+          const { data: fullOrder } = await supabase
+            .from('orders')
+            .select('*, items:order_items(quantity, price_at_time, size, product:products(id, name, image_url, category))')
+            .eq('id', order.id)
+            .single();
+          const targetAdminPhone = process.env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_PHONE || settings.whatsappNumber || '917676558335';
+          await sendOrderWhatsappNotification(
+            targetAdminPhone, fullOrder || order, req.user?.name || 'Customer'
+          );
+        }
+      } catch (wsErr) {
+        console.error('[createOrder:bg] WhatsApp notification error:', wsErr.message);
       }
-    }
+
+      // 2. Artisan notifications
+      try {
+        const { sendArtisanOrderNotification } = require('../utils/whatsapp');
+        for (const artOrder of (artisanOrders || [])) {
+          if (!artOrder.artisan_id) continue;
+          const { data: artProfile } = await supabase
+            .from('artisan_profiles')
+            .select('id, store_name, user_id, users(name, phone)')
+            .eq('id', artOrder.artisan_id)
+            .maybeSingle();
+          const artPhone = artProfile?.users?.phone;
+          if (artPhone) {
+            const artItems = (await supabase.from('order_items').select('*, products(id,name,price,image_url)').eq('order_id', order.id).eq('artisan_id', artOrder.artisan_id)).data || [];
+            await sendArtisanOrderNotification(artPhone, artProfile?.store_name || 'Artisan', order, artItems, { name: req.user?.name, phone: order.phone, email: req.user?.email });
+          }
+        }
+      } catch (artNotifyErr) {
+        console.error('[createOrder:bg] Artisan notify error:', artNotifyErr.message);
+      }
+
+      // 3. Real-time In-App Notifications for Customer, Artisans, and Admin
+      try {
+        const orderNum = order.order_number || String(order.id).substring(0, 8);
+        await createSystemNotification({
+          title: `Order #${orderNum} Confirmed! 🎉`,
+          message: `Your order for ₹${order.total_amount || order.total_price} has been successfully placed. Artisans are preparing your handcrafted items.`,
+          target_audience: 'specific',
+          target_user_id: user_id,
+          sender_id: null,
+        });
+
+        await createSystemNotification({
+          title: `New Order Placed: #${orderNum}`,
+          message: `Customer ${req.user?.name || 'User'} placed order #${orderNum} worth ₹${order.total_amount || order.total_price} (${normalizedMethod.toUpperCase()}).`,
+          target_audience: 'admins',
+          sender_id: user_id,
+        });
+
+        for (const artOrder of (artisanOrders || [])) {
+          if (!artOrder.artisan_id) continue;
+          const { data: artProfile } = await supabase
+            .from('artisan_profiles')
+            .select('user_id, store_name')
+            .eq('id', artOrder.artisan_id)
+            .maybeSingle();
+
+          if (artProfile?.user_id) {
+            await createSystemNotification({
+              title: `New Order #${orderNum} for ${artProfile.store_name || 'Your Workshop'}!`,
+              message: `You have received an order for your handcrafted products (Subtotal: ₹${artOrder.subtotal || artOrder.total_amount || 0}). Please prepare for dispatch.`,
+              target_audience: 'specific',
+              target_user_id: artProfile.user_id,
+              sender_id: user_id,
+            });
+          }
+        }
+      } catch (notifErr) {
+        console.warn('[createOrder:bg] In-app notification creation error:', notifErr.message);
+      }
+
+      // 4. Realtime broadcast & AI Event Processing
+      try {
+        broadcastSync('ORDERS_UPDATED', { action: 'create', orderId: order.id });
+        broadcastSync('PAYMENTS_UPDATED', { action: 'create', orderId: order.id });
+      } catch (bcErr) {}
+
+      try {
+        const { emitEvent } = require('../ai/aiEventBus');
+        emitEvent('ORDER_CREATED', 'order', order.id, {
+          total_amount: order.total_amount,
+          payment_method: normalizedMethod,
+          user_id,
+        });
+      } catch (e) {}
+
+      // 5. Auto-create Shiprocket logistics shipment for COD order
+      if (normalizedMethod === 'cod') {
+        try {
+          const shippingService = require('../services/shipping/shippingService');
+          const sRes = await shippingService.createShipmentFromOrder(order.id);
+          console.log(`[createOrder:bg] ✅ Auto Shiprocket shipment created for COD order ${order.id}:`, sRes.shipment?.id);
+        } catch (shpErr) {
+          console.warn('[createOrder:bg] Shiprocket shipment creation notice:', shpErr.message);
+        }
+      }
+    });
 
 
 
