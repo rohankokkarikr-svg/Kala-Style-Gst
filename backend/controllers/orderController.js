@@ -440,6 +440,27 @@ exports.getOrderTracking = async (req, res) => {
       }];
     }
 
+    // Realtime live Shiprocket logistics enrichment
+    try {
+      const shippingService = require('../services/shipping/shippingService');
+      let shipment = await shippingService.getShipmentByOrderId(order.id);
+      if (shipment) {
+        if (shipment.awb_code || shipment.provider_shipment_id) {
+          try {
+            const liveTracking = await shippingService.trackShipment(shipment.id);
+            shipment = { ...shipment, ...liveTracking, realtime: true };
+            if (liveTracking.normalized_status) {
+              order.shipping_status = liveTracking.normalized_status;
+            }
+          } catch (tErr) {}
+        }
+        order.shipment = shipment;
+        order.awb_code = shipment.awb_code || order.awb_code;
+        order.courier_name = shipment.courier_name || order.courier_name;
+        order.tracking_url = shipment.tracking_url || order.tracking_url;
+      }
+    } catch (sErr) {}
+
     res.json(order);
   } catch (err) {
     console.error('[getOrderTracking] Error:', err);

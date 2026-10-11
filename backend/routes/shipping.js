@@ -189,10 +189,25 @@ router.get('/order/:orderId', protect, async (req, res) => {
       return res.status(403).json({ error: 'Access denied: You are not authorized to view this shipment.' });
     }
 
-    const shipment = await shippingService.getShipmentByOrderId(orderId);
+    let shipment = await shippingService.getShipmentByOrderId(orderId);
     if (!shipment) {
       return res.status(404).json({ error: 'No shipment found for this order.' });
     }
+
+    // Refresh realtime live tracking directly from Shiprocket
+    if (shipment.awb_code || shipment.provider_shipment_id) {
+      try {
+        const liveTracking = await shippingService.trackShipment(shipment.id);
+        return res.json({
+          ...shipment,
+          ...liveTracking,
+          realtime: true,
+        });
+      } catch (trackErr) {
+        console.warn(`[shipping/order] Realtime track notice for order ${orderId}:`, trackErr.message);
+      }
+    }
+
     res.json(shipment);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -213,6 +228,20 @@ router.get('/:shipmentId', protect, async (req, res) => {
     const authorized = await isAuthorizedForOrder(req.user, shipment.order_id);
     if (!authorized) {
       return res.status(403).json({ error: 'Access denied: You are not authorized to view this shipment.' });
+    }
+
+    // Refresh realtime live tracking directly from Shiprocket
+    if (shipment.awb_code || shipment.provider_shipment_id) {
+      try {
+        const liveTracking = await shippingService.trackShipment(shipment.id);
+        return res.json({
+          ...shipment,
+          ...liveTracking,
+          realtime: true,
+        });
+      } catch (trackErr) {
+        console.warn(`[shipping/id] Realtime track notice for shipment ${shipment.id}:`, trackErr.message);
+      }
     }
 
     res.json(shipment);
