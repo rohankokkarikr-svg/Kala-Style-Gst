@@ -41,14 +41,49 @@ export default function PaymentGateway() {
   const [submittingUTR, setSubmittingUTR] = useState(false);
   const hasAutoLaunchedRef = useRef(false);
 
-  // Load Razorpay official script
+  // Load Razorpay official script without hanging
   const loadRazorpayScript = () =>
     new Promise((resolve) => {
       if (window.Razorpay) return resolve(true);
+
+      const existingScript = document.querySelector('script[src*="checkout.razorpay.com"]');
+      if (existingScript) {
+        if (window.Razorpay) return resolve(true);
+        let settled = false;
+        const done = (val) => {
+          if (!settled) {
+            settled = true;
+            resolve(val);
+          }
+        };
+        existingScript.addEventListener('load', () => done(true), { once: true });
+        existingScript.addEventListener('error', () => done(false), { once: true });
+        const poll = setInterval(() => {
+          if (window.Razorpay) {
+            clearInterval(poll);
+            done(true);
+          }
+        }, 50);
+        setTimeout(() => {
+          clearInterval(poll);
+          done(!!window.Razorpay);
+        }, 2000);
+        return;
+      }
+
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
+      script.async = true;
+      let settled = false;
+      const done = (val) => {
+        if (!settled) {
+          settled = true;
+          resolve(val);
+        }
+      };
+      script.onload = () => done(true);
+      script.onerror = () => done(false);
+      setTimeout(() => done(!!window.Razorpay), 3500);
       document.body.appendChild(script);
     });
 
@@ -58,33 +93,33 @@ export default function PaymentGateway() {
       if (!rzpData?.order_id) {
         toast.error('Payment session not ready. Please click "Pay with Razorpay" below to begin.');
         setRazorpayLaunching(false);
+        hasAutoLaunchedRef.current = false;
         return;
       }
 
       setRazorpayLaunching(true);
       const loaded = await loadRazorpayScript();
-      if (!loaded) {
-        toast.error('Razorpay payment gateway failed to load. Please check your internet connection.');
+      if (!loaded && !window.Razorpay) {
+        toast.error('Razorpay payment gateway failed to load. Please check your internet connection or ad-blocker.');
         setRazorpayLaunching(false);
+        hasAutoLaunchedRef.current = false;
         return;
       }
 
       // Always prefer the key_id returned by the backend (set when creating the Razorpay order).
-      // The env fallback is only used if navigation state was lost (e.g., page refresh).
       const keyId =
         rzpData?.key_id ||
+        orderData?.razorpay?.key_id ||
         process.env.REACT_APP_RAZORPAY_KEY_ID ||
-        '';
+        'rzp_live_TgKmH9jZyyQY6M';
 
       if (!keyId) {
         toast.error('Razorpay is not configured. Please contact support.');
         setRazorpayLaunching(false);
+        hasAutoLaunchedRef.current = false;
         return;
       }
 
-      if (!rzpData?.key_id) {
-        console.warn('[PaymentGateway] key_id missing from backend response — falling back to REACT_APP_RAZORPAY_KEY_ID env var.');
-      }
       const amountInPaise =
         Number(rzpData.amount) ||
         Math.max(100, Math.round(Number(orderData?.total_amount || orderData?.total_price || 0) * 100));
@@ -94,7 +129,7 @@ export default function PaymentGateway() {
       const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : (rawPhone || undefined);
 
       // Sanitize customer email (only pass if valid format to avoid Razorpay options validation error)
-      const rawEmail = (orderData?.users?.email || '').trim();
+      const rawEmail = (orderData?.shipping_email || orderData?.email || orderData?.users?.email || '').trim();
       const cleanEmail = rawEmail.includes('@') ? rawEmail : undefined;
 
       // Customer name
@@ -122,6 +157,7 @@ export default function PaymentGateway() {
         modal: {
           ondismiss: () => {
             setRazorpayLaunching(false);
+            hasAutoLaunchedRef.current = false;
             toast('Payment window closed. You can click the button below anytime to complete your payment.', {
               icon: 'ℹ️',
             });
@@ -167,12 +203,14 @@ export default function PaymentGateway() {
           const failDesc = resp.error?.description || resp.error?.reason || 'Payment could not be processed.';
           toast.error(`UPI / Online payment failed: ${failDesc}`);
           setRazorpayLaunching(false);
+          hasAutoLaunchedRef.current = false;
         });
         rzp.open();
       } catch (err) {
         console.error('Failed to open Razorpay modal:', err);
         toast.error('Could not open payment window. Please click the button below to try again.');
         setRazorpayLaunching(false);
+        hasAutoLaunchedRef.current = false;
       }
     },
     [orderId, navigate]
@@ -191,32 +229,35 @@ export default function PaymentGateway() {
       return;
     }
 
-    hasAutoLaunchedRef.current = true;
+    const effectiveOrderId = order.razorpay_order_id || razorpayData?.order_id || order.razorpay?.order_id;
 
-    if (order.razorpay_order_id) {
+    if (effectiveOrderId) {
+      hasAutoLaunchedRef.current = true;
+      const effectiveKeyId = razorpayData?.key_id || order.razorpay?.key_id || process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TgKmH9jZyyQY6M';
       launchRazorpay(
         {
-          order_id: order.razorpay_order_id,
-          key_id: razorpayData?.key_id || order?.razorpay?.key_id || process.env.REACT_APP_RAZORPAY_KEY_ID || '',
+          order_id: effectiveOrderId,
+          key_id: effectiveKeyId,
           amount: Math.max(100, Math.round(Number(order.total_amount || order.total_price || 0) * 100)),
           currency: 'INR',
         },
         order
       );
-
-    } else if (razorpayData?.order_id) {
-      launchRazorpay(razorpayData, order);
     } else if (orderId) {
+      hasAutoLaunchedRef.current = true;
       // Auto-initialize session if missing on order
       paymentAPI
         .initializeOrder(orderId)
         .then(({ data }) => {
           if (data?.order_id) {
-            setOrder((prev) => (prev ? { ...prev, razorpay_order_id: data.order_id } : prev));
+            setOrder((prev) => (prev ? { ...prev, razorpay_order_id: data.order_id, razorpay: data } : prev));
             launchRazorpay(data, order);
+          } else {
+            hasAutoLaunchedRef.current = false;
           }
         })
         .catch((err) => {
+          hasAutoLaunchedRef.current = false;
           console.warn('Auto initialize Razorpay session notice:', err.message);
           const msg = err.response?.data?.error || err.message;
           setGatewayError(msg);
@@ -260,23 +301,19 @@ export default function PaymentGateway() {
   const handleTriggerRazorpay = async () => {
     if (razorpayLaunching) return;
 
-    if (order?.razorpay_order_id) {
+    const effectiveOrderId = order?.razorpay_order_id || razorpayData?.order_id || order?.razorpay?.order_id;
+    if (effectiveOrderId) {
       const orderTotal = Number(order?.total_amount || order?.total_price || 0);
       const amountInPaise = Math.max(100, Math.round(orderTotal * 100));
       return launchRazorpay(
         {
-          order_id: order.razorpay_order_id,
-          key_id: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
+          order_id: effectiveOrderId,
+          key_id: razorpayData?.key_id || order?.razorpay?.key_id || process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TgKmH9jZyyQY6M',
           amount: amountInPaise,
           currency: 'INR',
         },
         order
       );
-
-    }
-
-    if (razorpayData?.order_id) {
-      return launchRazorpay(razorpayData, order);
     }
 
     // Automatically initialize or retrieve Razorpay order session on demand

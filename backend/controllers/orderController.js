@@ -153,9 +153,10 @@ exports.createOrder = async (req, res) => {
         razorpayOrderId = rzpResult.order.id;
         razorpayKeyId = rzpResult.key_id || process.env.RAZORPAY_KEY_ID || '';
 
-        // Save razorpay_order_id to our DB
+        // Save razorpay_order_id to our DB and in-memory order object
         await supabase.from('orders').update({ razorpay_order_id: razorpayOrderId }).eq('id', order.id);
         await supabase.from('payments').update({ provider_order_id: razorpayOrderId }).eq('order_id', order.id);
+        order.razorpay_order_id = razorpayOrderId;
       } else {
         console.error('[createOrder] Razorpay order creation failed:', rzpResult.error);
         // Don't block order creation — payment can be retried
@@ -273,6 +274,7 @@ exports.createOrder = async (req, res) => {
 
     res.status(201).json({
       ...order,
+      razorpay_order_id: razorpayOrderId,
       artisan_orders: artisanOrders,
       payment,
       // Razorpay checkout data (only if applicable)
