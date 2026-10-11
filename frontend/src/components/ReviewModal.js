@@ -50,7 +50,7 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
       };
       
       toast.success('Thank you! Your review has been submitted for moderation.');
-      if (onReviewSubmitted && savedReview.is_approved) {
+      if (onReviewSubmitted) {
         onReviewSubmitted(savedReview);
       }
       setReviewText('');

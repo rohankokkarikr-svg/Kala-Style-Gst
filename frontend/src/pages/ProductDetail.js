@@ -209,8 +209,8 @@ export default function ProductDetail() {
       } finally { setLoadingRelated(false); }
     };
     fetchRelated();
-    if (product?.name) {
-      reviewAPI.getApproved({ product_name: product.name })
+    if (product?.id || product?.name) {
+      reviewAPI.getApproved({ product_id: product?.id, product_name: product?.name })
         .then(res => setProductReviews(res.data || []))
         .catch(() => {});
     }
@@ -808,6 +808,11 @@ export default function ProductDetail() {
                         ) : (
                           <span className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
                             Community Reviewer
+                          </span>
+                        )}
+                        {!rev.is_approved && rev.status !== 'approved' && (
+                          <span className="text-[9px] text-amber-400/90 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20 font-medium inline-block mt-0.5">
+                            Under Moderation
                           </span>
                         )}
                       </div>

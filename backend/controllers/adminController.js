@@ -974,13 +974,20 @@ exports.getReviews = async (req, res) => {
     const { rating } = req.query;
     let query = supabase.from('reviews').select('*').order('created_at', { ascending: false });
 
-    if (rating && rating !== 'all') {
+    if (rating && rating !== 'all' && Number.isFinite(Number(rating))) {
       query = query.eq('rating', Number(rating));
     }
 
     const { data, error } = await safeQuery(() => query);
     if (error) throw error;
-    res.json(data || []);
+
+    const enriched = (data || []).map(r => ({
+      ...r,
+      is_approved: Boolean(r.is_approved) || String(r.status || '').toLowerCase() === 'approved',
+      is_verified_buyer: r.is_verified_buyer !== undefined ? Boolean(r.is_verified_buyer) : Boolean(r.user_id)
+    }));
+
+    res.json(enriched);
   } catch (err) {
     console.error('getReviews error:', err);
     res.status(500).json({ error: 'Failed to fetch reviews' });
@@ -991,16 +998,20 @@ exports.approveReview = async (req, res) => {
   try {
     const { id } = req.params;
     const { is_approved } = req.body;
+    const nextApproved = is_approved !== false;
 
     const { data, error } = await supabase
       .from('reviews')
-      .update({ is_approved: is_approved !== false })
+      .update({
+        is_approved: nextApproved,
+        status: nextApproved ? 'approved' : 'hidden'
+      })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
-    await logActivity(req, is_approved ? 'Approved Review' : 'Hidden Review', 'Review', id);
+    await logActivity(req, nextApproved ? 'Approved Review' : 'Hidden Review', 'Review', id);
     res.json(data);
   } catch (err) {
     console.error('approveReview error:', err);

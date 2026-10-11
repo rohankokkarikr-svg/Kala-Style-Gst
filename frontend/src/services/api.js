@@ -218,8 +218,8 @@ export const dashboardAPI = {
 export const reviewAPI = {
   getApproved: (params) => cachedGet('/reviews', { params }, 60000),
   getAll: (params) => api.get('/reviews/admin', { params }),
-  submit: (data) => api.post('/reviews', data),
-  approve: (id) => { apiCache.invalidateReviews(); return api.patch(`/reviews/${id}/approve`); },
+  submit: (data) => { apiCache.invalidateReviews(); return api.post('/reviews', data); },
+  approve: (id, data) => { apiCache.invalidateReviews(); return api.patch(`/reviews/${id}/approve`, data); },
   delete: (id) => { apiCache.invalidateReviews(); return api.delete(`/reviews/${id}`); },
 };
 
@@ -306,8 +306,8 @@ export const adminAPI = {
   getAIStats:           ()         => api.get('/admin/ai/stats'),
   getAILogs:            ()         => api.get('/admin/ai/logs'),
   getReviews:           (params)   => api.get('/admin/reviews', { params }),
-  approveReview:        (id, data) => api.put(`/admin/reviews/${id}/approve`, data),
-  deleteReview:         (id)       => api.delete(`/admin/reviews/${id}`),
+  approveReview:        (id, data) => { apiCache.invalidateReviews(); return api.put(`/admin/reviews/${id}/approve`, data); },
+  deleteReview:         (id)       => { apiCache.invalidateReviews(); return api.delete(`/admin/reviews/${id}`); },
   getReports:           ()         => api.get('/admin/reports'),
   createReport:         (data)     => api.post('/admin/reports', data),
   updateReportStatus:   (id, data) => api.put(`/admin/reports/${id}/status`, data),

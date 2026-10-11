@@ -22,10 +22,12 @@ exports.getApprovedReviews = async (req, res) => {
     let query = supabase
       .from('reviews')
       .select('*')
-      .eq('is_approved', true)
+      .or('is_approved.eq.true,status.eq.approved')
       .order('created_at', { ascending: false });
 
-    if (product_name && product_name.trim()) {
+    if (product_id && String(product_id).trim()) {
+      query = query.eq('product_id', String(product_id).trim());
+    } else if (product_name && product_name.trim()) {
       const cleanName = sanitizeText(product_name);
       query = query.ilike('product_name', `%${cleanName}%`);
     }
@@ -35,7 +37,7 @@ exports.getApprovedReviews = async (req, res) => {
     if (error) {
       if (error.code === '42P01') {
         // Table not yet migrated
-        const approvedMem = cachedReviews.filter((r) => r.is_approved);
+        const approvedMem = cachedReviews.filter((r) => r.is_approved === true || String(r.status || '').toLowerCase() === 'approved');
         return res.json(approvedMem);
       }
       throw error;
@@ -45,9 +47,10 @@ exports.getApprovedReviews = async (req, res) => {
 
     // Ensure reviews returned are strictly approved and enrich is_verified_buyer
     results = results
-      .filter((r) => r.is_approved === true)
+      .filter((r) => r.is_approved === true || String(r.status || '').toLowerCase() === 'approved')
       .map(r => ({
         ...r,
+        is_approved: true,
         is_verified_buyer: r.is_verified_buyer !== undefined ? Boolean(r.is_verified_buyer) : Boolean(r.user_id)
       }));
 
@@ -71,7 +74,7 @@ exports.getAllReviews = async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (rating) {
+    if (rating && rating !== 'all' && Number.isFinite(Number(rating))) {
       query = query.eq('rating', Number(rating));
     }
 
@@ -86,6 +89,7 @@ exports.getAllReviews = async (req, res) => {
 
     const enriched = (data || []).map(r => ({
       ...r,
+      is_approved: Boolean(r.is_approved) || String(r.status || '').toLowerCase() === 'approved',
       is_verified_buyer: r.is_verified_buyer !== undefined ? Boolean(r.is_verified_buyer) : Boolean(r.user_id)
     }));
 
@@ -294,21 +298,31 @@ exports.submitReview = async (req, res) => {
 exports.approveReview = async (req, res) => {
   try {
     const { id } = req.params;
+    const { is_approved } = req.body || {};
+    const nextApproved = is_approved !== false;
 
     if (id.startsWith('mem-')) {
       const idx = cachedReviews.findIndex((r) => r.id === id);
-      if (idx !== -1) cachedReviews[idx].is_approved = true;
-      return res.json({ message: 'Review approved successfully' });
+      if (idx !== -1) {
+        cachedReviews[idx].is_approved = nextApproved;
+        cachedReviews[idx].status = nextApproved ? 'approved' : 'hidden';
+      }
+      return res.json({ message: nextApproved ? 'Review approved successfully' : 'Review hidden' });
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('reviews')
-      .update({ is_approved: true })
-      .eq('id', id);
+      .update({
+        is_approved: nextApproved,
+        status: nextApproved ? 'approved' : 'hidden'
+      })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
 
     if (error) throw error;
 
-    res.json({ message: 'Review approved successfully' });
+    res.json({ message: nextApproved ? 'Review approved successfully' : 'Review hidden', review: data });
   } catch (error) {
     console.error('Error approving review:', error.message || error);
     res.status(500).json({ error: 'Failed to approve review' });

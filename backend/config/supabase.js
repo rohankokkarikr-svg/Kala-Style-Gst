@@ -21,29 +21,7 @@ const resolveServiceRoleKey = (targetUrl) => {
 
   // 1. For the primary KalaStyle AI production Supabase instance
   if (!normalizedUrl || normalizedUrl.includes('fwuhlhaadhhveuljsqbh')) {
-    const envCandidates = [
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      process.env.SUPABASE_SERVICE_KEY,
-      process.env.SERVICE_ROLE_KEY,
-      process.env.SUPABASE_SECRET_KEY,
-      process.env.SUPABASE_KEY,
-    ].filter(Boolean).map(k => String(k).trim());
-
-    for (const candidate of envCandidates) {
-      if (candidate === projectAuthoritativeKey) return projectAuthoritativeKey;
-      try {
-        const parts = candidate.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-          // Only accept candidate if role is service_role AND ref explicitly matches fwuhlhaadhhveuljsqbh
-          if (payload.role === 'service_role' && payload.ref === 'fwuhlhaadhhveuljsqbh') {
-            return candidate;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Default to the authoritative project service_role key to guarantee complete RLS bypass
+    // Authoritative service_role key guarantees complete RLS bypass across production, Render, and dev
     return projectAuthoritativeKey;
   }
 

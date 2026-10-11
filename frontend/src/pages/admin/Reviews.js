@@ -7,7 +7,7 @@ import {
   HiRefresh,
   HiFilter
 } from 'react-icons/hi';
-import { adminAPI } from '../../services/api';
+import { adminAPI, reviewAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
 export default function Reviews() {
@@ -18,10 +18,25 @@ export default function Reviews() {
   const fetchReviews = async () => {
     setLoading(true);
     try {
-      const { data } = await adminAPI.getReviews({ rating: ratingFilter });
-      setReviews(data || []);
+      const res = await adminAPI.getReviews({ rating: ratingFilter });
+      let data = res?.data;
+      if (!Array.isArray(data) || data.length === 0) {
+        // Fallback to /reviews/admin if /admin/reviews returned empty or non-array
+        try {
+          const fallbackRes = await reviewAPI.getAll({ rating: ratingFilter });
+          if (Array.isArray(fallbackRes?.data) && fallbackRes.data.length > 0) {
+            data = fallbackRes.data;
+          }
+        } catch (_) {}
+      }
+      setReviews(Array.isArray(data) ? data : []);
     } catch {
-      toast.error('Failed to load reviews');
+      try {
+        const fallbackRes = await reviewAPI.getAll({ rating: ratingFilter });
+        setReviews(Array.isArray(fallbackRes?.data) ? fallbackRes.data : []);
+      } catch {
+        toast.error('Failed to load reviews');
+      }
     } finally {
       setLoading(false);
     }
@@ -36,9 +51,15 @@ export default function Reviews() {
     try {
       await adminAPI.approveReview(id, { is_approved: nextApproved });
       toast.success(nextApproved ? 'Review approved & published!' : 'Review hidden');
-      setReviews(prev => prev.map(r => r.id === id ? { ...r, is_approved: nextApproved } : r));
+      setReviews(prev => prev.map(r => r.id === id ? { ...r, is_approved: nextApproved, status: nextApproved ? 'approved' : 'hidden' } : r));
     } catch {
-      toast.error('Failed to update review status');
+      try {
+        await reviewAPI.approve(id, { is_approved: nextApproved });
+        toast.success(nextApproved ? 'Review approved & published!' : 'Review hidden');
+        setReviews(prev => prev.map(r => r.id === id ? { ...r, is_approved: nextApproved, status: nextApproved ? 'approved' : 'hidden' } : r));
+      } catch {
+        toast.error('Failed to update review status');
+      }
     }
   };
 
@@ -49,7 +70,13 @@ export default function Reviews() {
       toast.success('Review deleted');
       setReviews(prev => prev.filter(r => r.id !== id));
     } catch {
-      toast.error('Failed to delete review');
+      try {
+        await reviewAPI.delete(id);
+        toast.success('Review deleted');
+        setReviews(prev => prev.filter(r => r.id !== id));
+      } catch {
+        toast.error('Failed to delete review');
+      }
     }
   };
 
@@ -113,44 +140,46 @@ export default function Reviews() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-600/50">
-                {reviews.map(r => (
-                  <tr key={r.id} className="hover:bg-dark-700/30 transition-colors">
-                    <td className="py-3 px-4">
-                      <p className="font-semibold text-white truncate">{r.customer_name || 'Customer'}</p>
-                      <p className="text-gold-400 text-[11px] truncate">{r.product_name || 'Handicraft Item'}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center text-gold-400">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <span key={i} className={i < r.rating ? 'text-gold-400' : 'text-gray-600'}>★</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 max-w-sm">
-                      <p className="text-gray-300 line-clamp-2 leading-relaxed">{r.review_text}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      {r.is_approved ? (
-                        <span className="badge bg-green-500/20 text-green-400 border border-green-500/30">Published</span>
-                      ) : (
-                        <span className="badge bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Pending Approval</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-gray-400">
-                      {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '-'}
-                    </td>
-                    <td className="py-3 px-4 text-right space-x-1.5">
-                      <button
-                        onClick={() => handleApproveToggle(r.id, r.is_approved)}
-                        className={`p-1.5 rounded transition-colors ${
-                          r.is_approved 
-                            ? 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' 
-                            : 'text-green-400 bg-green-500/10 hover:bg-green-500/20'
-                        }`}
-                        title={r.is_approved ? 'Hide Review' : 'Approve & Publish'}
-                      >
-                        {r.is_approved ? <HiEyeOff className="w-4 h-4" /> : <HiCheckCircle className="w-4 h-4" />}
-                      </button>
+                {reviews.map(r => {
+                  const isApproved = Boolean(r.is_approved) || String(r.status || '').toLowerCase() === 'approved';
+                  return (
+                    <tr key={r.id} className="hover:bg-dark-700/30 transition-colors">
+                      <td className="py-3 px-4">
+                        <p className="font-semibold text-white truncate">{r.customer_name || 'Customer'}</p>
+                        <p className="text-gold-400 text-[11px] truncate">{r.product_name || 'Handicraft Item'}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center text-gold-400">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <span key={i} className={i < r.rating ? 'text-gold-400' : 'text-gray-600'}>★</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 max-w-sm">
+                        <p className="text-gray-300 line-clamp-2 leading-relaxed">{r.review_text}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        {isApproved ? (
+                          <span className="badge bg-green-500/20 text-green-400 border border-green-500/30">Published</span>
+                        ) : (
+                          <span className="badge bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Pending Approval</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-400">
+                        {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '-'}
+                      </td>
+                      <td className="py-3 px-4 text-right space-x-1.5">
+                        <button
+                          onClick={() => handleApproveToggle(r.id, isApproved)}
+                          className={`p-1.5 rounded transition-colors ${
+                            isApproved 
+                              ? 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' 
+                              : 'text-green-400 bg-green-500/10 hover:bg-green-500/20'
+                          }`}
+                          title={isApproved ? 'Hide Review' : 'Approve & Publish'}
+                        >
+                          {isApproved ? <HiEyeOff className="w-4 h-4" /> : <HiCheckCircle className="w-4 h-4" />}
+                        </button>
                       <button
                         onClick={() => handleDelete(r.id)}
                         className="p-1.5 text-red-400 hover:text-red-300 rounded bg-red-500/10 hover:bg-red-500/20"
@@ -159,8 +188,9 @@ export default function Reviews() {
                         <HiTrash className="w-4 h-4" />
                       </button>
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
