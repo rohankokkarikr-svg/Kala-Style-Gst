@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
-import { orderAPI, couponAPI } from '../services/api';
+import { orderAPI, couponAPI, paymentAPI } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
@@ -822,7 +822,96 @@ export default function Checkout() {
         });
       } else {
         clearCart();
-        // Immediately navigate to PaymentGateway with pre-populated order state for zero-latency launch
+        const rzpOrderId = createdOrder.razorpay_order_id || createdOrder.razorpay?.order_id;
+        const keyId =
+          createdOrder.razorpay?.key_id ||
+          process.env.REACT_APP_RAZORPAY_KEY_ID ||
+          'rzp_live_TgKmH9jZyyQY6M';
+
+        if (window.Razorpay && rzpOrderId) {
+          try {
+            const amountInPaise =
+              Number(createdOrder.razorpay?.amount) ||
+              Math.max(100, Math.round(Number(createdOrder.total_amount || createdOrder.total_price || finalTotal) * 100));
+
+            const rawPhone = String(form.phone || '').replace(/\D/g, '');
+            const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : undefined;
+            const rawEmail = (form.email || user?.email || '').trim();
+            const cleanEmail = rawEmail.includes('@') ? rawEmail : undefined;
+            const customerName = (form.fullName || user?.name || '').trim() || undefined;
+
+            const options = {
+              key: keyId,
+              amount: amountInPaise,
+              currency: 'INR',
+              name: 'KalaStyle AI',
+              description: `Order #${createdOrder.order_number || createdOrder.id.slice(0, 8)}`,
+              order_id: rzpOrderId,
+              prefill: {
+                name: customerName,
+                contact: cleanPhone,
+                email: cleanEmail,
+              },
+              theme: {
+                color: '#D4AF37',
+              },
+              retry: {
+                enabled: true,
+                max_count: 3,
+              },
+              handler: async (response) => {
+                const toastId = toast.loading('Verifying secure payment with server...');
+                try {
+                  const verifyRes = await paymentAPI.verify({
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                    orderId: createdOrder.id,
+                  });
+                  toast.dismiss(toastId);
+                  if (verifyRes.data?.success) {
+                    toast.success('Payment successful! 🎉 Order confirmed.');
+                    navigate(`/orders/${createdOrder.id}/tracking`);
+                  } else {
+                    toast.error(verifyRes.data?.error || 'Payment verification failed.');
+                    navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
+                      state: { order: createdOrder, razorpay: createdOrder.razorpay },
+                    });
+                  }
+                } catch (vErr) {
+                  toast.dismiss(toastId);
+                  toast.error(vErr.response?.data?.error || 'Payment verification failed.');
+                  navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
+                    state: { order: createdOrder, razorpay: createdOrder.razorpay },
+                  });
+                }
+              },
+              modal: {
+                ondismiss: () => {
+                  toast('Payment window closed. You can complete your payment anytime.', { icon: 'ℹ️' });
+                  navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
+                    state: { order: createdOrder, razorpay: createdOrder.razorpay },
+                  });
+                },
+              },
+            };
+
+            const rzp = new window.Razorpay(options);
+            rzp.on('payment.failed', function (resp) {
+              const failDesc = resp.error?.description || resp.error?.reason || 'Payment could not be processed.';
+              toast.error(`UPI / Online payment failed: ${failDesc}`);
+              navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
+                state: { order: createdOrder, razorpay: createdOrder.razorpay },
+              });
+            });
+            rzp.open();
+            return;
+          } catch (directRzpErr) {
+            console.warn('Direct Razorpay launch fallback:', directRzpErr);
+          }
+        }
+
+        // Seamless fallback navigation to PaymentGateway
         navigate(`/payment-gateway?orderId=${createdOrder.id}&method=razorpay`, {
           state: {
             order: createdOrder,

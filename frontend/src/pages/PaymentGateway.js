@@ -206,6 +206,10 @@ export default function PaymentGateway() {
           hasAutoLaunchedRef.current = false;
         });
         rzp.open();
+        // Release launching lock after 1.5s so manual button is never disabled/frozen
+        setTimeout(() => {
+          setRazorpayLaunching(false);
+        }, 1500);
       } catch (err) {
         console.error('Failed to open Razorpay modal:', err);
         toast.error('Could not open payment window. Please click the button below to try again.');
@@ -551,8 +555,7 @@ export default function PaymentGateway() {
               <button
                 type="button"
                 onClick={handleTriggerRazorpay}
-                disabled={razorpayLaunching}
-                className="w-full py-4 bg-gradient-luxury hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:scale-100 text-dark-900 font-bold text-sm rounded-xl shadow-gold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-4 bg-gradient-luxury hover:scale-[1.02] active:scale-95 text-dark-900 font-bold text-sm rounded-xl shadow-gold transition-all flex items-center justify-center gap-2 cursor-pointer ring-2 ring-gold-400/50 hover:ring-gold-300"
               >
                 {razorpayLaunching ? (
                   <>
@@ -560,7 +563,7 @@ export default function PaymentGateway() {
                     Opening Razorpay Gateway...
                   </>
                 ) : (
-                  <>Pay ₹{orderTotal.toLocaleString()} with Razorpay 🔒</>
+                  <>Pay ₹{orderTotal.toLocaleString()} with Razorpay 🔒 (UPI / Cards)</>
                 )}
               </button>
 

@@ -168,7 +168,7 @@ function App() {
                     </Route>
 
                     {/* Payment Gateway (No Navbar/Footer) */}
-                    <Route path="/payment-gateway" element={<PrivateRoute><PaymentGateway /></PrivateRoute>} />
+                    <Route path="/payment-gateway" element={<PaymentGateway />} />
 
                     {/* Public/User Routes */}
                     <Route path="*" element={
