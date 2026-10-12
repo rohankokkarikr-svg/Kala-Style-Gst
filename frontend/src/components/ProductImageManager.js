@@ -231,12 +231,37 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
     toast.success("Image URL added!");
   };
 
-  const removeImage = (idx) => {
-    setImages(prev => {
-      const next = prev.filter((_, i) => i !== idx);
-      if (primaryIdx >= next.length) setPrimaryIdx(Math.max(0, next.length - 1));
-      return next;
-    });
+  const handleDeleteImage = async (idx) => {
+    if (!window.confirm("Permanently delete this photo from the product? This will immediately remove it from the catalog.")) return;
+    const next = images.filter((_, i) => i !== idx);
+    let nextPrimary = primaryIdx;
+    if (primaryIdx === idx) {
+      nextPrimary = 0;
+    } else if (primaryIdx > idx) {
+      nextPrimary = primaryIdx - 1;
+    }
+    setImages(next);
+    setPrimaryIdx(Math.max(0, Math.min(nextPrimary, Math.max(0, next.length - 1))));
+
+    // Persist immediately to the database so deletions are instantly applied
+    try {
+      const ordered = next.length > 0
+        ? [next[nextPrimary] || next[0], ...next.filter((_, i) => i !== nextPrimary)]
+        : [];
+      await productAPI.update(product.id, {
+        image_url: ordered[0] || null,
+        images: ordered,
+      });
+      apiCache.invalidateProducts();
+      window.dispatchEvent(new CustomEvent("kala:sync:products_updated", {
+        detail: { payload: { action: "update", id: product.id } }
+      }));
+      toast.success("Photo deleted permanently from product! 🗑️");
+      if (onSaved) onSaved(ordered);
+    } catch (err) {
+      console.error("Delete photo error:", err);
+      toast.error("Removed locally. Click 'Save Images' to persist: " + (err?.response?.data?.error || err.message));
+    }
   };
 
   const moveImage = (idx, dir) => {
@@ -252,20 +277,18 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
   };
 
   const handleSave = async () => {
-    if (images.length === 0) {
-      toast.error("Add at least one image before saving.");
-      return;
-    }
     setSaving(true);
-    const ordered = [images[primaryIdx], ...images.filter((_, i) => i !== primaryIdx)];
+    const ordered = images.length > 0
+      ? [images[primaryIdx] || images[0], ...images.filter((_, i) => i !== primaryIdx)]
+      : [];
     try {
       await productAPI.update(product.id, {
-        image_url: ordered[0],
+        image_url: ordered[0] || null,
         images: ordered,
       });
       apiCache.invalidateProducts();
-      window.dispatchEvent(new CustomEvent("kala:sync:products_updated", { detail: { payload: { action: "update" } } }));
-      toast.success("Product images saved successfully! \uD83C\uDF89");
+      window.dispatchEvent(new CustomEvent("kala:sync:products_updated", { detail: { payload: { action: "update", id: product.id } } }));
+      toast.success("Product images saved successfully! 🎉");
       if (onSaved) onSaved(ordered);
       onClose();
     } catch (err) {
@@ -345,9 +368,14 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
           {/* Image list with controls */}
           {images.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                All Images ({images.length}/10)
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  All Product Images ({images.length}/10)
+                </h3>
+                <span className="text-[11px] text-gold-400/90 font-medium bg-gold-500/10 px-2 py-0.5 rounded-full border border-gold-500/20">
+                  ✨ 4–6 photos recommended
+                </span>
+              </div>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {images.map((url, idx) => (
                   <div
@@ -409,8 +437,8 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeImage(idx)}
-                        title="Remove"
+                        onClick={() => handleDeleteImage(idx)}
+                        title="Delete photo permanently from product"
                         className="w-7 h-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center justify-center transition-colors border border-red-500/20"
                       >
                         <HiTrash className="w-3.5 h-3.5" />

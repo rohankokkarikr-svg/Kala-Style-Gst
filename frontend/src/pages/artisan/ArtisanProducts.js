@@ -6,6 +6,33 @@ import { HiTrash, HiSparkles, HiRefresh, HiCheckCircle, HiExclamationCircle, HiE
 import toast from 'react-hot-toast';
 import ProductImageManager from '../../components/ProductImageManager';
 
+function extractImages(prod) {
+  if (!prod) return [];
+  let list = [];
+  if (Array.isArray(prod.images) && prod.images.length > 0) {
+    list = prod.images.filter(Boolean);
+  } else if (typeof prod.images === "string") {
+    try {
+      const p = JSON.parse(prod.images);
+      if (Array.isArray(p)) list = p.filter(Boolean);
+    } catch (_) {}
+  }
+  if (list.length === 0 && Array.isArray(prod.tags)) {
+    const t = prod.tags.find(x => typeof x === "string" && x.startsWith("__IMAGES__:"));
+    if (t) {
+      try {
+        const p = JSON.parse(t.replace("__IMAGES__:", ""));
+        if (Array.isArray(p)) list = p.filter(Boolean);
+      } catch (_) {}
+    }
+  }
+  if (list.length === 0) {
+    const fb = prod.image_url || prod.image;
+    if (fb) list = [fb];
+  }
+  return [...new Set(list.filter(Boolean))];
+}
+
 export default function ArtisanProducts() {
   const { user } = useAuth();
   const [products, setProducts] = useState([]);
@@ -13,6 +40,7 @@ export default function ArtisanProducts() {
   const [activeTab, setActiveTab] = useState('all');
   const [managerProduct, setManagerProduct] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [activeCardPreviews, setActiveCardPreviews] = useState({});
   const [editFormData, setEditFormData] = useState({
     name: '',
     price: '',
@@ -102,6 +130,42 @@ export default function ArtisanProducts() {
       setProducts(p => p.filter(x => x.id !== id));
       toast.success('Product deleted successfully');
     } catch { toast.error('Failed to delete product'); }
+  };
+
+  const handleDeleteProductImage = async (product, imgUrlToDelete, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Delete this photo permanently from this product? It will be removed immediately from your catalog and the live website.')) return;
+    const currentList = extractImages(product);
+    const updatedImages = currentList.filter(u => u !== imgUrlToDelete);
+    const updatedCover = updatedImages[0] || null;
+
+    try {
+      await productAPI.update(product.id, {
+        images: updatedImages,
+        image_url: updatedCover,
+      });
+      setProducts(prev => prev.map(p =>
+        p.id === product.id ? { ...p, images: updatedImages, image_url: updatedCover } : p
+      ));
+      setActiveCardPreviews(prev => {
+        if (prev[product.id] === imgUrlToDelete) {
+          const next = { ...prev };
+          delete next[product.id];
+          return next;
+        }
+        return prev;
+      });
+      if (editingProduct?.id === product.id) {
+        setEditingProduct(prev => ({ ...prev, images: updatedImages, image_url: updatedCover }));
+      }
+      toast.success('Photo deleted from product! 🗑️');
+      window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
+        detail: { payload: { action: 'update', id: product.id } }
+      }));
+    } catch (err) {
+      console.error('Delete image error:', err);
+      toast.error('Failed to delete photo: ' + (err?.response?.data?.error || err.message));
+    }
   };
 
   const handleOpenEdit = (product) => {
@@ -238,121 +302,175 @@ export default function ArtisanProducts() {
         </div>
       ) : filteredProducts.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map(p => (
-            <div key={p.id} className="card overflow-hidden group flex flex-col border border-dark-600/80 hover:border-gold-500/40 transition-colors">
-              <div className="aspect-video bg-dark-700 relative overflow-hidden">
-                {p.image_url ? (
-                  <img
-                    src={p.image_url}
-                    alt={p.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop';
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-dark-800 text-gray-400">
-                    <span className="text-3xl mb-1">🎨</span>
-                    <span className="text-[10px] text-gray-500 font-medium">Authentic Craft</span>
-                  </div>
-                )}
-                
-                {/* Badges on Image */}
-                <div className="absolute top-2 left-2 flex flex-col gap-1">
-                  {getStatusBadge(p)}
-                  {p.ai_generated && (
-                    <span className="bg-gold-500/90 text-dark-950 text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
-                      🤖 AI Generated
-                    </span>
-                  )}
-                </div>
-
-                <div className="absolute top-2 right-2">
-                  {(() => {
-                    const stockCount = p.stock_quantity != null ? Number(p.stock_quantity) : null;
-                    const isOutOfStock = stockCount !== null ? stockCount <= 0 : p.is_in_stock === false;
-                    const displayStock = stockCount !== null ? Math.max(0, stockCount) : (p.is_in_stock !== false ? 10 : 0);
-                    return (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md ${
-                        !isOutOfStock ? 'bg-green-600/90 text-white' : 'bg-red-600/90 text-white'
-                      }`}>
-                        {!isOutOfStock ? `In Stock (${displayStock})` : 'Out of Stock'}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              <div className="p-4 flex-1 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-white text-sm line-clamp-1">{p.name}</h3>
-                  </div>
-                  <div className="flex items-center justify-between mt-1.5">
-                    <p className="text-gold-400 font-bold text-sm">₹{Number(p.price || 0).toLocaleString('en-IN')}</p>
-                    <p className="text-gray-400 text-xs font-medium">
-                      Stock: <span className={(p.stock_quantity != null ? Number(p.stock_quantity) > 0 : p.is_in_stock !== false) ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
-                        {p.stock_quantity ?? (p.is_in_stock ? 10 : 0)}
-                      </span>
-                    </p>
-                  </div>
-                  <p className="text-gray-500 text-[11px] mt-1 truncate">{p.category || 'Handicrafts'}</p>
-
-                  {/* Rejection Notice Banner */}
-                  {p.status === 'rejected' && (
-                    <div className="mt-3 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs">
-                      <p className="text-red-400 font-semibold flex items-center gap-1 text-[11px]">
-                        <HiExclamationCircle className="w-3.5 h-3.5 shrink-0" /> Admin Feedback:
-                      </p>
-                      <p className="text-gray-300 text-[11px] mt-0.5 leading-relaxed">
-                        {p.rejection_reason || 'Product does not meet quality requirements. Please update image or description.'}
-                      </p>
+          {filteredProducts.map(p => {
+            const prodImages = extractImages(p);
+            const currentDisplayImg = activeCardPreviews[p.id] || p.image_url || prodImages[0] || '';
+            return (
+              <div key={p.id} className="card overflow-hidden group flex flex-col border border-dark-600/80 hover:border-gold-500/40 transition-colors">
+                <div className="aspect-video bg-dark-700 relative overflow-hidden">
+                  {currentDisplayImg ? (
+                    <img
+                      src={currentDisplayImg}
+                      alt={p.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-dark-800 text-gray-400">
+                      <span className="text-3xl mb-1">🎨</span>
+                      <span className="text-[10px] text-gray-500 font-medium">Authentic Craft</span>
                     </div>
                   )}
+                  
+                  {/* Badges on Image */}
+                  <div className="absolute top-2 left-2 flex flex-col gap-1">
+                    {getStatusBadge(p)}
+                    {p.ai_generated && (
+                      <span className="bg-gold-500/90 text-dark-950 text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
+                        🤖 AI Generated
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Hidden Notice Banner */}
-                  {p.is_hidden && (
-                    <div className="mt-3 p-2 rounded-lg bg-gray-700/40 border border-gray-600/40 text-xs text-gray-300 flex items-center gap-1.5 text-[11px]">
-                      <HiEyeOff className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      Hidden from customer catalog by platform admin.
-                    </div>
-                  )}
+                  <div className="absolute top-2 right-2">
+                    {(() => {
+                      const stockCount = p.stock_quantity != null ? Number(p.stock_quantity) : null;
+                      const isOutOfStock = stockCount !== null ? stockCount <= 0 : p.is_in_stock === false;
+                      const displayStock = stockCount !== null ? Math.max(0, stockCount) : (p.is_in_stock !== false ? 10 : 0);
+                      return (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md ${
+                          !isOutOfStock ? 'bg-green-600/90 text-white' : 'bg-red-600/90 text-white'
+                        }`}>
+                          {!isOutOfStock ? `In Stock (${displayStock})` : 'Out of Stock'}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
 
-                <div className="flex gap-2 mt-4 pt-3 border-t border-dark-700">
-                  <Link
-                    to={`/products/${p.id}`}
-                    className="btn-ghost text-xs px-3 py-1.5 border border-dark-500 rounded-lg flex-1 text-center hover:text-gold-400 hover:border-gold-500/40"
-                  >
-                    View in Store
-                  </Link>
+                {/* 4-6 Product Images Thumbnail Strip on Artisan Card */}
+                <div className="px-3 py-2 bg-dark-800/90 border-b border-dark-700/60 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                    {prodImages.slice(0, 6).map((img, idx) => (
+                      <div key={idx} className="relative group/thumb shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActiveCardPreviews(prev => ({ ...prev, [p.id]: img }))}
+                          className={`w-8 h-8 rounded-lg overflow-hidden border-2 transition-all ${
+                            currentDisplayImg === img
+                              ? 'border-gold-500 ring-1 ring-gold-500/50 scale-105'
+                              : 'border-dark-600 opacity-60 hover:opacity-100 hover:border-dark-400'
+                          }`}
+                          title={`Preview photo ${idx + 1}`}
+                        >
+                          <img src={img} alt={`thumb-${idx}`} className="w-full h-full object-cover" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProductImage(p, img, e)}
+                          className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 hover:scale-110 transition-all shadow"
+                          title="Delete photo permanently"
+                        >
+                          <HiX className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {prodImages.length < 6 && (
+                      <button
+                        type="button"
+                        onClick={() => setManagerProduct(p)}
+                        className="w-8 h-8 rounded-lg border border-dashed border-dark-500 hover:border-gold-500/60 text-gray-400 hover:text-gold-400 flex items-center justify-center shrink-0 text-xs transition-colors"
+                        title="Upload additional photo (up to 6)"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
                   <button
-                    onClick={() => handleOpenEdit(p)}
-                    className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/40 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
-                    title="Edit stock and product details"
-                  >
-                    <HiPencilAlt className="w-4 h-4" />
-                  </button>
-                  <button
+                    type="button"
                     onClick={() => setManagerProduct(p)}
-                    className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
-                    title="Manage images"
+                    className="text-[10px] font-semibold text-gold-400 hover:text-gold-300 flex items-center gap-1 whitespace-nowrap bg-gold-500/10 px-2 py-0.5 rounded-md border border-gold-500/20"
+                    title="Manage all photos"
                   >
-                    <HiPhotograph className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="btn-ghost text-xs px-2.5 py-1.5 border border-red-500/30 rounded-lg text-red-400 hover:bg-red-500/10"
-                    title="Delete product"
-                  >
-                    <HiTrash className="w-4 h-4" />
+                    <HiPhotograph className="w-3 h-3" />
+                    <span>{prodImages.length}/6</span>
                   </button>
                 </div>
+
+                <div className="p-4 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-white text-sm line-clamp-1">{p.name}</h3>
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <p className="text-gold-400 font-bold text-sm">₹{Number(p.price || 0).toLocaleString('en-IN')}</p>
+                      <p className="text-gray-400 text-xs font-medium">
+                        Stock: <span className={(p.stock_quantity != null ? Number(p.stock_quantity) > 0 : p.is_in_stock !== false) ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                          {p.stock_quantity ?? (p.is_in_stock ? 10 : 0)}
+                        </span>
+                      </p>
+                    </div>
+                    <p className="text-gray-500 text-[11px] mt-1 truncate">{p.category || 'Handicrafts'}</p>
+
+                    {/* Rejection Notice Banner */}
+                    {p.status === 'rejected' && (
+                      <div className="mt-3 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs">
+                        <p className="text-red-400 font-semibold flex items-center gap-1 text-[11px]">
+                          <HiExclamationCircle className="w-3.5 h-3.5 shrink-0" /> Admin Feedback:
+                        </p>
+                        <p className="text-gray-300 text-[11px] mt-0.5 leading-relaxed">
+                          {p.rejection_reason || 'Product does not meet quality requirements. Please update image or description.'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Hidden Notice Banner */}
+                    {p.is_hidden && (
+                      <div className="mt-3 p-2 rounded-lg bg-gray-700/40 border border-gray-600/40 text-xs text-gray-300 flex items-center gap-1.5 text-[11px]">
+                        <HiEyeOff className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        Hidden from customer catalog by platform admin.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4 pt-3 border-t border-dark-700">
+                    <Link
+                      to={`/products/${p.id}`}
+                      className="btn-ghost text-xs px-3 py-1.5 border border-dark-500 rounded-lg flex-1 text-center hover:text-gold-400 hover:border-gold-500/40"
+                    >
+                      View in Store
+                    </Link>
+                    <button
+                      onClick={() => handleOpenEdit(p)}
+                      className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/40 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
+                      title="Edit stock and product details"
+                    >
+                      <HiPencilAlt className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setManagerProduct(p)}
+                      className="btn-ghost text-xs px-2.5 py-1.5 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/10 flex items-center gap-1"
+                      title="Manage images"
+                    >
+                      <HiPhotograph className="w-4 h-4" />
+                      <span className="text-[11px] font-semibold">{prodImages.length}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="btn-ghost text-xs px-2.5 py-1.5 border border-red-500/30 rounded-lg text-red-400 hover:bg-red-500/10"
+                      title="Delete product"
+                    >
+                      <HiTrash className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="card p-12 text-center">
@@ -475,6 +593,44 @@ export default function ArtisanProducts() {
                   onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
                   className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-500 resize-none"
                 />
+              </div>
+
+              {/* Photos Gallery in Edit Modal */}
+              <div className="pt-2 border-t border-dark-700/60">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-gray-300">
+                    Product Photos (4–6 Recommended)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prodToManage = editingProduct;
+                      setEditingProduct(null);
+                      setManagerProduct(prodToManage);
+                    }}
+                    className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1 font-semibold bg-gold-500/10 px-2 py-1 rounded-lg border border-gold-500/20"
+                  >
+                    <HiPhotograph className="w-3.5 h-3.5" /> Manage / Upload Photos
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto p-2.5 bg-dark-900 border border-dark-600 rounded-xl">
+                  {extractImages(editingProduct).map((img, idx) => (
+                    <div key={idx} className="relative group shrink-0">
+                      <img src={img} alt={`img-${idx}`} className="w-14 h-14 rounded-lg object-cover border border-dark-500" />
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteProductImage(editingProduct, img, e)}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 hover:bg-red-500 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:scale-110 transition-all shadow"
+                        title="Delete photo permanently"
+                      >
+                        <HiX className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {extractImages(editingProduct).length === 0 && (
+                    <p className="text-xs text-gray-500 py-1">No photos yet. Click 'Manage / Upload Photos' above to add 4-6 product photos.</p>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-700">

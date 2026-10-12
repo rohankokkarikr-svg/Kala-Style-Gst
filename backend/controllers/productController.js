@@ -607,17 +607,22 @@ exports.updateProduct = async (req, res) => {
       updatePayload.style = style;
       moderationFieldsChanged = true;
     }
-    if (image_url !== undefined && image_url !== existing.image_url) {
-      updatePayload.image_url = image_url;
-      moderationFieldsChanged = true;
-    }
     if (images !== undefined) {
       const imgArr = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
       updatePayload.images = imgArr;
-      if (!updatePayload.image_url && imgArr.length > 0) {
+      if (image_url !== undefined) {
+        updatePayload.image_url = image_url;
+      } else if (imgArr.length > 0) {
         updatePayload.image_url = imgArr[0];
+      } else {
+        updatePayload.image_url = null;
       }
-      moderationFieldsChanged = true;
+      // Clean any legacy __IMAGES__: tag marker so deleted images are not revived
+      if (Array.isArray(existing.tags)) {
+        updatePayload.tags = existing.tags.filter(t => typeof t !== 'string' || !t.startsWith('__IMAGES__:'));
+      }
+    } else if (image_url !== undefined && image_url !== existing.image_url) {
+      updatePayload.image_url = image_url;
     }
 
     // Stock-only changes
@@ -647,8 +652,14 @@ exports.updateProduct = async (req, res) => {
       delete updatePayload.status;
       delete updatePayload.artisan_id;
 
-      // If artisan modifies moderation-relevant fields on an approved product, send back to pending review
-      if (moderationFieldsChanged && existing.status === 'approved') {
+      // Only major title/category changes send back to pending review.
+      // Photo uploads, image deletions, and stock updates remain live for approved items!
+      const majorFieldChanged =
+        (name !== undefined && name !== existing.name) ||
+        (category !== undefined && category !== existing.category) ||
+        (price !== undefined && Math.abs(Number(price) - Number(existing.price)) > 100);
+
+      if (majorFieldChanged && existing.status === 'approved') {
         updatePayload.status = 'pending';
       }
     }

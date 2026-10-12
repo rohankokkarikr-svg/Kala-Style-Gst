@@ -18,8 +18,10 @@ import {
   HiChevronRight, HiCheckCircle, HiBadgeCheck, HiPencilAlt,
   HiSparkles, HiChatAlt2, HiChevronDown, HiChevronUp,
   HiLocationMarker, HiClock, HiRefresh, HiLockClosed, HiArrowRight,
+  HiPhotograph,
 } from 'react-icons/hi';
 import SendMessageModal from '../components/SendMessageModal';
+import ProductImageManager from '../components/ProductImageManager';
 
 /* ─── Accordion ─── */
 function AccordionItem({ title, icon, children, defaultOpen = false }) {
@@ -98,7 +100,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, user } = useAuth();
   const { settings } = useSettings();
   const { trackProductView, fetchRecommendations, dismissProduct } = useRecommendations();
   const timeline = settings?.shipping_estimated_days || '3 - 5 Business Days';
@@ -110,10 +112,19 @@ export default function ProductDetail() {
   const [quantity, setQuantity] = useState(1);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [messageModalOpen, setMessageModalOpen] = useState(false);
+  const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [productReviews, setProductReviews] = useState([]);
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
   const reviewsRef = useRef(null);
+
+  const isArtisanOwner = Boolean(
+    user && product && (
+      (product.artisan_id && (product.artisan_id === user.artisan_profile?.id || product.artisan_id === user.id)) ||
+      (product.user_id && product.user_id === user.id)
+    )
+  );
+  const canManageImages = isAdmin || isArtisanOwner;
 
   const { currentLang, setLanguage, translateProductDetails, currentLangMeta } = useLanguage();
   const [translatedData, setTranslatedData] = useState(null);
@@ -191,20 +202,20 @@ export default function ProductDetail() {
       setLoadingRelated(true);
       try {
         const res = await fetchRecommendations({
-          limit: 4,
+          limit: 6,
           targetCategory: product.category,
           excludeIds: [product.id],
         });
         if (res?.recommendations && res.recommendations.length > 0) {
-          setRelatedProducts(res.recommendations);
+          setRelatedProducts(res.recommendations.slice(0, 6));
         } else {
           const { data } = await productAPI.getAll({ category: product.category });
-          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 4) : []);
+          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 6) : []);
         }
       } catch {
         try {
           const { data } = await productAPI.getAll({ category: product.category });
-          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 4) : []);
+          setRelatedProducts(Array.isArray(data) ? data.filter(p => p.id !== product.id).slice(0, 6) : []);
         } catch { setRelatedProducts([]); }
       } finally { setLoadingRelated(false); }
     };
@@ -316,20 +327,44 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      {/* Admin Bar */}
-      {isAdmin && (
-        <div className="bg-gradient-to-r from-gold-500/20 via-dark-800 to-dark-900 border-b border-gold-500/30 py-3 px-4 sm:px-6 sticky top-16 z-30 backdrop-blur-md">
+      {/* Admin / Artisan Owner Access Bar */}
+      {canManageImages && (
+        <div className="bg-gradient-to-r from-gold-500/25 via-dark-800 to-dark-900 border-b border-gold-500/40 py-2.5 px-4 sm:px-6 sticky top-16 z-30 backdrop-blur-md shadow-lg">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <span className="px-2 py-0.5 rounded bg-gold-500 text-dark-950 font-black text-[11px] tracking-wider uppercase">ADMIN MODE</span>
-              <p className="text-xs text-white font-medium">You have administrative access to edit this product.</p>
+              <span className="px-2 py-0.5 rounded bg-gold-500 text-dark-950 font-black text-[11px] tracking-wider uppercase">
+                {isAdmin ? 'ADMIN MODE' : 'ARTISAN OWNER'}
+              </span>
+              <p className="text-xs text-white font-medium">
+                {isAdmin
+                  ? 'Administrative access: add, reorder, or delete product images live.'
+                  : 'You own this listing: manage product photos and inventory live.'}
+              </p>
             </div>
-            <Link
-              to={`/admin/products?edit=${product.id}`}
-              className="btn-primary text-xs py-1.5 px-4 font-bold flex items-center gap-2 shadow-gold shrink-0"
-            >
-              <HiPencilAlt className="w-4 h-4" /> Edit Product in Admin Panel
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setImageManagerOpen(true)}
+                className="btn-primary text-xs py-1.5 px-3.5 font-bold flex items-center gap-1.5 shadow-gold shrink-0 cursor-pointer"
+              >
+                <HiPhotograph className="w-4 h-4" /> Manage Product Photos ({imagesList.length}/6)
+              </button>
+              {isAdmin ? (
+                <Link
+                  to={`/admin/products?edit=${product.id}`}
+                  className="px-3 py-1.5 rounded-lg border border-dark-600 bg-dark-700/80 hover:bg-dark-600 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <HiPencilAlt className="w-3.5 h-3.5 text-gold-400" /> Admin Edit
+                </Link>
+              ) : (
+                <Link
+                  to="/artisan/products"
+                  className="px-3 py-1.5 rounded-lg border border-dark-600 bg-dark-700/80 hover:bg-dark-600 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  Artisan Catalog
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -432,6 +467,65 @@ export default function ProductDetail() {
                 )}
               </div>
             </div>
+
+            {/* 4-6 Product Images / Angles Bar directly below the photo */}
+            {(imagesList.length > 1 || canManageImages) && (
+              <div className="mt-4 p-3.5 rounded-2xl bg-dark-800/80 border border-dark-700/80 shadow-md">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <HiPhotograph className="w-4 h-4 text-gold-400" />
+                    <span>Product Views & Angles ({imagesList.length}/6)</span>
+                  </span>
+                  {canManageImages && (
+                    <button
+                      type="button"
+                      onClick={() => setImageManagerOpen(true)}
+                      className="text-xs text-gold-400 hover:text-gold-300 font-bold flex items-center gap-1 bg-gold-500/10 px-2 py-0.5 rounded-md border border-gold-500/20 cursor-pointer"
+                    >
+                      <HiPencilAlt className="w-3.5 h-3.5" /> Manage Photos
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+                  {imagesList.slice(0, 6).map((img, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleImageSelect(img, idx)}
+                      className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all cursor-pointer ${
+                        selectedImageIdx === idx
+                          ? 'border-gold-500 ring-2 ring-gold-500/50 scale-105 shadow-lg shadow-gold-500/20'
+                          : 'border-dark-700 opacity-60 hover:opacity-100 hover:border-dark-500'
+                      }`}
+                      title={`View Angle #${idx + 1}`}
+                    >
+                      <img
+                        src={img}
+                        alt={`Angle ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={e => {
+                          e.target.src = 'https://res.cloudinary.com/dcmmxmikz/image/upload/v1789048652/kalastyle-artisan-marketplace/wesedw9fpem0032yfsmk.jpg';
+                        }}
+                      />
+                      <span className="absolute bottom-1 right-1 bg-dark-950/80 text-[9px] font-bold px-1.5 py-0.2 rounded text-white border border-dark-700">
+                        #{idx + 1}
+                      </span>
+                    </button>
+                  ))}
+                  {canManageImages && imagesList.length < 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setImageManagerOpen(true)}
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-dark-600 hover:border-gold-500/50 flex flex-col items-center justify-center text-gray-400 hover:text-gold-400 transition-colors flex-shrink-0 text-center p-1 bg-dark-900/40 cursor-pointer"
+                      title="Add more angles (recommended 4-6)"
+                    >
+                      <span className="text-base font-bold">+</span>
+                      <span className="text-[9px] leading-tight font-medium">Add Angle</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Trust strip */}
             <div className="grid grid-cols-3 gap-3 mt-5">
@@ -852,9 +946,9 @@ export default function ProductDetail() {
             </div>
             <div className="h-px flex-1 bg-dark-700/60" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
             {loadingRelated
-              ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
               : relatedProducts.map(p => (
                   <ProductCard
                     key={p.id}
@@ -892,6 +986,26 @@ export default function ProductDetail() {
         initialRecipientRole="artisan"
         productContext={product}
       />
+
+      {/* ═══ ARTISAN / ADMIN PRODUCT IMAGE STUDIO MODAL ═══ */}
+      {canManageImages && (
+        <ProductImageManager
+          isOpen={imageManagerOpen}
+          onClose={() => setImageManagerOpen(false)}
+          product={product}
+          onImagesUpdated={(updatedProduct) => {
+            if (updatedProduct) {
+              setProduct(updatedProduct);
+              const imgs = extractProductImages(updatedProduct);
+              setSelectedImage(imgs[0] || '');
+              setSelectedImageIdx(0);
+            } else {
+              fetchProduct();
+            }
+            apiCache.invalidateProducts();
+          }}
+        />
+      )}
     </div>
   );
 }

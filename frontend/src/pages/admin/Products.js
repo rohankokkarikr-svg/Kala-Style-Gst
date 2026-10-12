@@ -12,11 +12,41 @@ import {
   HiPencilAlt,
   HiUpload,
   HiTag,
-  HiCheck
+  HiCheck,
+  HiPhotograph,
+  HiStar
 } from 'react-icons/hi';
 import { adminAPI, productAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 import { Link, useSearchParams } from 'react-router-dom';
+import ProductImageManager from '../../components/ProductImageManager';
+
+function extractImages(prod) {
+  if (!prod) return [];
+  let list = [];
+  if (Array.isArray(prod.images) && prod.images.length > 0) {
+    list = prod.images.filter(Boolean);
+  } else if (typeof prod.images === "string") {
+    try {
+      const p = JSON.parse(prod.images);
+      if (Array.isArray(p)) list = p.filter(Boolean);
+    } catch (_) {}
+  }
+  if (list.length === 0 && Array.isArray(prod.tags)) {
+    const t = prod.tags.find(x => typeof x === "string" && x.startsWith("__IMAGES__:"));
+    if (t) {
+      try {
+        const p = JSON.parse(t.replace("__IMAGES__:", ""));
+        if (Array.isArray(p)) list = p.filter(Boolean);
+      } catch (_) {}
+    }
+  }
+  if (list.length === 0) {
+    const fb = prod.image_url || prod.image;
+    if (fb) list = [fb];
+  }
+  return [...new Set(list.filter(Boolean))];
+}
 
 const AVAILABLE_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'Free Size'];
 
@@ -46,6 +76,7 @@ export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
   const editQueryId = searchParams.get('edit');
   const [artisansList, setArtisansList] = useState([]);
+  const [managerProduct, setManagerProduct] = useState(null);
   
   // Rejection modal state
   const [rejectModal, setRejectModal] = useState(null);
@@ -71,6 +102,7 @@ export default function Products() {
     style: '',
     sizes: [],
     image_url: '',
+    images: [],
     description: '',
     tags: '',
     is_handmade: true,
@@ -78,6 +110,7 @@ export default function Products() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [newImageUrlInput, setNewImageUrlInput] = useState('');
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -200,6 +233,7 @@ export default function Products() {
 
   const handleOpenEdit = (p) => {
     setEditProduct(p);
+    const existingImgs = extractImages(p);
     setEditFormData({
       name: p.name || '',
       price: p.price ?? '',
@@ -215,13 +249,15 @@ export default function Products() {
       sizes: Array.isArray(p.sizes)
         ? p.sizes
         : (typeof p.sizes === 'string' && p.sizes.trim() ? p.sizes.split(',').map(s => s.trim()).filter(Boolean) : []),
-      image_url: p.image_url || '',
+      image_url: p.image_url || existingImgs[0] || '',
+      images: existingImgs,
       description: p.description || '',
       tags: Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags || ''),
       is_handmade: p.is_handmade !== false,
       barcode: p.barcode || '',
       artisan_id: p.artisan_id || p.artisan_profiles?.id || ''
     });
+    setNewImageUrlInput('');
   };
 
   const handleToggleSize = (sizeStr) => {
@@ -251,8 +287,15 @@ export default function Products() {
     try {
       const { data } = await productAPI.uploadDirect(formData);
       if (data?.imageUrl) {
-        setEditFormData(prev => ({ ...prev, image_url: data.imageUrl }));
-        toast.success('Image uploaded successfully!');
+        setEditFormData(prev => {
+          const nextImages = [...(prev.images || []), data.imageUrl];
+          return {
+            ...prev,
+            image_url: prev.image_url || data.imageUrl,
+            images: nextImages
+          };
+        });
+        toast.success('Photo uploaded and added to product photos!');
       }
     } catch (err) {
       console.error('Direct upload failed:', err);
@@ -260,6 +303,52 @@ export default function Products() {
     } finally {
       setUploadingImage(false);
     }
+  };
+
+  const handleDeleteAdminImage = (idx) => {
+    setEditFormData(prev => {
+      const curImages = prev.images || [];
+      const deletedUrl = curImages[idx];
+      const nextImages = curImages.filter((_, i) => i !== idx);
+      const nextPrimary = nextImages[0] || '';
+      return {
+        ...prev,
+        images: nextImages,
+        image_url: prev.image_url === deletedUrl ? nextPrimary : (prev.image_url || nextPrimary)
+      };
+    });
+    toast.success('Photo removed. Click Save Changes to update the live catalog.');
+  };
+
+  const handleSetPrimaryAdminImage = (url) => {
+    setEditFormData(prev => {
+      const remaining = (prev.images || []).filter(u => u !== url);
+      return {
+        ...prev,
+        image_url: url,
+        images: [url, ...remaining]
+      };
+    });
+    toast.success('Set as primary cover image!');
+  };
+
+  const handleAddAdminImageUrl = () => {
+    const trimmed = newImageUrlInput.trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      toast.error('Please enter a valid URL starting with https://');
+      return;
+    }
+    setEditFormData(prev => {
+      const nextImages = [...(prev.images || []), trimmed];
+      return {
+        ...prev,
+        image_url: prev.image_url || trimmed,
+        images: nextImages
+      };
+    });
+    setNewImageUrlInput('');
+    toast.success('Photo URL added!');
   };
 
   const handleSaveEdit = async (e) => {
@@ -275,6 +364,9 @@ export default function Products() {
 
     setSavingEdit(true);
     try {
+      const imagesArr = Array.isArray(editFormData.images) ? editFormData.images.filter(Boolean) : [];
+      const primaryUrl = editFormData.image_url ? editFormData.image_url.trim() : (imagesArr[0] || null);
+
       const payload = {
         name: editFormData.name.trim(),
         price: Number(editFormData.price),
@@ -288,7 +380,8 @@ export default function Products() {
         material: editFormData.material.trim(),
         style: editFormData.style.trim(),
         sizes: editFormData.sizes,
-        image_url: editFormData.image_url.trim(),
+        image_url: primaryUrl,
+        images: imagesArr,
         description: editFormData.description.trim(),
         tags: typeof editFormData.tags === 'string'
           ? editFormData.tags.split(',').map(t => t.trim()).filter(Boolean)
@@ -310,7 +403,10 @@ export default function Products() {
       if (previewProduct?.id === editProduct.id) {
         setPreviewProduct(prev => ({ ...prev, ...updated }));
       }
-      toast.success('Product updated and synced live!');
+      toast.success('Product updated and synced live! 🎉');
+      window.dispatchEvent(new CustomEvent('kala:sync:products_updated', {
+        detail: { payload: { action: 'update', id: editProduct.id } }
+      }));
       handleCloseEdit();
     } catch (err) {
       console.error('Failed to update product:', err);
@@ -500,6 +596,17 @@ export default function Products() {
                         <span>Edit</span>
                       </button>
 
+                      {/* Manage Photos Button */}
+                      <button
+                        type="button"
+                        onClick={() => setManagerProduct(p)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gold-500/15 hover:bg-gold-500/25 text-gold-400 font-bold text-xs border border-gold-500/40 transition-all cursor-pointer"
+                        title="Manage and change product photos"
+                      >
+                        <HiPhotograph className="w-3.5 h-3.5" />
+                        <span>Photos ({extractImages(p).length}/6)</span>
+                      </button>
+
                       {/* Quick View Action */}
                       <button
                         type="button"
@@ -609,13 +716,27 @@ export default function Products() {
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* Left Column: Imagery, Status & Flags (5 cols) */}
                 <div className="md:col-span-5 space-y-5">
-                  {/* Image Preview & Upload Card */}
+                  {/* Image Preview & Multi-Image Gallery Card */}
                   <div className="card p-4 space-y-3 border-dark-600 bg-dark-800/60">
-                    <label className="font-bold text-gray-300 block text-xs flex items-center justify-between">
-                      <span>Product Image</span>
-                      {uploadingImage && <span className="text-gold-400 animate-pulse text-[10px]">Uploading...</span>}
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-gray-300 block text-xs">
+                        Product Photos ({(editFormData.images || []).length}/6)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = editProduct;
+                          handleCloseEdit();
+                          setManagerProduct(target);
+                        }}
+                        className="text-[10px] text-gold-400 hover:text-gold-300 font-bold flex items-center gap-1 bg-gold-500/10 px-2 py-0.5 rounded border border-gold-500/20"
+                        title="Open Advanced Image Studio"
+                      >
+                        <HiPhotograph className="w-3.5 h-3.5" /> Full Studio
+                      </button>
+                    </div>
 
+                    {/* Main Active Preview */}
                     <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-dark-900 border border-dark-600 group">
                       <img
                         src={editFormData.image_url || 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop'}
@@ -631,13 +752,66 @@ export default function Products() {
                           <HiRefresh className="w-8 h-8 text-gold-400 animate-spin" />
                         </div>
                       )}
+                      <div className="absolute bottom-2 left-2 bg-dark-950/80 text-[10px] px-2 py-0.5 rounded text-gold-400 border border-gold-500/30">
+                        ⭐ Primary Cover Image
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
+                    {/* 4-6 Product Images Thumbnails Strip */}
+                    <div>
+                      <span className="text-[10px] text-gray-400 block mb-1.5 font-semibold uppercase tracking-wider">
+                        Gallery Views (Click to set cover, trash to delete)
+                      </span>
+                      <div className="flex items-center gap-2 overflow-x-auto p-1.5 bg-dark-900/90 rounded-xl border border-dark-600">
+                        {(editFormData.images || []).map((img, idx) => (
+                          <div key={idx} className="relative group/adminthumb shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setEditFormData(prev => ({ ...prev, image_url: img }))}
+                              className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                                editFormData.image_url === img
+                                  ? 'border-gold-500 ring-2 ring-gold-500/40 scale-105'
+                                  : 'border-dark-600 opacity-60 hover:opacity-100 hover:border-dark-400'
+                              }`}
+                              title={`Preview view ${idx + 1}`}
+                            >
+                              <img src={img} alt={`thumb-${idx}`} className="w-full h-full object-cover" />
+                            </button>
+                            {editFormData.image_url === img ? (
+                              <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-gold-500 text-dark-950 flex items-center justify-center text-[9px] font-black shadow" title="Primary cover">
+                                ⭐
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSetPrimaryAdminImage(img)}
+                                className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-dark-800 text-gold-400 border border-gold-500/40 flex items-center justify-center opacity-0 group-hover/adminthumb:opacity-100 hover:scale-110 transition-all text-[9px]"
+                                title="Set as primary cover"
+                              >
+                                <HiStar className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAdminImage(idx)}
+                              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/adminthumb:opacity-100 hover:scale-110 transition-all shadow"
+                              title="Delete this photo"
+                            >
+                              <HiTrash className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ))}
+                        {(editFormData.images || []).length === 0 && (
+                          <p className="text-[11px] text-gray-500 py-1 px-2">No photos in gallery.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-1 border-t border-dark-700">
                       <div className="flex items-center gap-2">
                         <label className="btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1.5 cursor-pointer flex-1 justify-center">
                           <HiUpload className="w-4 h-4 text-gold-400" />
-                          <span>Upload New File</span>
+                          <span>Upload & Add Photo</span>
                           <input
                             type="file"
                             accept="image/*"
@@ -648,15 +822,23 @@ export default function Products() {
                         </label>
                       </div>
 
-                      <div>
-                        <span className="text-[10px] text-gray-400 block mb-1">Or paste direct image URL:</span>
+                      <div className="flex gap-1.5 items-center">
                         <input
                           type="url"
-                          value={editFormData.image_url}
-                          onChange={e => setEditFormData({ ...editFormData, image_url: e.target.value })}
-                          placeholder="https://images.unsplash.com/..."
-                          className="w-full bg-dark-700 border border-dark-500 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+                          value={newImageUrlInput}
+                          onChange={e => setNewImageUrlInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAdminImageUrl(); } }}
+                          placeholder="Or paste image URL (https://...)"
+                          className="flex-1 bg-dark-700 border border-dark-500 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-gold-500"
                         />
+                        <button
+                          type="button"
+                          onClick={handleAddAdminImageUrl}
+                          disabled={!newImageUrlInput.trim()}
+                          className="px-2.5 py-2 bg-dark-700 hover:bg-dark-600 text-gold-400 text-xs font-semibold rounded-lg border border-gold-500/30 transition-colors disabled:opacity-40"
+                        >
+                          + Add
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1074,6 +1256,28 @@ export default function Products() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Product Image Manager Modal for Admin */}
+      {managerProduct && (
+        <ProductImageManager
+          product={managerProduct}
+          onClose={() => setManagerProduct(null)}
+          onSaved={(newImages) => {
+            setProducts(prev => prev.map(p =>
+              p.id === managerProduct.id
+                ? { ...p, image_url: newImages[0] || null, images: newImages }
+                : p
+            ));
+            if (editProduct?.id === managerProduct.id) {
+              setEditFormData(prev => ({
+                ...prev,
+                image_url: newImages[0] || '',
+                images: newImages
+              }));
+            }
+          }}
+        />
       )}
     </div>
   );

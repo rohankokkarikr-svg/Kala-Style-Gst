@@ -348,6 +348,7 @@ exports.updateProduct = async (req, res) => {
       stock_quantity,
       is_in_stock,
       image_url,
+      images,
       status,
       rejection_reason,
       material,
@@ -374,7 +375,19 @@ exports.updateProduct = async (req, res) => {
     } else if (is_in_stock !== undefined) {
       updateData.is_in_stock = Boolean(is_in_stock);
     }
-    if (image_url !== undefined) updateData.image_url = image_url;
+    if (images !== undefined) {
+      const imgArr = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
+      updateData.images = imgArr;
+      if (image_url !== undefined) {
+        updateData.image_url = image_url;
+      } else if (imgArr.length > 0) {
+        updateData.image_url = imgArr[0];
+      } else {
+        updateData.image_url = null;
+      }
+    } else if (image_url !== undefined) {
+      updateData.image_url = image_url;
+    }
     if (status !== undefined) {
       updateData.status = status;
       if (status === 'approved') updateData.rejection_reason = null;

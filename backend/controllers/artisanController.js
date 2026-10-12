@@ -177,7 +177,7 @@ exports.getMyStats = async (req, res) => {
     const orCondition = `artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`;
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, price, original_price, stock_quantity, is_in_stock, image_url, ai_generated, category, subcategory, status, rejection_reason, is_hidden, created_at')
+      .select('id, name, price, original_price, stock_quantity, is_in_stock, image_url, images, ai_generated, category, subcategory, status, rejection_reason, is_hidden, created_at, tags, material, style, description')
       .or(orCondition)
       .order('created_at', { ascending: false });
 
