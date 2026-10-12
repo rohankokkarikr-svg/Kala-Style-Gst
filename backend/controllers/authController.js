@@ -3,7 +3,8 @@ const { safeQuery } = require('../config/supabase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const { normalizeEmail, normalizePhone, normalizeRole, sanitizeUser } = require('../utils/authHelper');
+const { normalizeEmail, normalizePhone, normalizeRole, sanitizeUser, generateOtp } = require('../utils/authHelper');
+const emailService = require('../utils/emailService');
 
 const generateToken = (id) => {
   const secret = process.env.JWT_SECRET;
@@ -846,7 +847,21 @@ exports.syncSupabaseSession = async (req, res) => {
 // Backward-compatible alias for existing OTP flow
 exports.syncOtpSession = exports.syncSupabaseSession;
 
-// Robust backend proxy for sending Supabase Email OTP (bypasses browser ad-blockers / client network blocks)
+// In-memory store for backend direct SMTP OTP verification (expires in 10 minutes)
+const directOtpStore = new Map();
+
+function cleanExpiredDirectOtps() {
+  const now = Date.now();
+  for (const [key, value] of directOtpStore.entries()) {
+    if (value.expiresAt < now) {
+      directOtpStore.delete(key);
+    }
+  }
+}
+
+// Robust backend proxy for sending Email OTP
+// Prioritizes Direct SMTP delivery (delivers strictly the 8-digit OTP code, zero confirmation links)
+// Falls back to Supabase signInWithOtp if SMTP is not configured
 exports.sendOtp = async (req, res) => {
   try {
     const { email, isSignup } = req.body;
@@ -875,6 +890,34 @@ exports.sendOtp = async (req, res) => {
       }
     }
 
+    // 1. DIRECT SMTP DELIVERY ENGINE:
+    // If SMTP credentials (Gmail, Brevo, SendGrid, etc.) are present, deliver exclusively the 8-digit code
+    if (emailService.isSmtpConfigured()) {
+      cleanExpiredDirectOtps();
+      const directOtp = generateOtp();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+      directOtpStore.set(cleanEmail, {
+        otp: directOtp,
+        expiresAt,
+        isSignup: isSignup === true,
+        attempts: 0,
+      });
+
+      try {
+        await emailService.sendOtpEmail({
+          to: cleanEmail,
+          otp: directOtp,
+          purpose: isSignup ? 'registration' : 'login',
+        });
+        console.log(`[authController.sendOtp] Direct SMTP OTP dispatched to: ${cleanEmail}`);
+        return res.json({ success: true, message: 'Verification OTP sent successfully to your email' });
+      } catch (smtpErr) {
+        console.error('[authController.sendOtp] SMTP delivery failed, falling back to Supabase:', smtpErr.message);
+        directOtpStore.delete(cleanEmail);
+      }
+    }
+
+    // 2. SUPABASE AUTH ENGINE:
     const { error } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
       options: {
@@ -901,7 +944,8 @@ exports.sendOtp = async (req, res) => {
   }
 };
 
-// Robust backend proxy for verifying Supabase Email OTP
+// Robust backend proxy for verifying Email OTP
+// Supports both Direct SMTP OTPs and Supabase Auth tokens (type: 'email' or 'signup')
 exports.verifyOtp = async (req, res) => {
   try {
     const { email, token } = req.body;
@@ -912,11 +956,71 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ error: 'Email and verification OTP code are required' });
     }
 
-    const { data, error } = await supabase.auth.verifyOtp({
+    // 1. Check Direct SMTP OTP Store first
+    cleanExpiredDirectOtps();
+    const directEntry = directOtpStore.get(cleanEmail);
+    if (directEntry) {
+      if (directEntry.expiresAt < Date.now()) {
+        directOtpStore.delete(cleanEmail);
+        return res.status(400).json({ error: 'This OTP has expired. Please request a new OTP code.' });
+      }
+      if (directEntry.attempts >= 5) {
+        directOtpStore.delete(cleanEmail);
+        return res.status(429).json({ error: 'Too many incorrect attempts. Please request a fresh OTP.' });
+      }
+      if (directEntry.otp !== cleanToken) {
+        directEntry.attempts += 1;
+        return res.status(400).json({ error: 'The OTP code is incorrect. Please check your email and try again.' });
+      }
+
+      // Valid OTP confirmed!
+      directOtpStore.delete(cleanEmail);
+      console.log(`[authController.verifyOtp] Direct OTP verified successfully for: ${cleanEmail}`);
+
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      let jwtToken = null;
+      if (dbUser) {
+        jwtToken = jwt.sign(
+          { id: dbUser.id, email: dbUser.email, role: dbUser.role },
+          process.env.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          user: dbUser ? sanitizeUser(dbUser) : { email: cleanEmail },
+          token: jwtToken,
+        },
+      });
+    }
+
+    // 2. Verify via Supabase Auth (tries type: 'email' then type: 'signup')
+    let { data, error } = await supabase.auth.verifyOtp({
       email: cleanEmail,
       token: cleanToken,
       type: 'email',
     });
+
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      // If error indicates invalid token or verification type, retry with type: 'signup'
+      const retryRes = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanToken,
+        type: 'signup',
+      });
+      if (!retryRes.error) {
+        data = retryRes.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.error('[authController.verifyOtp] Supabase error:', error);
