@@ -400,18 +400,23 @@ exports.updateProduct = async (req, res) => {
     if (is_handmade !== undefined) updateData.is_handmade = Boolean(is_handmade);
     if (barcode !== undefined) updateData.barcode = barcode ? barcode.trim() : null;
 
-    const { data, error } = await supabase
+    // Use supabaseAdmin (service_role) + .maybeSingle() to bypass RLS and fix "Cannot coerce" error
+    const { data, error } = await supabaseAdmin
       .from('products')
       .update(updateData)
       .eq('id', id)
       .select('*, artisan_profiles(id, store_name, location, artisan_type)')
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === '23505') {
         return res.status(400).json({ error: 'Barcode already exists. Please use a unique barcode.' });
       }
       throw error;
+    }
+
+    if (!data) {
+      return res.status(404).json({ error: 'Product not found or update was blocked.' });
     }
 
     invalidateCache();
@@ -441,7 +446,8 @@ exports.approveProduct = async (req, res) => {
     const finalStock = Math.max(0, currentStock);
     const finalInStock = finalStock > 0;
 
-    const { data, error } = await supabase
+    // Use supabaseAdmin + .maybeSingle() to bypass RLS
+    const { data, error } = await supabaseAdmin
       .from('products')
       .update({
         status: 'approved',
@@ -452,9 +458,10 @@ exports.approveProduct = async (req, res) => {
       })
       .eq('id', id)
       .select('*, artisan_profiles(id, store_name, location, artisan_type)')
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found.' });
     invalidateCache();
     broadcastSync('PRODUCTS_UPDATED', { action: 'approve', id, product: data });
     await logActivity(req, 'Approved Product', 'Product', id);
@@ -470,14 +477,16 @@ exports.rejectProduct = async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
 
-    const { data, error } = await supabase
+    // Use supabaseAdmin + .maybeSingle() to bypass RLS
+    const { data, error } = await supabaseAdmin
       .from('products')
       .update({ status: 'rejected', rejection_reason: reason || 'Policy Violation' })
       .eq('id', id)
       .select('*, artisan_profiles(id, store_name, location, artisan_type)')
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found.' });
     invalidateCache();
     broadcastSync('PRODUCTS_UPDATED', { action: 'reject', id, reason, product: data });
     await logActivity(req, `Rejected Product (${reason || 'No reason specified'})`, 'Product', id);
@@ -493,14 +502,16 @@ exports.hideProduct = async (req, res) => {
     const { id } = req.params;
     const { is_hidden } = req.body;
 
-    const { data, error } = await supabase
+    // Use supabaseAdmin + .maybeSingle() to bypass RLS
+    const { data, error } = await supabaseAdmin
       .from('products')
       .update({ is_hidden: is_hidden !== false })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found.' });
     invalidateCache();
     broadcastSync('PRODUCTS_UPDATED', { action: 'hide', id, is_hidden, product: data });
     await logActivity(req, is_hidden ? 'Hidden Product' : 'Unhidden Product', 'Product', id);
