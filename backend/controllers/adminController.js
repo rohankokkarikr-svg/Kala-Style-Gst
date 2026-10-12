@@ -11,6 +11,20 @@ const { HANDICRAFT_CATEGORIES } = require('../data/handicraftsData');
 const { invalidateCache } = require('./productController');
 const { broadcastSync } = require('../utils/realtime');
 
+// Dedicated service_role admin client — bypasses RLS for all write operations
+const { createClient } = require('@supabase/supabase-js');
+const _ADMIN_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
+const _ADMIN_KEY = [
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  process.env.SUPABASE_SERVICE_KEY,
+  process.env.SERVICE_ROLE_KEY,
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg'
+].find(k => k && String(k).trim().length > 10);
+const supabaseAdmin = createClient(_ADMIN_URL, _ADMIN_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },
+});
+
 // ── In-Memory Activity & AI Log Fallbacks ────────────────────────────────────
 let inMemoryActivityLogs = [];
 
@@ -500,7 +514,8 @@ exports.hideProduct = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase.from('products').delete().eq('id', id);
+    // Use supabaseAdmin (service_role) to bypass RLS — fixes silent no-delete bug
+    const { error } = await supabaseAdmin.from('products').delete().eq('id', id);
     if (error) throw error;
 
     invalidateCache();

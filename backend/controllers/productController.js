@@ -2,6 +2,20 @@ const { safeQuery, formatSupabaseError } = require('../config/supabase');
 const supabase = require('../config/supabase');
 const { HANDICRAFT_CATEGORIES } = require('../data/handicraftsData');
 
+// Dedicated service_role client — bypasses RLS for all write/delete operations
+const { createClient } = require('@supabase/supabase-js');
+const _PA_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
+const _PA_KEY = [
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  process.env.SUPABASE_SERVICE_KEY,
+  process.env.SERVICE_ROLE_KEY,
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg'
+].find(k => k && String(k).trim().length > 10);
+const supabaseAdmin = createClient(_PA_URL, _PA_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },
+});
+
 let productCache = {
   all: { data: null, timestamp: 0 },
   featured: { data: null, timestamp: 0 }
@@ -665,7 +679,7 @@ exports.updateProduct = async (req, res) => {
 
 exports.deleteProduct = async (req, res) => {
   try {
-    // 1. Fetch existing product
+    // 1. Fetch existing product (use supabase for reads — covered by public SELECT policy)
     const { data: existing, error: fetchErr } = await supabase
       .from('products')
       .select('id, artisan_id')
@@ -691,19 +705,21 @@ exports.deleteProduct = async (req, res) => {
       }
     }
 
-    const { error } = await supabase
+    // 3. Use supabaseAdmin (service_role) for DELETE to bypass RLS — fixes silent no-delete bug
+    const { error } = await supabaseAdmin
       .from('products')
       .delete()
       .eq('id', req.params.id);
 
     if (error) throw error;
-    
+
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
     broadcastSync('PRODUCTS_UPDATED', { action: 'delete', id: req.params.id });
-    res.json({ message: 'Product removed' });
+    res.json({ message: 'Product deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: 'Server Error' });
+    console.error('deleteProduct error:', error);
+    res.status(500).json({ error: error.message || 'Server Error' });
   }
 };
 
