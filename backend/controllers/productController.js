@@ -653,12 +653,14 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    const { data, error } = await supabase
+    // Use supabaseAdmin (service_role) for UPDATE to bypass RLS
+    // Switch .single() → .maybeSingle() to avoid "Cannot coerce result to single JSON object"
+    const { data, error } = await supabaseAdmin
       .from('products')
       .update(updatePayload)
       .eq('id', req.params.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === '23505') {
@@ -666,7 +668,11 @@ exports.updateProduct = async (req, res) => {
       }
       throw error;
     }
-    
+
+    if (!data) {
+      return res.status(404).json({ error: 'Product not found or update was blocked.' });
+    }
+
     invalidateCache();
     const { broadcastSync } = require('../utils/realtime');
     broadcastSync('PRODUCTS_UPDATED', { action: 'update', id: req.params.id, product: data });
