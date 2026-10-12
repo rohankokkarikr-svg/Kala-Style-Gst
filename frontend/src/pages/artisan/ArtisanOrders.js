@@ -16,7 +16,8 @@ import {
   HiCheck,
   HiX,
   HiShieldCheck,
-  HiChatAlt2
+  HiChatAlt2,
+  HiXCircle
 } from 'react-icons/hi';
 import { FaWhatsapp } from 'react-icons/fa';
 import toast from 'react-hot-toast';
@@ -32,6 +33,13 @@ export default function ArtisanOrders() {
   const [search, setSearch] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
   const [verifyingId, setVerifyingId] = useState(null);
+
+  // Dedicated Artisan Order Acceptance / Rejection Workflow Modal
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null); // { orderId, artisanOrderId, orderNumber, customerName }
+  const [selectedRejectReason, setSelectedRejectReason] = useState('Suspected Fake / Fraudulent Order');
+  const [customRejectNote, setCustomRejectNote] = useState('');
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   const fetchOrders = async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -135,45 +143,109 @@ export default function ArtisanOrders() {
     }
   };
 
-  // Handle artisan sub-order status machine transition
-  // Handle artisan sub-order status machine transition
-  const handleArtisanSubOrderStatus = async (artisanOrderId, newStatus, orderId) => {
-    if (!artisanOrderId || !newStatus) return;
-    setUpdatingId(artisanOrderId);
-    try {
-      try {
-        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: newStatus, order_id: orderId });
-      } catch (subErr) {
-        if (orderId && orderId !== artisanOrderId) {
-          await artisanAPI.updateOrderStatus(orderId, { status: newStatus });
-        } else {
-          throw subErr;
-        }
+
+  // Dedicated 1-Click Accept & Confirm Order
+  const handleAcceptOrder = async (orderId, artisanOrderId) => {
+    if (!orderId && !artisanOrderId) return;
+    const targetId = artisanOrderId || orderId;
+    setUpdatingId(targetId);
+
+    // Optimistically update local state immediately
+    setOrders(prev => prev.map(item => {
+      const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
+                       (!artisanOrderId && (item.orders?.id === orderId || item.order?.id === orderId || item.order_id === orderId));
+      if (isTarget) {
+        return {
+          ...item,
+          status: 'accepted',
+          item_status: 'accepted',
+          orders: item.orders ? { ...item.orders, status: 'accepted', order_status: 'accepted' } : undefined,
+          order: item.order ? { ...item.order, status: 'accepted', order_status: 'accepted' } : undefined,
+        };
       }
-      toast.success(`✅ Status updated to "${newStatus}"!`);
-      // Optimistically update
-      setOrders(prev => prev.map(ao => ao.id === artisanOrderId ? { ...ao, status: newStatus, item_status: newStatus } : ao));
-      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
-        detail: {
-          id: artisanOrderId,
-          artisanOrderId,
-          orderId,
-          status: newStatus,
-          payload: { id: artisanOrderId, artisanOrderId, orderId, status: newStatus }
-        }
-      }));
+      return item;
+    }));
+
+    try {
+      if (artisanOrderId) {
+        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: 'accepted', order_id: orderId });
+      } else {
+        await artisanAPI.updateOrderStatus(orderId, { status: 'accepted' });
+      }
+      toast.success('🎉 Order Confirmed! The customer will see "Accepted by Artisan" on their tracking status bar.');
       window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
-        detail: {
-          id: orderId,
-          orderId,
-          status: newStatus,
-          payload: { id: orderId, orderId, status: newStatus }
-        }
+        detail: { id: orderId, orderId, status: 'accepted', order_status: 'accepted', artisanOrderId }
+      }));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
+        detail: { id: artisanOrderId, artisanOrderId, orderId, status: 'accepted' }
       }));
     } catch (err) {
-      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update status');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to accept order');
       fetchOrders();
     } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openRejectModal = (item, orderId, artisanOrderId) => {
+    const orderObj = item.orders || item.order || {};
+    const customerObj = orderObj.users || orderObj.user || {};
+    const customerName = customerObj.name || orderObj.shipping_name || 'Customer';
+    const orderNum = orderObj.order_number || String(orderId || artisanOrderId).substring(0, 8);
+    setRejectTarget({ orderId, artisanOrderId, orderNumber: orderNum, customerName });
+    setSelectedRejectReason('Suspected Fake / Fraudulent Order');
+    setCustomRejectNote('');
+    setRejectModalOpen(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectTarget) return;
+    const { orderId, artisanOrderId } = rejectTarget;
+    const finalReason = selectedRejectReason === 'Other'
+      ? (customRejectNote.trim() || 'Order rejected by artisan')
+      : (customRejectNote.trim() ? `${selectedRejectReason} (${customRejectNote.trim()})` : selectedRejectReason);
+
+    setRejectLoading(true);
+    const targetId = artisanOrderId || orderId;
+    setUpdatingId(targetId);
+
+    // Optimistically update
+    setOrders(prev => prev.map(item => {
+      const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
+                       (!artisanOrderId && (item.orders?.id === orderId || item.order?.id === orderId || item.order_id === orderId));
+      if (isTarget) {
+        return {
+          ...item,
+          status: 'rejected',
+          item_status: 'rejected',
+          rejection_reason: finalReason,
+          orders: item.orders ? { ...item.orders, status: 'rejected', order_status: 'rejected', rejection_reason: finalReason } : undefined,
+          order: item.order ? { ...item.order, status: 'rejected', order_status: 'rejected', rejection_reason: finalReason } : undefined,
+        };
+      }
+      return item;
+    }));
+
+    try {
+      if (artisanOrderId) {
+        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: 'rejected', order_id: orderId, rejection_reason: finalReason });
+      } else {
+        await artisanAPI.updateOrderStatus(orderId, { status: 'rejected', rejection_reason: finalReason });
+      }
+      toast.error('❌ Order Rejected. Inventory restored and customer notified in real time.');
+      setRejectModalOpen(false);
+      setRejectTarget(null);
+      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
+        detail: { id: orderId, orderId, status: 'rejected', order_status: 'rejected', rejection_reason: finalReason, artisanOrderId }
+      }));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
+        detail: { id: artisanOrderId, artisanOrderId, orderId, status: 'rejected', rejection_reason: finalReason }
+      }));
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to reject order');
+      fetchOrders();
+    } finally {
+      setRejectLoading(false);
       setUpdatingId(null);
     }
   };
@@ -729,9 +801,125 @@ export default function ArtisanOrders() {
                   </div>
                 </div>
 
+                {/* ── Real-Time Artisan Order Verification: Accept or Reject Banner ── */}
+                {(() => {
+                  const isAwaitingDecision = (rawStatus === 'pending' || rawStatus === 'confirmed') && item.status !== 'accepted';
+                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted';
+                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected';
+
+                  if (isAwaitingDecision) {
+                    return (
+                      <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-dark-800 to-gold-500/10 border-2 border-gold-500/40 space-y-3.5 shadow-lg shadow-gold-500/5 animate-in fade-in duration-300">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="p-2.5 rounded-xl bg-gold-500/20 text-gold-400 border border-gold-500/40 text-lg shrink-0">
+                              ⚡
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-bold text-gold-300 uppercase tracking-wider">
+                                  Action Required: Order Verification & Acceptance
+                                </span>
+                                <span className="text-[10px] bg-gold-500/20 text-gold-300 px-2.5 py-0.5 rounded-full border border-gold-500/30 font-bold animate-pulse">
+                                  Awaiting Your Confirmation
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-300 mt-1">
+                                Customer has placed this order. Please verify customer and craft details. If this is a real order you can fulfill, click <strong>Accept & Confirm Order</strong>. If fraudulent, duplicate, or unfulfillable, click <strong>Reject Order</strong>.
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-gray-300 bg-dark-900/90 px-3 py-1.5 rounded-lg border border-dark-700 self-start sm:self-auto shrink-0">
+                            {orderObj.payment_method === 'cod' ? '💵 Cash on Delivery' : '💳 Online Payment'}
+                          </span>
+                        </div>
+
+                        {/* Customer & Craft quick summary */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-dark-950/70 p-3 rounded-lg border border-dark-700/80 text-xs">
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase font-semibold block">Customer Name</span>
+                            <span className="font-semibold text-white">{customerName}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase font-semibold block">Contact Phone</span>
+                            <span className="font-mono text-gold-400 font-semibold">{customerPhone || 'Not provided'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase font-semibold block">Destination</span>
+                            <span className="text-gray-300 truncate block">{orderObj.shipping_city || orderObj.shipping_pincode || 'Customer address'}</span>
+                          </div>
+                        </div>
+
+                        {/* Acceptance & Rejection Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-gold-500/20">
+                          <span className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                            <HiShieldCheck className="w-4 h-4 text-gold-400" />
+                            <span>Your confirmation instantly updates the customer's live tracking status bar</span>
+                          </span>
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                              onClick={() => openRejectModal(item, effectiveOrderId, effectiveArtisanOrderId)}
+                              className="px-3.5 py-2 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-md"
+                            >
+                              <HiX className="w-4 h-4" /> Reject Order
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                              onClick={() => handleAcceptOrder(effectiveOrderId, effectiveArtisanOrderId)}
+                              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/25 cursor-pointer"
+                            >
+                              <HiCheck className="w-4 h-4" />
+                              {updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId ? 'Confirming...' : 'Accept & Confirm Order'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (isAccepted && !isRejected) {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiCheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-emerald-300">Order Confirmed by You:</span>
+                            <span className="text-gray-300 ml-1.5">Customer tracking status bar is showing "Accepted by Artisan". Preparation is underway.</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-emerald-500/30">
+                          Accepted ✓
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (isRejected) {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiXCircle className="w-5 h-5 text-red-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-red-300">Order Rejected by You:</span>
+                            <span className="text-gray-300 ml-1.5">Reason: {item.rejection_reason || orderObj.rejection_reason || 'Unfulfillable order'}.</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-red-400 bg-red-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-red-500/30">
+                          Rejected
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
+
                 {/* Exclusive Artisan UTR Verification & Order Confirmation Banner */}
                 {(() => {
-                  const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
+                  const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
                   const isPendingUtr = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
                   const isPaid = orderObj.payment_status === 'paid' || orderObj.payment_status === 'completed';
 
@@ -847,11 +1035,13 @@ export default function ArtisanOrders() {
                         onChange={(e) => handleStatusChange(effectiveOrderId, e.target.value, effectiveArtisanOrderId)}
                         className="bg-dark-800 border border-dark-600 hover:border-gold-500/50 text-xs text-white rounded-lg px-3 py-1.5 focus:border-gold-500 focus:outline-none font-medium cursor-pointer transition-all shadow-sm"
                       >
-                        <option value="pending">🟡 Pending Packing</option>
+                        <option value="pending">🟡 Pending Confirmation</option>
+                        <option value="accepted">✅ Confirmed by Artisan</option>
                         <option value="processing">📦 In Preparation</option>
                         <option value="shipped">🚚 Out for Delivery</option>
                         <option value="delivered">🟢 Delivered</option>
                         <option value="cancelled">🔴 Cancelled</option>
+                        <option value="rejected">❌ Rejected</option>
                         {/* Hidden aliases for full DOM compatibility */}
                         <option value="preparing" className="hidden">📦 In Preparation</option>
                         <option value="dispatched" className="hidden">🚚 Out for Delivery</option>
@@ -861,6 +1051,15 @@ export default function ArtisanOrders() {
 
                     {/* Quick 1-Click Progressive Next-Step Buttons */}
                     {statusKey === 'pending' && (
+                      <button
+                        onClick={() => handleAcceptOrder(effectiveOrderId, effectiveArtisanOrderId)}
+                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                        className="text-xs py-1.5 px-3 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
+                      >
+                        <HiCheck className="w-3.5 h-3.5" /> Accept & Confirm Order →
+                      </button>
+                    )}
+                    {statusKey === 'accepted' && (
                       <button
                         onClick={() => handleStatusChange(effectiveOrderId, 'processing', effectiveArtisanOrderId)}
                         disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
@@ -908,6 +1107,94 @@ export default function ArtisanOrders() {
           <p className="text-gray-400 text-xs max-w-md mx-auto">
             {search ? `No orders matched "${search}".` : 'When customers purchase your handcrafted creations, their complete details and delivery addresses will appear here automatically!'}
           </p>
+        </div>
+      )}
+
+      {/* Reject Order Confirmation Modal */}
+      {rejectModalOpen && rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-dark-900 border border-red-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-dark-700 pb-3">
+              <div className="flex items-center gap-2 text-red-400 font-bold text-base">
+                <HiXCircle className="w-5 h-5" /> Reject Order #{rejectTarget.orderNumber}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg"
+              >
+                <HiX className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-300">
+              Please choose a reason for rejecting the order from <strong>{rejectTarget.customerName}</strong>. This status will immediately reflect on the customer's live tracking status bar and refund prepaid amounts.
+            </p>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block">
+                Select Reason:
+              </label>
+              {[
+                'Suspected Fake / Fraudulent Order',
+                'Customer Phone or Address Unreachable',
+                'Out of Raw Material / Craft Cannot Be Completed',
+                'Delivery Location / Pincode Unserviceable',
+                'Other'
+              ].map((reasonOption) => (
+                <label
+                  key={reasonOption}
+                  className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                    selectedRejectReason === reasonOption
+                      ? 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold'
+                      : 'bg-dark-800/80 border-dark-700 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="rejectReason"
+                    value={reasonOption}
+                    checked={selectedRejectReason === reasonOption}
+                    onChange={(e) => setSelectedRejectReason(e.target.value)}
+                    className="accent-red-500"
+                  />
+                  <span>{reasonOption}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-400">
+                Additional Notes (Optional):
+              </label>
+              <textarea
+                rows={2}
+                value={customRejectNote}
+                onChange={(e) => setCustomRejectNote(e.target.value)}
+                placeholder="Provide any details for customer support or the buyer..."
+                className="w-full bg-dark-800 border border-dark-700 rounded-lg p-2.5 text-xs text-white placeholder-gray-500 focus:border-red-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-700">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-4 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-gray-300 text-xs font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={rejectLoading}
+                onClick={handleConfirmReject}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-md shadow-red-600/30 flex items-center gap-1.5"
+              >
+                <HiX className="w-4 h-4" />
+                {rejectLoading ? 'Rejecting...' : 'Confirm Rejection'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* Send Message Modal */}

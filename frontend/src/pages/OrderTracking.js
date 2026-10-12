@@ -6,15 +6,15 @@ import toast from 'react-hot-toast';
 import {
   HiCheckCircle, HiClock, HiExclamationCircle, HiTruck,
   HiLocationMarker, HiShoppingBag, HiArrowLeft, HiRefresh,
-  HiChatAlt2, HiExternalLink, HiClipboardCopy
+  HiChatAlt2, HiExternalLink, HiClipboardCopy, HiXCircle
 } from 'react-icons/hi';
 import { motion } from 'framer-motion';
 import SendMessageModal from '../components/SendMessageModal';
 
 const ARTISAN_STEPS = [
-  { key: 'pending',           label: 'Order Received',     icon: '📦' },
-  { key: 'accepted',          label: 'Accepted by Artisan', icon: '✅' },
-  { key: 'preparing',         label: 'Preparing',           icon: '🎨' },
+  { key: 'pending',           label: 'Order Placed',         icon: '📦' },
+  { key: 'accepted',          label: 'Artisan Confirmed',   icon: '✅' },
+  { key: 'preparing',         label: 'Preparing Craft',     icon: '🎨' },
   { key: 'ready_for_pickup',  label: 'Ready for Pickup',    icon: '📬' },
   { key: 'dispatched',        label: 'Dispatched',          icon: '🚚' },
   { key: 'out_for_delivery',  label: 'Out for Delivery',    icon: '🛵' },
@@ -24,7 +24,7 @@ const ARTISAN_STEPS = [
 const STATUS_ORDER = ARTISAN_STEPS.map(s => s.key);
 
 const STATUS_ALIASES = {
-  confirmed: 'accepted',
+  confirmed: 'pending', // User placed order; awaits artisan acceptance before moving to 'accepted'
   approved: 'accepted',
   processing: 'preparing',
   in_preparation: 'preparing',
@@ -124,22 +124,183 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
   }
 
   const map = {
-    pending:          { label: 'Order Received', color: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' },
-    confirmed:        { label: 'Order Confirmed', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium' },
-    processing:       { label: 'Order Processing', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
-    accepted:         { label: 'Accepted by Artisan', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
-    preparing:        { label: 'Preparing Items',    color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
-    ready_for_pickup: { label: 'Ready for Dispatch', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' },
-    dispatched:       { label: 'Dispatched',         color: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
-    shipped:          { label: 'Shipped',            color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
-    out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
-    delivered:        { label: 'Order Complete ✓',   color: 'bg-green-500/20 text-green-300 border border-green-500/30 font-bold' },
-    cancelled:        { label: 'Cancelled',          color: 'bg-red-500/20 text-red-300 border border-red-500/30' },
-    rejected:         { label: 'Rejected',           color: 'bg-red-600/20 text-red-400 border border-red-600/30' },
+    pending:          { label: 'Awaiting Artisan Confirmation', color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold animate-pulse' },
+    confirmed:        { label: 'Awaiting Artisan Confirmation', color: 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold animate-pulse' },
+    processing:       { label: 'Crafting in Progress',            color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium' },
+    accepted:         { label: 'Accepted by Artisan ✓',          color: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold' },
+    preparing:        { label: 'Crafting in Progress',            color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium' },
+    ready_for_pickup: { label: 'Ready for Dispatch',             color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' },
+    dispatched:       { label: 'Dispatched / In Transit',         color: 'bg-orange-500/20 text-orange-300 border border-orange-500/30 font-medium' },
+    shipped:          { label: 'Out for Delivery',               color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium' },
+    out_for_delivery: { label: 'Out for Delivery',               color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium' },
+    delivered:        { label: 'Order Delivered ✓',               color: 'bg-green-500/20 text-green-300 border border-green-500/30 font-bold' },
+    cancelled:        { label: 'Cancelled',                      color: 'bg-red-500/20 text-red-300 border border-red-500/30' },
+    rejected:         { label: 'Rejected by Artisan',            color: 'bg-red-600/20 text-red-300 border border-red-600/30 font-bold' },
   };
   const cfg = map[norm] || map[status] || { label: status, color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' };
   return (
     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.color}`}>{cfg.label}</span>
+  );
+}
+
+function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
+  const rawStatus = (order.order_status || order.status || 'pending').toLowerCase();
+  const firstAo = artisanOrders[0] || {};
+  const artisanStatus = (firstAo.status || rawStatus).toLowerCase();
+  const rejectionReason = firstAo.rejection_reason || order.rejection_reason || null;
+
+  const isRejected = artisanStatus === 'rejected' || rawStatus === 'rejected';
+  const isCancelled = artisanStatus === 'cancelled' || rawStatus === 'cancelled';
+  const isDelivered = artisanStatus === 'delivered' || rawStatus === 'delivered';
+  const isDispatched = ['dispatched', 'shipped', 'out_for_delivery', 'on_the_way'].includes(artisanStatus) || ['dispatched', 'shipped', 'out_for_delivery'].includes(rawStatus);
+  const isPreparing = ['preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed'].includes(artisanStatus) || ['preparing', 'processing'].includes(rawStatus);
+  const isAccepted = artisanStatus === 'accepted' || rawStatus === 'accepted';
+  const isAwaitingArtisan = (artisanStatus === 'pending' || rawStatus === 'pending' || rawStatus === 'confirmed') && !isAccepted && !isPreparing && !isDispatched && !isDelivered && !isRejected && !isCancelled;
+
+  // Compute active milestone (0: Placed, 1: Artisan Confirmed, 2: Crafting, 3: Dispatched, 4: Delivered)
+  let activeStage = 0;
+  if (isDelivered) activeStage = 4;
+  else if (isDispatched) activeStage = 3;
+  else if (isPreparing) activeStage = 2;
+  else if (isAccepted) activeStage = 1;
+  else if (isAwaitingArtisan) activeStage = 0;
+
+  const STAGES = [
+    { title: 'Order Placed', desc: order.payment_method === 'cod' ? 'COD Confirmed' : 'Payment Verified', icon: '🛒' },
+    { title: 'Artisan Confirmation', desc: isAccepted ? 'Confirmed by Artisan ✓' : isRejected ? 'Rejected by Artisan' : 'Review in Progress', icon: '🔍' },
+    { title: 'Crafting', desc: 'Handcrafted Preparation', icon: '🎨' },
+    { title: 'Out for Delivery', desc: 'Dispatched to Address', icon: '🚚' },
+    { title: 'Delivered', desc: 'Package Handed Over', icon: '🎉' },
+  ];
+
+  return (
+    <div className="bg-dark-800 border border-dark-700/80 rounded-2xl p-5 sm:p-6 space-y-5 shadow-xl">
+      {/* Top Header with Live Real-time Status Badge */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-dark-700/70">
+        <div>
+          <span className="text-[10px] uppercase font-mono tracking-widest text-gold-400 font-bold block mb-0.5">
+            Real-Time Order Status Bar
+          </span>
+          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            {isRejected ? (
+              <span className="text-red-400 flex items-center gap-1.5"><HiXCircle className="w-5 h-5" /> Order Rejected by Artisan</span>
+            ) : isAwaitingArtisan ? (
+              <span className="text-amber-300 flex items-center gap-1.5">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                </span>
+                Awaiting Artisan Confirmation
+              </span>
+            ) : isAccepted && !isPreparing ? (
+              <span className="text-emerald-400 flex items-center gap-1.5"><HiCheckCircle className="w-5 h-5" /> Accepted & Confirmed by Artisan 🎉</span>
+            ) : isPreparing ? (
+              <span className="text-purple-400 flex items-center gap-1.5">🎨 Artisan Crafting in Progress</span>
+            ) : isDispatched ? (
+              <span className="text-blue-400 flex items-center gap-1.5"><HiTruck className="w-5 h-5" /> Out for Delivery</span>
+            ) : isDelivered ? (
+              <span className="text-green-400 flex items-center gap-1.5"><HiCheckCircle className="w-5 h-5" /> Order Delivered Successfully ✓</span>
+            ) : (
+              <span className="text-white">Order in Progress</span>
+            )}
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            Live Sync Active
+          </span>
+        </div>
+      </div>
+
+      {/* Horizontal Multi-Stage Progress Bar */}
+      {!isRejected && !isCancelled && (
+        <div className="pt-2">
+          {/* Progress track line */}
+          <div className="relative">
+            <div className="absolute top-1/2 left-0 right-0 h-1.5 -translate-y-1/2 bg-dark-700 rounded-full z-0" />
+            <div
+              className="absolute top-1/2 left-0 h-1.5 -translate-y-1/2 bg-gradient-to-r from-gold-500 via-emerald-500 to-green-400 rounded-full z-0 transition-all duration-700 ease-out shadow-sm shadow-gold-500/30"
+              style={{ width: `${Math.min(100, (activeStage / (STAGES.length - 1)) * 100)}%` }}
+            />
+
+            <div className="relative z-10 flex justify-between items-center">
+              {STAGES.map((stg, sIdx) => {
+                const isPassed = sIdx < activeStage;
+                const isCurrent = sIdx === activeStage;
+
+                return (
+                  <div key={sIdx} className="flex flex-col items-center">
+                    <div
+                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all shadow-md ${
+                        isPassed
+                          ? 'bg-emerald-500 text-dark-950 shadow-emerald-500/30 font-black ring-4 ring-emerald-500/20'
+                          : isCurrent
+                          ? isAwaitingArtisan && sIdx === 1
+                            ? 'bg-amber-500 text-dark-950 ring-4 ring-amber-500/30 animate-pulse font-black'
+                            : 'bg-gold-500 text-dark-950 ring-4 ring-gold-500/30 font-black'
+                          : 'bg-dark-700 text-gray-500 border border-dark-600'
+                      }`}
+                    >
+                      {isPassed ? '✓' : isCurrent ? stg.icon : (sIdx + 1)}
+                    </div>
+                    <span
+                      className={`text-[10px] sm:text-xs mt-2 font-medium text-center max-w-[65px] sm:max-w-[85px] leading-tight ${
+                        isPassed || isCurrent ? 'text-white font-bold' : 'text-gray-500'
+                      }`}
+                    >
+                      {stg.title}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Status Detail Notice Banner */}
+      {isAwaitingArtisan && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-dark-900 to-amber-500/10 border border-amber-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
+          <div className="flex items-center gap-2 text-amber-300 font-bold">
+            <span className="p-1 rounded bg-amber-500/20">⏳</span>
+            <span>Order Forwarded to Artisan for Review & Acceptance</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            Your order has been confirmed and forwarded directly to the artisan. The artisan will verify if this is a genuine order and accept it to begin handcrafting. Your status bar will update automatically the moment the artisan confirms.
+          </p>
+        </div>
+      )}
+
+      {isAccepted && !isPreparing && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/15 via-dark-900 to-green-500/10 border border-emerald-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
+          <div className="flex items-center gap-2 text-emerald-300 font-bold">
+            <HiCheckCircle className="w-4 h-4 text-emerald-400" />
+            <span>Order Confirmed & Accepted by Artisan!</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            Great news! The artisan has confirmed your order as genuine and is preparing the handcrafted materials. You will be updated as the piece progresses through crafting and shipping!
+          </p>
+        </div>
+      )}
+
+      {isRejected && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-red-500/15 via-dark-900 to-red-500/10 border border-red-500/40 text-xs text-gray-200 space-y-2 animate-in fade-in">
+          <div className="flex items-center gap-2 text-red-400 font-bold">
+            <HiXCircle className="w-4 h-4 text-red-400" />
+            <span>Order Rejected by Artisan</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            The artisan was unable to confirm this order.
+            {rejectionReason ? <strong className="block text-red-300 mt-1">Reason: {rejectionReason}</strong> : null}
+            {order.payment_status === 'paid' ? (
+              <span className="block text-emerald-400 mt-1">✓ Your prepaid payment of ₹{(order.total_amount || 0).toLocaleString()} is being refunded automatically to your source account.</span>
+            ) : null}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -367,6 +528,9 @@ export default function OrderTracking() {
             </button>
           </div>
         </div>
+
+        {/* Real-Time Live Status Bar */}
+        <LiveOrderStatusTracker order={order} artisanOrders={artisanOrders} />
 
         {/* Order Summary Card */}
         <motion.div

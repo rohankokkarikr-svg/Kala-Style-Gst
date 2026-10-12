@@ -82,12 +82,14 @@ function deriveMasterStatus(artisanStatuses) {
   const allIn = (...vals) => s.every(x => vals.includes(x));
 
   if (all('delivered'))                           return 'delivered';
-  if (all('cancelled') || all('rejected'))        return 'cancelled';
+  if (all('rejected'))                            return 'rejected';
+  if (all('cancelled') || allIn('cancelled', 'rejected')) return 'cancelled';
   if (allIn('delivered', 'cancelled', 'rejected'))return 'partially_delivered';
   if (some('delivered') && (some('preparing') || some('processing') || some('ready_for_pickup'))) return 'partially_processing';
   if (some('delivered'))                          return 'partially_delivered';
   if (some('out_for_delivery') || some('dispatched') || some('shipped')) return 'shipped';
-  if (some('preparing') || some('processing') || some('ready_for_pickup') || some('accepted')) return 'processing';
+  if (some('preparing') || some('processing') || some('ready_for_pickup')) return 'processing';
+  if (all('accepted') || some('accepted'))        return 'accepted';
   if (all('pending'))                             return 'pending';
   if (allIn('confirmed', 'pending'))              return 'confirmed';
   return 'processing';

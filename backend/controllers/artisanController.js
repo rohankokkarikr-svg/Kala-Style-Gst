@@ -2,7 +2,7 @@ const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
 const { parseArtisanUpi, formatBioWithUpi } = require('./authController');
 const { isValidArtisanTransition } = require('../config/ecommerce');
-const { syncMasterOrderStatus, finalizeCODDelivery, createArtisanEarning } = require('../services/orderService');
+const { syncMasterOrderStatus, finalizeCODDelivery, createArtisanEarning, restoreInventory, processRefund } = require('../services/orderService');
 const { checkAndGrantReward } = require('../services/rewardService');
 const { broadcastSync } = require('../utils/realtime');
 
@@ -835,14 +835,74 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
     let newMasterStatus = status;
 
-    // Special handling for delivered (COD finalization + earnings + reward)
-    if (status === 'delivered') {
-      const { data: masterOrder } = await supabase
-        .from('orders')
-        .select('user_id, payment_method, payment_status')
-        .eq('id', artOrder.order_id)
-        .single();
+    // Fetch master order for customer notifications and fulfillment processing
+    const { data: masterOrder } = await supabase
+      .from('orders')
+      .select('id, user_id, order_number, total_amount, total_price, payment_method, payment_status, phone, shipping_name, users(name, phone, email)')
+      .eq('id', artOrder.order_id)
+      .maybeSingle();
 
+    const orderNum = masterOrder?.order_number || String(artOrder.order_id).substring(0, 8);
+    const customerUserId = masterOrder?.user_id;
+
+    // 1. Handling for ACCEPTED by artisan
+    if (status === 'accepted') {
+      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || 'accepted';
+
+      if (customerUserId) {
+        try {
+          const { createSystemNotification } = require('./notificationController');
+          await createSystemNotification({
+            title: `Order #${orderNum} Confirmed by Artisan! 🎉`,
+            message: `Great news! The artisan (${profile.store_name || 'Artisan Workshop'}) has verified and confirmed your order. Handcrafted preparation will begin immediately.`,
+            target_audience: 'specific',
+            target_user_id: customerUserId,
+            sender_id: req.user.id,
+          });
+        } catch (notifErr) {
+          console.warn('[artisanController] Acceptance notification notice:', notifErr.message);
+        }
+      }
+    }
+    // 2. Handling for REJECTED by artisan
+    else if (status === 'rejected') {
+      // Step A: Restore inventory
+      try {
+        await restoreInventory(artOrder.order_id);
+      } catch (invErr) {
+        console.warn('[artisanController] Inventory restoration notice:', invErr.message);
+      }
+
+      // Step B: If prepaid, initiate refund
+      if (masterOrder?.payment_status === 'paid') {
+        try {
+          await processRefund(artOrder.order_id, null, rejection_reason || 'Order rejected by artisan');
+        } catch (refErr) {
+          console.warn('[artisanController] Refund notice on rejection:', refErr.message);
+        }
+      }
+
+      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || 'rejected';
+
+      // Step C: In-app notification to customer
+      if (customerUserId) {
+        try {
+          const { createSystemNotification } = require('./notificationController');
+          const isPrepaid = masterOrder?.payment_status === 'paid';
+          await createSystemNotification({
+            title: `Order #${orderNum} Update: Rejected by Artisan`,
+            message: `The artisan was unable to confirm order #${orderNum}. Reason: ${rejection_reason || 'Artisan unable to fulfill order'}. ${isPrepaid ? 'Your payment refund has been initiated.' : ''}`,
+            target_audience: 'specific',
+            target_user_id: customerUserId,
+            sender_id: req.user.id,
+          });
+        } catch (notifErr) {
+          console.warn('[artisanController] Rejection notification notice:', notifErr.message);
+        }
+      }
+    }
+    // 3. Handling for DELIVERED (COD finalization + earnings + reward)
+    else if (status === 'delivered') {
       // Sync master order status
       newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || status;
 
@@ -890,12 +950,14 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       order_status: newMasterStatus,
       shipping_status: shippingStatusVal,
       artisanOrderId: artOrder.id,
+      rejection_reason: status === 'rejected' ? rejection_reason : undefined,
     });
     broadcastSync('ARTISAN_ORDERS_UPDATED', {
       id: artOrder.id,
       artisanOrderId: artOrder.id,
       orderId: artOrder.order_id,
       status,
+      rejection_reason: status === 'rejected' ? rejection_reason : undefined,
     });
 
     res.json({

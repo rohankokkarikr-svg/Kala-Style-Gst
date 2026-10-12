@@ -318,6 +318,43 @@ const verifyPaymentHandler = async (req, res) => {
         .catch((sErr) => console.warn(`[verify] Auto Shiprocket shipment notice:`, sErr.message));
     } catch (shpErr) { }
 
+    // Send in-app Action Required notification to Artisan(s) and Customer
+    try {
+      const { createSystemNotification } = require('../controllers/notificationController');
+      const orderNum = order.order_number || String(order.id).substring(0, 8);
+
+      // 1. Notification to Customer
+      if (order.user_id) {
+        await createSystemNotification({
+          title: `Payment Confirmed: Order #${orderNum} 🎉`,
+          message: `Your payment of ₹${order.total_amount} was successfully verified. Your order has been forwarded to the artisan for confirmation.`,
+          target_audience: 'specific',
+          target_user_id: order.user_id,
+          sender_id: null,
+        });
+      }
+
+      // 2. Notification to Artisan(s)
+      const { data: artOrders } = await supabase
+        .from('artisan_orders')
+        .select('*, artisan_profiles(user_id, store_name)')
+        .eq('order_id', order.id);
+
+      for (const ao of (artOrders || [])) {
+        if (ao.artisan_profiles?.user_id) {
+          await createSystemNotification({
+            title: `🚨 Action Required: New Order #${orderNum} Needs Confirmation!`,
+            message: `Customer ${req.user?.name || 'User'} has paid ₹${order.total_amount} for order #${orderNum}. Please review customer details and Accept or Reject this order in your Artisan Portal.`,
+            target_audience: 'specific',
+            target_user_id: ao.artisan_profiles.user_id,
+            sender_id: order.user_id,
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.warn('[verify] In-app notification creation error:', notifErr.message);
+    }
+
     // Send Payment Success WhatsApp Notification to Admin
     try {
       const { sendOrderWhatsappNotification } = require('../utils/whatsapp');

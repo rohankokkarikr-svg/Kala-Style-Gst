@@ -231,8 +231,8 @@ exports.createOrder = async (req, res) => {
 
           if (artProfile?.user_id) {
             await createSystemNotification({
-              title: `New Order #${orderNum} for ${artProfile.store_name || 'Your Workshop'}!`,
-              message: `You have received an order for your handcrafted products (Subtotal: ₹${artOrder.subtotal || artOrder.total_amount || 0}). Please prepare for dispatch.`,
+              title: `🚨 Action Required: New Order #${orderNum} Needs Confirmation!`,
+              message: `Customer ${req.user?.name || 'User'} placed order #${orderNum} (₹${artOrder.subtotal || artOrder.total_amount || 0}). Please review customer details and confirm or reject this order in your Artisan Portal.`,
               target_audience: 'specific',
               target_user_id: artProfile.user_id,
               sender_id: user_id,
@@ -596,6 +596,19 @@ exports.updateOrderStatus = async (req, res) => {
 
       await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
 
+      // Inventory and refund processing for rejection
+      if (mappedStatus === 'rejected') {
+        try {
+          const { restoreInventory, processRefund } = require('../services/orderService');
+          await restoreInventory(id);
+          if (order.payment_status === 'paid') {
+            await processRefund(id, null, req.body.rejection_reason || 'Order rejected by artisan');
+          }
+        } catch (invErr) {
+          console.warn('[orderController] Inventory/refund notice on rejection:', invErr.message);
+        }
+      }
+
       // Recompute and persist master order status derived from all sub-orders
       const { syncMasterOrderStatus } = require('../services/orderService');
       const newMasterStatus = await syncMasterOrderStatus(id);
@@ -606,6 +619,33 @@ exports.updateOrderStatus = async (req, res) => {
         .eq('id', id)
         .single();
 
+      // Customer notifications
+      const orderNum = updatedOrder?.order_number || String(id).substring(0, 8);
+      const customerUserId = updatedOrder?.user_id;
+
+      if (customerUserId && mappedStatus === 'accepted') {
+        try {
+          await createSystemNotification({
+            title: `Order #${orderNum} Confirmed by Artisan! 🎉`,
+            message: `Great news! The artisan has confirmed your order #${orderNum}. Preparation is beginning now.`,
+            target_audience: 'specific',
+            target_user_id: customerUserId,
+            sender_id: req.user.id,
+          });
+        } catch (e) {}
+      } else if (customerUserId && mappedStatus === 'rejected') {
+        try {
+          const isPrepaid = updatedOrder?.payment_status === 'paid';
+          await createSystemNotification({
+            title: `Order #${orderNum} Update: Rejected by Artisan`,
+            message: `The artisan was unable to confirm order #${orderNum}. ${req.body.rejection_reason ? 'Reason: ' + req.body.rejection_reason + '. ' : ''}${isPrepaid ? 'Payment refund has been initiated.' : ''}`,
+            target_audience: 'specific',
+            target_user_id: customerUserId,
+            sender_id: req.user.id,
+          });
+        } catch (e) {}
+      }
+
       const shippingStatusVal = mappedStatus === 'delivered'
         ? 'DELIVERED'
         : (['dispatched', 'shipped', 'out_for_delivery'].includes(mappedStatus)
@@ -614,13 +654,14 @@ exports.updateOrderStatus = async (req, res) => {
                 ? 'CANCELLED'
                 : (mappedStatus === 'ready_for_pickup' ? 'READY_TO_SHIP' : 'PENDING')));
 
-      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus });
+      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus, rejection_reason: req.body.rejection_reason });
       broadcastSync('ORDERS_UPDATED', {
         id,
         orderId: id,
         status: newMasterStatus,
         order_status: newMasterStatus,
         shipping_status: shippingStatusVal,
+        rejection_reason: req.body.rejection_reason,
         order: updatedOrder
       });
 

@@ -27,6 +27,22 @@ export default function ArtisanDashboard() {
         <p className="text-gray-400 mt-1">Here's what's happening with your artisan store.</p>
       </div>
 
+      {/* Pending Orders Alert Banner */}
+      {!loading && stats?.recentOrders?.some(o => (o.orders?.status === 'pending' || o.orders?.status === 'confirmed' || o.status === 'pending')) && (
+        <div className="bg-gradient-to-r from-amber-500/20 via-dark-800 to-gold-500/10 border-2 border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-amber-500/10 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <span className="p-2 bg-amber-500/20 text-amber-400 rounded-lg text-lg">⚡</span>
+            <div>
+              <p className="text-white font-bold text-sm">Action Required: New Orders Awaiting Your Confirmation!</p>
+              <p className="text-gray-300 text-xs mt-0.5">Customers have placed orders. Review customer details and confirm or reject to update their live status bar.</p>
+            </div>
+          </div>
+          <Link to="/artisan/orders?filter=pending" className="px-4 py-2 rounded-lg bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold text-xs shrink-0 transition-all flex items-center gap-1.5 shadow-md">
+            Review Orders <HiArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
+
       {/* AI Studio CTA */}
       <div className="bg-gradient-to-r from-gold-500/20 via-gold-500/10 to-transparent border border-gold-500/30 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>

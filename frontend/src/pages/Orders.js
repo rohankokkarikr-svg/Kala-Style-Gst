@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { orderAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
-import { HiShoppingBag, HiPencilAlt, HiLocationMarker, HiTruck, HiRefresh } from 'react-icons/hi';
+import { HiShoppingBag, HiPencilAlt, HiLocationMarker, HiTruck } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 import ReviewModal from '../components/ReviewModal';
 import EditOrderModal from '../components/EditOrderModal';
@@ -156,19 +156,19 @@ export default function Orders() {
   const renderStatusText = (status) => {
     const s = (status || '').toLowerCase();
     const map = {
-      pending: 'Order Received',
-      accepted: 'Accepted by Artisan',
-      confirmed: 'Confirmed',
-      preparing: 'Preparing',
-      processing: 'In Preparation',
-      ready_for_pickup: 'Ready for Pickup',
-      dispatched: 'Dispatched',
-      shipped: 'Shipped',
-      out_for_delivery: 'Out for Delivery',
-      delivered: 'Delivered ✓',
-      completed: 'Completed ✓',
-      cancelled: 'Cancelled',
-      rejected: 'Rejected',
+      pending: '⏳ Awaiting Artisan Confirmation',
+      confirmed: '⏳ Awaiting Artisan Confirmation',
+      accepted: '✅ Accepted by Artisan',
+      preparing: '🎨 Crafting in Progress',
+      processing: '🎨 Crafting in Progress',
+      ready_for_pickup: '📬 Ready for Dispatch',
+      dispatched: '🚚 Dispatched',
+      shipped: '🚚 Out for Delivery',
+      out_for_delivery: '🛵 Out for Delivery',
+      delivered: '🎉 Delivered ✓',
+      completed: '🎉 Delivered ✓',
+      cancelled: '🚫 Cancelled',
+      rejected: '❌ Rejected by Artisan',
       payment_verification_pending: '⏱️ Pending Verification',
     };
     return map[s] || status;
@@ -248,6 +248,67 @@ export default function Orders() {
                 })()}
               </div>
             </div>
+
+            {/* Visual Real-Time Mini Status Track on Order Card */}
+            {(() => {
+              const effectiveStatus = (order.shipping_status === 'DELIVERED' || order.order_status === 'delivered' || order.status === 'delivered')
+                ? 'delivered'
+                : (order.order_status || order.status || 'pending').toLowerCase();
+
+              const isRejected = effectiveStatus === 'rejected';
+              const isCancelled = effectiveStatus === 'cancelled';
+              let percent = 20;
+              let barColor = 'from-amber-500 to-gold-400';
+
+              if (effectiveStatus === 'delivered' || effectiveStatus === 'completed') {
+                percent = 100;
+                barColor = 'from-emerald-500 to-green-400';
+              } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(effectiveStatus)) {
+                percent = 80;
+                barColor = 'from-blue-500 to-cyan-400';
+              } else if (['preparing', 'processing', 'ready_for_pickup'].includes(effectiveStatus)) {
+                percent = 60;
+                barColor = 'from-purple-500 to-indigo-400';
+              } else if (effectiveStatus === 'accepted') {
+                percent = 40;
+                barColor = 'from-emerald-500 to-teal-400';
+              } else if (isRejected || isCancelled) {
+                percent = 100;
+                barColor = 'from-red-600 to-rose-500';
+              }
+
+              return (
+                <div className="mb-4 pb-3 border-b border-dark-700/60">
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <span className="font-semibold text-gray-400 flex items-center gap-1.5">
+                      {isRejected ? (
+                        <span className="text-red-400 font-bold">❌ Rejected by Artisan</span>
+                      ) : isCancelled ? (
+                        <span className="text-red-400 font-bold">🚫 Cancelled</span>
+                      ) : effectiveStatus === 'accepted' ? (
+                        <span className="text-emerald-400 font-bold">✅ Confirmed by Artisan</span>
+                      ) : percent <= 20 ? (
+                        <span className="text-amber-300 font-bold flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
+                          Awaiting Artisan Confirmation
+                        </span>
+                      ) : (
+                        <span className="text-white font-bold">{renderStatusText(effectiveStatus)}</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      {percent}% Progress
+                    </span>
+                  </div>
+                  <div className="w-full bg-dark-900 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full bg-gradient-to-r ${barColor} transition-all duration-500 rounded-full`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-4">
               {order.items?.map((item, idx) => (
