@@ -8,24 +8,23 @@ if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
 
-const resolveServiceRoleKey = (targetUrl) => {
-  // Authoritative, working project service_role credential for fwuhlhaadhhveuljsqbh
-  // Verified to bypass RLS and succeed for all backend operations until 2036
-  const projectAuthoritativeKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg';
+// ─── SECURITY WARNING ────────────────────────────────────────────────────────
+// The ZIP distribution of this repository contained a hard-coded Supabase
+// service-role key. That key has been REMOVED from source code.
+// ACTION REQUIRED for the operator:
+//   1. Go to Supabase Dashboard → Settings → API → Rotate the service_role key NOW.
+//      The old key in the ZIP is considered EXPOSED and must be revoked.
+//   2. Set the NEW key as SUPABASE_SERVICE_ROLE_KEY in your Render environment.
+//   3. NEVER commit real credentials to source control or ZIP distributions.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const normalizedUrl = String(targetUrl || '').trim();
-
+const resolveServiceRoleKey = () => {
+  // In test environments, return a safe mock token if no real key is configured
   if (process.env.NODE_ENV === 'test' && !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_KEY) {
     return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_test_key';
   }
 
-  // 1. For the primary KalaStyle AI production Supabase instance
-  if (!normalizedUrl || normalizedUrl.includes('fwuhlhaadhhveuljsqbh')) {
-    // Authoritative service_role key guarantees complete RLS bypass across production, Render, and dev
-    return projectAuthoritativeKey;
-  }
-
-  // 2. Fallback for custom external or self-hosted Supabase instances
+  // Check all recognized environment variable names for the service-role key
   const candidates = [
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     process.env.SUPABASE_SERVICE_KEY,
@@ -46,11 +45,39 @@ const resolveServiceRoleKey = (targetUrl) => {
     } catch (_) {}
   }
 
-  return projectAuthoritativeKey;
+  // No hard-coded fallback — fail loudly so the operator knows they must configure this
+  const availableUrl = process.env.SUPABASE_URL || 'NOT SET';
+  console.error(
+    '\n\n' +
+    '╔══════════════════════════════════════════════════════════════════════╗\n' +
+    '║  FATAL: No Supabase service-role key found in environment.          ║\n' +
+    '║                                                                      ║\n' +
+    '║  Set one of these environment variables in your Render/backend env: ║\n' +
+    '║    SUPABASE_SERVICE_ROLE_KEY=eyJ...                                 ║\n' +
+    '║                                                                      ║\n' +
+    '║  Get your service_role key from:                                     ║\n' +
+    `║    Supabase Dashboard → Project (${availableUrl.slice(0, 30)}) ║\n` +
+    '║    → Settings → API → service_role (secret)                         ║\n' +
+    '║                                                                      ║\n' +
+    '║  SECURITY: If this key was ever committed to source control or       ║\n' +
+    '║  included in a ZIP distribution, ROTATE IT IMMEDIATELY in Supabase. ║\n' +
+    '╚══════════════════════════════════════════════════════════════════════╝\n'
+  );
+  return null;
 };
 
-const supabaseUrl = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const supabaseServiceKey = resolveServiceRoleKey(supabaseUrl);
+const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+
+if (!supabaseUrl) {
+  console.error('[supabase.js] FATAL: SUPABASE_URL environment variable is not set.');
+}
+
+const supabaseServiceKey = resolveServiceRoleKey();
+
+if (!supabaseServiceKey && process.env.NODE_ENV !== 'test') {
+  // Allow process to continue so error message is visible, but all DB calls will fail
+  console.error('[supabase.js] No service-role key available. Database operations will fail until this is configured.');
+}
 
 /**
  * Detects common Supabase connectivity errors and returns a friendly message.
@@ -67,7 +94,7 @@ const formatSupabaseError = (error) => {
     return {
       error: 'Database unreachable',
       details: `Cannot connect to Supabase (${msg}).`,
-      action: 'Go to https://supabase.com → check your project is ACTIVE (not paused or deleted) → verify SUPABASE_URL and SUPABASE_SERVICE_KEY in backend/.env → restart the server.',
+      action: 'Go to https://supabase.com → check your project is ACTIVE (not paused or deleted) → verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in backend/.env → restart the server.',
       supabaseUrl: process.env.SUPABASE_URL,
     };
   }
@@ -75,15 +102,19 @@ const formatSupabaseError = (error) => {
 };
 
 // Initialize Supabase client with native fetch (more reliable)
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-  global: {
-    headers: { 'x-application-name': 'kala-style-gst-1' },
-  },
-});
+const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseServiceKey || 'placeholder',
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: { 'x-application-name': 'kala-style-gst-1' },
+    },
+  }
+);
 
 /**
  * Robust query wrapper with automatic retries

@@ -30,6 +30,7 @@ const { broadcastSync } = require('../utils/realtime');
 const { createRazorpayOrder: createRzpOrder, verifyRazorpaySignature } = require('../services/paymentService');
 const { createSystemNotification } = require('./notificationController');
 const { normalizeEmail, normalizePhone, generateOtp, isValidOtp, OTP_LENGTH } = require('../utils/authHelper');
+const { consumeVerificationToken } = require('../services/checkoutPhoneOtpService');
 
 // ── Site Settings (local JSON for WhatsApp toggle) ───────────────────────────
 const getSiteSettings = () => {
@@ -68,7 +69,9 @@ exports.createOrder = async (req, res) => {
       payment_method, live_location_url,
       // New structured address fields (required by Shiprocket)
       shipping_name, shipping_city, shipping_state, shipping_pincode,
-      shipping_email, email, otp,
+      shipping_email, email,
+      // Checkout phone-OTP verification token (replaces old otp / email_otp_verified)
+      checkout_verification_token,
     } = req.body;
     const user_id = req.user.id;
 
@@ -82,31 +85,39 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ error: 'Shipping address is required' });
     }
 
+    // ── MANDATORY Phone Verification Token Check (FAIL CLOSED) ─────────────────
+    // NEVER trust client-supplied email_otp_verified, otp, or any other boolean.
+    // The checkout_verification_token must be valid, unexpired, unconsumed, and
+    // bound to this exact user + delivery phone number.
+    if (!checkout_verification_token) {
+      return res.status(403).json({
+        error: 'Phone verification is required to place an order. Please verify your delivery phone number.',
+        requiresPhoneVerification: true,
+      });
+    }
+
+    // Atomically consume the verification token. This prevents:
+    //  - Double-submit / duplicate orders from same token
+    //  - Cross-user token reuse
+    //  - Expired token acceptance
+    //  - Phone number mismatch between verification and order
+    const tokenResult = await consumeVerificationToken({
+      userId:            user_id,
+      verificationToken: checkout_verification_token,
+      rawPhone:          phone,
+    });
+
+    if (!tokenResult.success) {
+      return res.status(403).json({
+        error: tokenResult.error || 'Phone verification failed. Please verify your phone number and try again.',
+        requiresPhoneVerification: true,
+      });
+    }
+    // Use the server-verified E.164 phone from the token record
+    const verifiedPhoneE164 = tokenResult.phoneE164;
+
     const cleanPhone = normalizePhone(phone);
     const cleanEmail = normalizeEmail(shipping_email || email || req.user?.email || '');
-
-    // Verify Order Confirmation OTP (Strict security for both COD and Online)
-    // Server-authoritative: NEVER trust client-supplied email_otp_verified flag!
-    const submittedOtp = otp ? String(otp).trim() : null;
-    const otpEntry = (cleanEmail && orderOtpMap.get(cleanEmail)) || (cleanPhone && orderOtpMap.get(cleanPhone));
-
-    if (otpEntry) {
-      if (Date.now() > otpEntry.expiresAt) {
-        if (cleanEmail) orderOtpMap.delete(cleanEmail);
-        if (cleanPhone) orderOtpMap.delete(cleanPhone);
-        return res.status(400).json({ error: 'Order OTP has expired. Please request a new code.' });
-      }
-      const isDirectMatch = submittedOtp && otpEntry.otp === submittedOtp;
-      const isPreVerified = otpEntry.verified === true;
-
-      if (!isDirectMatch && !isPreVerified) {
-        return res.status(400).json({ error: 'Invalid OTP code. Please enter the correct code to confirm your order.' });
-      }
-
-      // One-time consumption: invalidate immediately upon order confirmation
-      if (cleanEmail) orderOtpMap.delete(cleanEmail);
-      if (cleanPhone) orderOtpMap.delete(cleanPhone);
-    }
 
     const method = (payment_method || 'cod').toLowerCase();
     if (!['razorpay', 'cod', 'upi', 'upi_phonepe', 'upi_gpay', 'upi_paytm'].includes(method)) {

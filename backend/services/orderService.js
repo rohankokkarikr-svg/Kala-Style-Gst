@@ -955,24 +955,43 @@ exports.atomicRestoreStock = async (productId, quantity) => {
 /**
  * Restore inventory when an order is cancelled, rejected, or payment fails.
  * Idempotently iterates order items and returns reserved stock.
+ * Supports optional artisanId to restore only the specific artisan's sub-order items,
+ * preventing accidental restoration of other artisans' items in multi-artisan orders.
  *
  * @param {string} orderId
+ * @param {string} [artisanId]
  */
-exports.restoreInventory = async (orderId) => {
+exports.restoreInventory = async (orderId, artisanId = null) => {
   try {
-    const { data: items } = await supabase
+    let query = supabase
       .from('order_items')
-      .select('product_id, quantity')
+      .select('id, product_id, quantity, item_status, artisan_id')
       .eq('order_id', orderId);
 
-    if (!items || items.length === 0) return;
+    if (artisanId) {
+      query = query.or(`artisan_id.eq.${artisanId},artisan_id.is.null`);
+    }
+
+    const { data: items, error } = await query;
+    if (error || !items || items.length === 0) return;
 
     for (const item of items) {
+      // Guard against double stock restoration: do not restore if already restored
+      if (item.item_status === 'restored') {
+        continue;
+      }
+
       if (item.product_id && item.quantity > 0) {
         await exports.atomicRestoreStock(item.product_id, item.quantity);
       }
+
+      // Mark item as restored so subsequent retries never double-restore
+      await supabase
+        .from('order_items')
+        .update({ item_status: 'restored' })
+        .eq('id', item.id);
     }
-    console.log(`[orderService] ✅ Atomic inventory restored for order ${orderId}`);
+    console.log(`[orderService] ✅ Atomic inventory restored for order ${orderId} (artisan: ${artisanId || 'all'})`);
   } catch (err) {
     console.error('[orderService] restoreInventory error:', err.message);
   }

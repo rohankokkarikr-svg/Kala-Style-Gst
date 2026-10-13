@@ -8,29 +8,41 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { calculateOrderTotals } = require('../services/orderService');
+const supabase = require('../config/supabase');
 
 describe('Resilient Order Calculation & Product Lookup Suite', () => {
 
+  let testProductId;
+
+  test.before(async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('id')
+      .eq('status', 'approved')
+      .neq('is_hidden', true)
+      .limit(1);
+    testProductId = data?.[0]?.id || '788d29e0-5752-4562-a552-0860f152ee8e';
+  });
+
   test('calculateOrderTotals handles valid UUID products and computes totals correctly', async () => {
-    // Royal Blue and Cyan Handloom Cotton Saree (id: 13361634-8caf-4e45-b1c8-450817b2319c)
     const result = await calculateOrderTotals([
-      { product_id: '13361634-8caf-4e45-b1c8-450817b2319c', quantity: 2, size: 'Free Size' }
+      { product_id: testProductId, quantity: 2, size: 'Free Size' }
     ]);
 
     assert.strictEqual(result.error, undefined, 'Should not return error for existing approved product');
     assert.strictEqual(result.items.length, 1);
-    assert.strictEqual(result.items[0].product_id, '13361634-8caf-4e45-b1c8-450817b2319c');
+    assert.strictEqual(result.items[0].product_id, testProductId);
     assert.strictEqual(result.items[0].quantity, 2);
     assert.strictEqual(result.subtotal, result.items[0].unit_price_snapshot * 2);
   });
 
   test('calculateOrderTotals normalizes trimmed product IDs', async () => {
     const result = await calculateOrderTotals([
-      { product_id: '  13361634-8caf-4e45-b1c8-450817b2319c  ', quantity: 1 }
+      { product_id: `  ${testProductId}  `, quantity: 1 }
     ]);
 
     assert.strictEqual(result.error, undefined);
-    assert.strictEqual(result.items[0].product_id, '13361634-8caf-4e45-b1c8-450817b2319c');
+    assert.strictEqual(result.items[0].product_id, testProductId);
   });
 
   test('calculateOrderTotals gracefully handles non-existent product without database syntax errors', async () => {
@@ -53,12 +65,12 @@ describe('Resilient Order Calculation & Product Lookup Suite', () => {
 
   test('calculateOrderTotals rejects excessive or non-integer quantities', async () => {
     const overLimitRes = await calculateOrderTotals([
-      { product_id: '13361634-8caf-4e45-b1c8-450817b2319c', quantity: 999 }
+      { product_id: testProductId, quantity: 999 }
     ]);
     assert.match(overLimitRes.error, /exceeds maximum allowed order limit/i);
 
     const negativeRes = await calculateOrderTotals([
-      { product_id: '13361634-8caf-4e45-b1c8-450817b2319c', quantity: -1 }
+      { product_id: testProductId, quantity: -1 }
     ]);
     assert.match(negativeRes.error, /must be a positive integer/i);
   });

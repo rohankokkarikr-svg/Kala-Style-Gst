@@ -1,12 +1,21 @@
 /**
  * backend/routes/orders.js
  * ─────────────────────────────────────────────────────────────────
- * Order routes — supports multi-artisan, COD, Razorpay, tracking, cancellation
+ * Order routes — supports multi-artisan, COD, Razorpay, tracking, cancellation.
+ *
+ * IMPORTANT:
+ *   POST /phone-otp/send and POST /phone-otp/verify are the NEW separate
+ *   checkout phone-OTP endpoints. They are completely isolated from
+ *   /api/auth/send-otp and /api/auth/verify-otp (login email OTP).
+ *
+ *   The old /send-otp and /verify-otp routes are RETAINED for backward
+ *   compatibility but are no longer called by Checkout.js.
  */
 
 const express = require('express');
 const router = express.Router();
 const { protect, admin, artisan, artisanOnly, artisanOrAdmin } = require('../middleware/auth');
+const { checkoutOtpSendLimiter, checkoutOtpVerifyLimiter } = require('../middleware/rateLimiter');
 const {
   createOrder,
   sendOrderOtp,
@@ -25,8 +34,18 @@ const {
   initiateRefund,
   confirmCODCollection,
 } = require('../controllers/orderController');
+const {
+  sendCheckoutPhoneOtpHandler,
+  verifyCheckoutPhoneOtpHandler,
+} = require('../controllers/checkoutPhoneOtpController');
+
+// ── NEW: Checkout Phone OTP (SEPARATE from login email OTP) ──────────────────
+// Protected by JWT auth (user must be logged in) + dedicated IP rate limits.
+router.post('/phone-otp/send',   protect, checkoutOtpSendLimiter,   sendCheckoutPhoneOtpHandler);
+router.post('/phone-otp/verify', protect, checkoutOtpVerifyLimiter, verifyCheckoutPhoneOtpHandler);
 
 // ── Customer Routes ──────────────────────────────────────────────────────────
+// Legacy order-OTP routes kept for backward compat (no longer used by Checkout.js)
 router.post('/send-otp', protect, sendOrderOtp);
 router.post('/verify-otp', protect, verifyOrderOtp);
 router.post('/', protect, createOrder);

@@ -764,8 +764,8 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       return res.status(404).json({ error: 'Artisan order not found' });
     }
 
-    // Authorization check: Must be assigned to this artisan, fallback order, or own items (admins always authorized)
-    if (!isAdmin && artOrder.artisan_id !== null && artOrder.artisan_id !== profile.id) {
+    // Authorization check: Must be assigned to this artisan or own items in the order (admins always authorized)
+    if (!isAdmin && artOrder.artisan_id !== profile.id) {
       const { data: myItem } = await supabase
         .from('order_items')
         .select('id')
@@ -866,9 +866,9 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     }
     // 2. Handling for REJECTED by artisan
     else if (status === 'rejected') {
-      // Step A: Restore inventory
+      // Step A: Restore inventory for this artisan's items only (preventing over-restoration in mixed-artisan orders)
       try {
-        await restoreInventory(artOrder.order_id);
+        await restoreInventory(artOrder.order_id, profile?.id || artOrder.artisan_id);
       } catch (invErr) {
         console.warn('[artisanController] Inventory restoration notice:', invErr.message);
       }

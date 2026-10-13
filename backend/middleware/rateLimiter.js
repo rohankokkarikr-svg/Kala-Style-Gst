@@ -102,6 +102,26 @@ const reviewLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateLi
 // Keep aiLimiter as alias for backward compatibility with existing routes
 const aiLimiter = agentChatLimiter;
 
+// ── Checkout Phone OTP — SEPARATE from auth limiters ─────────────────────────
+// Strict per-IP limits to prevent SMS bombing and brute force.
+// 5 sends per 30-minute window (per IP); user-level cooldown is in the service.
+const checkoutOtpSendLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateLimit({
+  windowMs: 30 * 60 * 1000, // 30 minutes
+  max: envInt('CHECKOUT_OTP_SEND_RATE_MAX', 5),
+  message: { error: 'Too many SMS verification requests from this connection. Please wait 30 minutes before trying again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 10 verify attempts per 10-minute window per IP
+const checkoutOtpVerifyLimiter = process.env.DISABLE_RATE_LIMITS === 'true' ? pass : rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: envInt('CHECKOUT_OTP_VERIFY_RATE_MAX', 10),
+  message: { error: 'Too many verification attempts from this connection. Please wait 10 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
   authLimiter,
   aiLimiter,
@@ -113,4 +133,6 @@ module.exports = {
   uploadLimiter,
   spinLimiter,
   generalLimiter,
+  checkoutOtpSendLimiter,
+  checkoutOtpVerifyLimiter,
 };

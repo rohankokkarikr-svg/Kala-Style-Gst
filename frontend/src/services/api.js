@@ -176,6 +176,10 @@ export const productAPI = {
 export const orderAPI = {
   create:             (data)     => { apiCache.invalidateOrders(); return api.post('/orders', data); },
   createOrder:        (data)     => { apiCache.invalidateOrders(); return api.post('/orders/create', data); },
+  // ── NEW: Checkout Phone OTP (SEPARATE from authAPI sendOtp/verifyOtp - login email OTP) ──
+  phoneOtpSend:       (data)     => api.post('/orders/phone-otp/send', data),
+  phoneOtpVerify:     (data)     => api.post('/orders/phone-otp/verify', data),
+  // Legacy order-level OTP kept for backward compat (no longer used by Checkout.js)
   sendOtp:            (data)     => api.post('/orders/send-otp', data),
   verifyOtp:          (data)     => api.post('/orders/verify-otp', data),
   calculateTotal:     (data)     => api.post('/orders/calculate-total', data),

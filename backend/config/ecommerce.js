@@ -123,22 +123,23 @@ const ARTISAN_STATUS_TRANSITIONS = {
   dispatched:        ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
   shipped:           ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
   on_the_way:        ['delivered', 'cancelled', 'rejected'],
-  out_for_delivery:  ['delivered', 'cancelled', 'rejected'],
-  delivered:         ['cancelled', 'rejected', 'dispatched', 'shipped', 'processing', 'preparing', 'pending'],
-  completed:         ['cancelled', 'rejected', 'dispatched', 'shipped', 'processing', 'preparing'],
-  rejected:          ['pending', 'processing', 'cancelled'],
-  cancelled:         ['pending', 'processing', 'cancelled'],
+  delivered:         ['cancelled', 'rejected'],
+  completed:         ['cancelled', 'rejected'],
+  rejected:          ['cancelled'],
+  cancelled:         ['rejected'],
 };
 
 function isValidArtisanTransition(from, to) {
   if (!from || !to) return true;
   if (from === to) return true; // Idempotent updates are always allowed
   
-  // Cancellation and rejection are always allowed from any state (including post-delivery returns or doorstep exceptions)
-  if (to === 'cancelled' || to === 'rejected') return true;
+  // Terminal guard: rejected and cancelled orders cannot later be accepted without a controlled admin workflow
+  if ((from === 'rejected' || from === 'cancelled') && (to === 'accepted' || to === 'preparing' || to === 'dispatched' || to === 'delivered')) {
+    return false;
+  }
 
-  // Permissive operational transitions for artisan store management
-  if (VALID_OPERATIONAL_STATUSES.includes(to)) return true;
+  // Cancellation and rejection are always allowed from active states (including returns or exceptions)
+  if (to === 'cancelled' || to === 'rejected') return true;
 
   const allowed = ARTISAN_STATUS_TRANSITIONS[from];
   if (allowed && allowed.includes(to)) return true;

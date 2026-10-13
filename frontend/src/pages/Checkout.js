@@ -6,7 +6,7 @@ import { useSettings } from '../context/SettingsContext';
 import { orderAPI, couponAPI, paymentAPI } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
+import { CHECKOUT_OTP_LENGTH, isValidCheckoutOtp, maskPhone } from '../constants/checkoutOtp';
 import GlassyOtpCard from '../components/GlassyOtpCard';
 import {
   HiShieldCheck, HiTruck, HiUser, HiPhone, HiLocationMarker,
@@ -134,7 +134,7 @@ function parseNominatimAddress(addr = {}) {
 
 export default function Checkout() {
   const { items, totalPrice, clearCart, removeByProductId } = useCart();
-  const { user, sendOtp, verifyOtp } = useAuth();
+  const { user } = useAuth();
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -169,17 +169,19 @@ export default function Checkout() {
     }
   }, [user]);
 
-  // ── Registered Email Order Confirmation OTP States (Both COD & Online) ──
-  const [showOtpModal, setShowOtpModal]   = useState(false);
-  const [otpValue, setOtpValue]           = useState(Array(OTP_LENGTH).fill('')); // 8-digit OTP matching Login
-  const [otpLoading, setOtpLoading]       = useState(false);
-  const [isOtpSuccess, setIsOtpSuccess]   = useState(false);
-  const [otpSending, setOtpSending]       = useState(false);
-  const [otpCountdown, setOtpCountdown]   = useState(60);
-  const [canResendOtp, setCanResendOtp]   = useState(false);
-  const [otpError, setOtpError]           = useState('');
-  const [lastOtpEmail, setLastOtpEmail]   = useState('');
-  const otpInputsRef                      = useRef([]);
+  // ── Delivery Phone SMS Order Confirmation OTP States (Both COD & Online) ──
+  const [showOtpModal, setShowOtpModal]           = useState(false);
+  const [otpValue, setOtpValue]                   = useState(Array(CHECKOUT_OTP_LENGTH).fill('')); // 6-digit SMS OTP
+  const [otpLoading, setOtpLoading]               = useState(false);
+  const [isOtpSuccess, setIsOtpSuccess]           = useState(false);
+  const [otpSending, setOtpSending]               = useState(false);
+  const [otpCountdown, setOtpCountdown]           = useState(60);
+  const [canResendOtp, setCanResendOtp]           = useState(false);
+  const [otpError, setOtpError]                   = useState('');
+  const [lastOtpPhone, setLastOtpPhone]           = useState('');
+  const [otpChallengeId, setOtpChallengeId]       = useState(null);
+  const [verificationToken, setVerificationToken] = useState(null);
+  const otpInputsRef                              = useRef([]);
 
   // OTP Countdown Timer
   useEffect(() => {
@@ -546,7 +548,7 @@ export default function Checkout() {
     }
   };
 
-  /* ─── Initiate Order Verification via Registered Email OTP (Both COD & Online) ─── */
+  /* ─── Initiate Order Verification via Delivery Phone SMS OTP (Both COD & Online) ─── */
   const handleInitiateOrderVerification = async () => {
     if (!validateStep1()) {
       setStep(1);
@@ -554,19 +556,18 @@ export default function Checkout() {
       return;
     }
 
-    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!targetEmail || !emailRegex.test(targetEmail)) {
+    const cleanPhone = form.phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
       setStep(1);
-      toast.error('A valid registered email address is required to receive order confirmation OTP.');
+      toast.error('A valid 10-digit mobile number is required to receive SMS verification OTP.');
       return;
     }
 
-    // If an OTP was already dispatched to this exact email within the active 60s window,
-    // don't spam Supabase (avoiding 429 rate limits) - simply re-open the modal so the user can enter it
-    if (lastOtpEmail === targetEmail && otpCountdown > 0) {
+    // If an OTP was already dispatched to this exact phone within the active cooldown,
+    // re-open the modal so user can enter the received code
+    if (lastOtpPhone === cleanPhone && otpCountdown > 0) {
       setShowOtpModal(true);
-      toast.info(`Verification code already sent to ${maskEmail(targetEmail)}. Please check your inbox.`);
+      toast.info(`Verification code already sent to ${maskPhone(cleanPhone)}. Please check your SMS.`);
       return;
     }
 
@@ -606,20 +607,20 @@ export default function Checkout() {
     setOtpSending(true);
     setOtpError('');
     try {
-      // Dispatch 8-digit OTP to user's registered email using Supabase Auth (same as in Login/Signup)
-      await sendOtp(targetEmail);
-      setLastOtpEmail(targetEmail);
-      setOtpValue(Array(OTP_LENGTH).fill(''));
-      setOtpCountdown(60);
+      const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
+      setLastOtpPhone(cleanPhone);
+      setOtpChallengeId(res.data?.challengeId || null);
+      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
       setShowOtpModal(true);
-      toast.success(`Verification OTP dispatched to ${maskEmail(targetEmail)}! 📩`);
+      toast.success(`SMS verification code dispatched to ${res.data?.maskedPhone || maskPhone(cleanPhone)}! 📱`);
     } catch (err) {
-      const errMsg = err.message || err.response?.data?.error || 'Failed to dispatch verification OTP. Please try again.';
-      if (errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('limit') || errMsg.toLowerCase().includes('too many')) {
-        setLastOtpEmail(targetEmail);
+      const errMsg = err.response?.data?.error || err.message || 'Failed to dispatch verification code. Please try again.';
+      if (err.response?.status === 429) {
+        setLastOtpPhone(cleanPhone);
         setShowOtpModal(true);
-        toast.info(`An OTP was recently sent to ${maskEmail(targetEmail)}. Please check your inbox or wait for the timer to resend.`);
+        toast.info(errMsg);
       } else {
         toast.error(errMsg);
       }
@@ -628,27 +629,28 @@ export default function Checkout() {
     }
   };
 
-  /* ─── Resend Registered Email OTP ─── */
+  /* ─── Resend Delivery Phone SMS OTP ─── */
   const handleResendOrderOtp = async () => {
     if (!canResendOtp || otpSending) return;
-    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
+    const cleanPhone = form.phone.replace(/\D/g, '');
     setOtpSending(true);
     setOtpError('');
     try {
-      await sendOtp(targetEmail);
-      setLastOtpEmail(targetEmail);
-      setOtpValue(Array(OTP_LENGTH).fill(''));
-      setOtpCountdown(60);
+      const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
+      setLastOtpPhone(cleanPhone);
+      setOtpChallengeId(res.data?.challengeId || null);
+      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
-      toast.success(`A fresh OTP code has been sent to ${maskEmail(targetEmail)}.`);
+      toast.success(`A fresh verification code was sent via SMS to ${res.data?.maskedPhone || maskPhone(cleanPhone)}.`);
     } catch (err) {
-      toast.error(err.message || 'Failed to resend OTP. Please wait and try again.');
+      toast.error(err.response?.data?.error || err.message || 'Failed to resend code. Please wait and try again.');
     } finally {
       setOtpSending(false);
     }
   };
 
-  /* ─── OTP Digit Handlers (Exact 8-digit UX matching Login) ─── */
+  /* ─── OTP Digit Handlers (6-digit UX for Twilio SMS) ─── */
   const handleOtpInputChange = (index, value) => {
     const clean = value.replace(/\D/g, '').slice(-1);
     const newOtp = [...otpValue];
@@ -657,13 +659,13 @@ export default function Checkout() {
     if (otpError) setOtpError('');
 
     // Auto-focus next input
-    if (clean && index < OTP_LENGTH - 1) {
+    if (clean && index < CHECKOUT_OTP_LENGTH - 1) {
       otpInputsRef.current[index + 1]?.focus();
     }
 
-    // Auto-verify if all 8 digits filled
+    // Auto-verify if all 6 digits filled
     const filledDigits = newOtp.filter(Boolean).join('');
-    if (filledDigits.length === OTP_LENGTH && clean && !otpLoading) {
+    if (filledDigits.length === CHECKOUT_OTP_LENGTH && clean && !otpLoading) {
       handleVerifyAndConfirmOrder(filledDigits);
     }
   };
@@ -679,57 +681,54 @@ export default function Checkout() {
 
   const handleOtpInputPaste = (e) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, CHECKOUT_OTP_LENGTH);
     if (!pasted) return;
     const digits = pasted.split('');
-    const newOtp = Array(OTP_LENGTH).fill('');
+    const newOtp = Array(CHECKOUT_OTP_LENGTH).fill('');
     digits.forEach((d, idx) => {
-      if (idx < OTP_LENGTH) newOtp[idx] = d;
+      if (idx < CHECKOUT_OTP_LENGTH) newOtp[idx] = d;
     });
     setOtpValue(newOtp);
     if (otpError) setOtpError('');
-    const lastFilled = Math.min(digits.length, OTP_LENGTH - 1);
+    const lastFilled = Math.min(digits.length, CHECKOUT_OTP_LENGTH - 1);
     otpInputsRef.current[lastFilled]?.focus();
 
-    if (digits.length === OTP_LENGTH && !otpLoading) {
+    if (digits.length === CHECKOUT_OTP_LENGTH && !otpLoading) {
       handleVerifyAndConfirmOrder(digits.join(''));
     }
   };
 
-  /* ─── Verify OTP & Execute Order Creation ─── */
+  /* ─── Verify Phone SMS OTP & Execute Order Creation ─── */
   const handleVerifyAndConfirmOrder = async (codeToVerify) => {
     if (otpLoading) return;
     const code = (codeToVerify || otpValue.join('')).trim();
-    if (!isValidOtp(code)) {
-      setOtpError(`Please enter the complete ${OTP_LENGTH}-digit OTP verification code.`);
+    if (!isValidCheckoutOtp(code)) {
+      setOtpError(`Please enter the complete ${CHECKOUT_OTP_LENGTH}-digit SMS verification code.`);
       return;
     }
 
-    const targetEmail = (form.email || user?.email || '').trim().toLowerCase();
+    const cleanPhone = form.phone.replace(/\D/g, '');
     setOtpLoading(true);
     setOtpError('');
 
+    let token = null;
     try {
-      let verified = false;
-      // 1. Verify with Supabase Email OTP (exact mechanism from Login & Signup pages)
-      try {
-        const verifyRes = await verifyOtp(targetEmail, code, false, false);
-        if (verifyRes?.success) verified = true;
-      } catch (authErr) {
-        console.warn('Supabase verifyOtp notice:', authErr.message);
-        // Fallback to backend verification if OTP was dispatched via backend
-        const backendRes = await orderAPI.verifyOtp({ email: targetEmail, phone: form.phone, otp: code });
-        if (backendRes.data?.verified || backendRes.data?.success) {
-          verified = true;
-        } else {
-          throw authErr;
-        }
+      const verifyRes = await orderAPI.phoneOtpVerify({
+        phone: cleanPhone,
+        code,
+        challengeId: otpChallengeId,
+      });
+
+      if (!verifyRes.data?.verificationToken) {
+        throw new Error('Verification token not received from server.');
       }
+      token = verifyRes.data.verificationToken;
+      setVerificationToken(token);
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Invalid OTP code. Please check your email and try again.';
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Invalid verification code. Please check your SMS and try again.';
       setOtpError(errMsg);
       toast.error(errMsg);
-      setOtpValue(Array(OTP_LENGTH).fill(''));
+      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
       otpInputsRef.current[0]?.focus();
       setOtpLoading(false);
       return;
@@ -737,14 +736,14 @@ export default function Checkout() {
 
     setOtpCountdown(0);
     setIsOtpSuccess(true);
-    toast.success('Email OTP verified successfully! 🎉');
+    toast.success('Phone verified successfully! 🎉');
 
     setTimeout(async () => {
       setShowOtpModal(false);
       setIsOtpSuccess(false);
-      // 2. Execute Order Creation with OTP confirmation
+      // Execute Order Creation with verified token
       try {
-        await executeOrderCreation(code);
+        await executeOrderCreation(token);
       } catch (orderErr) {
         console.error('Order creation failed:', orderErr);
       } finally {
@@ -754,9 +753,16 @@ export default function Checkout() {
   };
 
   /* ─── Execute Order Creation ─── */
-  const executeOrderCreation = async (verifiedOtp) => {
+  const executeOrderCreation = async (verifiedToken) => {
     setLoading(true);
     try {
+      const activeToken = verifiedToken || verificationToken;
+      if (!activeToken) {
+        toast.error('Phone verification is required to place your order.');
+        setLoading(false);
+        return;
+      }
+
       // Use pre-captured location without blocking critical order placement
       let activeLat = liveLocation?.lat || (verifyResult?.lat ? parseFloat(verifyResult.lat) : null);
       let activeLng = liveLocation?.lng || (verifyResult?.lng ? parseFloat(verifyResult.lng) : null);
@@ -796,8 +802,7 @@ export default function Checkout() {
         shipping_city: form.city,
         shipping_state: form.state,
         shipping_pincode: form.pinCode,
-        otp: verifiedOtp || null,
-        email_otp_verified: true,
+        checkout_verification_token: activeToken,
         items: items.map(i => ({
           product_id:    i.product?.id || i.product_id || i.id,
           quantity:      Math.max(1, parseInt(i.quantity, 10) || 1),
@@ -1580,10 +1585,10 @@ export default function Checkout() {
                     <div className="mt-4 px-4 py-3 bg-gold-500/10 border border-gold-500/30 rounded-xl flex items-start gap-2.5">
                       <HiShieldCheck className="w-5 h-5 text-gold-400 shrink-0 mt-0.5" />
                       <div className="text-xs text-gray-300 leading-relaxed">
-                        <span className="font-bold text-gold-300 block mb-0.5">Registered Email OTP Confirmation Required:</span>
+                        <span className="font-bold text-gold-300 block mb-0.5">Mobile SMS Verification Required:</span>
                         {paymentMethod === 'cod'
-                          ? `For your security, an 8-digit confirmation OTP will be sent to your registered email (${maskEmail(form.email || user?.email)}) to confirm your Cash on Delivery (COD) order of ₹${finalTotal.toLocaleString()}.`
-                          : `For your security, an 8-digit confirmation OTP will be sent to your registered email (${maskEmail(form.email || user?.email)}) to confirm your order of ₹${finalTotal.toLocaleString()} before completing online payment.`}
+                          ? `For your security, a 6-digit SMS verification code will be sent to your delivery phone (+91 ${maskPhone(form.phone)}) to confirm your Cash on Delivery (COD) order of ₹${finalTotal.toLocaleString()}.`
+                          : `For your security, a 6-digit SMS verification code will be sent to your delivery phone (+91 ${maskPhone(form.phone)}) to confirm your order of ₹${finalTotal.toLocaleString()} before completing online payment.`}
                       </div>
                     </div>
                   </div>
@@ -1622,9 +1627,9 @@ export default function Checkout() {
                     <button type="button" onClick={handleInitiateOrderVerification} disabled={loading || otpSending}
                       className="flex-1 btn-primary text-lg py-4 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100">
                       {otpSending ? (
-                        <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Dispatching OTP...</>
+                        <><div className="w-5 h-5 border-2 border-dark-900/30 border-t-dark-900 rounded-full animate-spin" /> Dispatching SMS...</>
                       ) : (
-                        <><HiKey className="w-5 h-5" /> Verify OTP & Confirm Order</>
+                        <><HiKey className="w-5 h-5" /> Verify Phone & Confirm Order</>
                       )}
                     </button>
                   </div>
@@ -1671,9 +1676,10 @@ export default function Checkout() {
               <GlassyOtpCard
                 otp={otpValue}
                 setOtp={setOtpValue}
-                length={OTP_LENGTH}
-                email={maskEmail(form.email || user?.email)}
-                subtitle={`We sent an 8-digit confirmation code to ${maskEmail(form.email || user?.email)} for order amount ₹${finalTotal.toLocaleString()}`}
+                length={CHECKOUT_OTP_LENGTH}
+                email={maskPhone(form.phone)}
+                title="Phone Verification"
+                subtitle={`We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}`}
                 countdown={otpCountdown}
                 isLoading={otpLoading}
                 isSuccess={isOtpSuccess}
@@ -1682,9 +1688,9 @@ export default function Checkout() {
                 onResend={handleResendOrderOtp}
                 onChangeEmail={() => setShowOtpModal(false)}
                 changeEmailLabel="Cancel / Edit Delivery Details"
-                submitLabel="Verify OTP & Confirm Order"
-                verifyingLabel="Verifying & Placing Order..."
-                successLabel="Verified & Secured"
+                submitLabel="Verify Phone & Confirm Order"
+                verifyingLabel="Verifying SMS Code..."
+                successLabel="Phone Verified & Secured"
                 onChange={handleOtpInputChange}
                 onKeyDown={handleOtpInputKeyDown}
                 onPaste={handleOtpInputPaste}
