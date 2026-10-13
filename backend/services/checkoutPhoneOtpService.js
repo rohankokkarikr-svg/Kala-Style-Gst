@@ -455,11 +455,11 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
         return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
       }
     } catch (twilioErr) {
-      console.error('[checkoutPhoneOtpService] Twilio verify error:', twilioErr.message);
+      console.error('[checkoutPhoneOtpService] Twilio verify error:', twilioErr.message, twilioErr.status);
       if (twilioErr.status === 404 || String(twilioErr.message).toLowerCase().includes('not found')) {
         return { success: false, error: 'Incorrect or expired verification code. Please try again.' };
       }
-      return { success: false, error: 'Verification service error. Please try again.' };
+      return { success: false, error: twilioErr.message || 'Verification service error. Please try again.' };
     }
   } else {
     // Verify via Supabase Twilio Phone Provider
@@ -471,15 +471,19 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
       });
 
       if (verifyErr || !verifyData?.user) {
-        console.warn('[checkoutPhoneOtpService] Supabase verify error:', verifyErr?.message);
-        if (verifyErr?.message?.toLowerCase().includes('expired')) {
+        console.warn('[checkoutPhoneOtpService] Supabase verify error:', verifyErr?.message, verifyErr?.status);
+        const msg = String(verifyErr?.message || '');
+        if (msg.toLowerCase().includes('expired')) {
           return { success: false, error: 'Verification code has expired. Please request a new code.' };
         }
-        return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
+        if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('token') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('wrong')) {
+          return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
+        }
+        return { success: false, error: msg || 'Incorrect verification code. Please check your SMS and try again.' };
       }
     } catch (sbVerifyErr) {
       console.error('[checkoutPhoneOtpService] Supabase verify exception:', sbVerifyErr.message);
-      return { success: false, error: 'Verification service error. Please try again.' };
+      return { success: false, error: sbVerifyErr.message || 'Verification service error. Please try again.' };
     }
   }
 
@@ -488,7 +492,7 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
   const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes to complete order
 
   try {
-    await supabase.from('checkout_otp_challenges')
+    const { error: updateErr } = await supabase.from('checkout_otp_challenges')
       .update({
         verify_token:       verificationToken,
         token_expires_at:   tokenExpiresAt.toISOString(),
@@ -497,9 +501,14 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
         // NOT consumed yet — consumed atomically when order is created
       })
       .eq('id', challenge.id);
+
+    if (updateErr) {
+      console.error('[checkoutPhoneOtpService] Token persist error:', updateErr.message);
+      return { success: false, error: updateErr.message || 'Verification service error. Please try again.' };
+    }
   } catch (dbErr) {
-    console.error('[checkoutPhoneOtpService] Token persist error:', dbErr.message);
-    return { success: false, error: 'Verification service error. Please try again.' };
+    console.error('[checkoutPhoneOtpService] Token persist exception:', dbErr.message);
+    return { success: false, error: dbErr.message || 'Verification service error. Please try again.' };
   }
 
   console.log(`[checkoutPhoneOtpService] Phone verified → challenge ${challenge.id} for user ${userId}`);
