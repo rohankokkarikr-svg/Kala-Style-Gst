@@ -100,15 +100,23 @@ const getTwilioClient = () => {
 
 const getVerifyServiceSid = () => process.env.TWILIO_VERIFY_SERVICE_SID || null;
 
-/**
- * Checks whether Twilio Verify is fully configured and enabled.
- */
-const isProviderConfigured = () => {
-  const enabled   = String(process.env.CHECKOUT_PHONE_OTP_ENABLED || 'false').toLowerCase() === 'true';
+const isDirectTwilioConfigured = () => {
   const sid       = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const svcSid    = process.env.TWILIO_VERIFY_SERVICE_SID;
-  return enabled && Boolean(sid && authToken && svcSid);
+  return Boolean(sid && authToken && svcSid);
+};
+
+/**
+ * Checks whether an SMS OTP provider is configured and enabled.
+ * Supports:
+ *   1. Direct Twilio Verify (via backend environment variables)
+ *   2. Supabase-integrated Twilio Phone Provider (via Supabase Dashboard)
+ */
+const isProviderConfigured = () => {
+  const enabled = String(process.env.CHECKOUT_PHONE_OTP_ENABLED || 'false').toLowerCase() === 'true';
+  if (!enabled) return false;
+  return isDirectTwilioConfigured() || Boolean(process.env.SUPABASE_URL);
 };
 
 // ─── Supabase Challenge Store ─────────────────────────────────────────────
@@ -274,37 +282,83 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
     return { success: false, error: 'Verification service error. Please try again.' };
   }
 
-  // 7. Call Twilio Verify
-  try {
-    const client  = getTwilioClient();
-    const svcSid  = getVerifyServiceSid();
+  // 7. Dispatch OTP via Direct Twilio Verify OR Supabase Twilio Phone Provider
+  if (isDirectTwilioConfigured()) {
+    try {
+      const client  = getTwilioClient();
+      const svcSid  = getVerifyServiceSid();
 
-    await client.verify.v2.services(svcSid)
-      .verifications
-      .create({ to: phoneE164, channel: 'sms' });
+      await client.verify.v2.services(svcSid)
+        .verifications
+        .create({ to: phoneE164, channel: 'sms' });
 
-    // Do NOT log phoneE164 in production (PII); log only the masked version
-    console.log(`[checkoutPhoneOtpService] SMS OTP dispatched → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
+      console.log(`[checkoutPhoneOtpService] SMS OTP dispatched via Twilio Verify → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
 
-    return {
-      success: true,
-      maskedPhone: maskPhone(phoneE164),
-      challengeId: challenge.id,
-      expiresIn:  CHALLENGE_EXPIRY_MS / 1000,
-      cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
-    };
-  } catch (twilioErr) {
-    // Twilio failed — mark challenge as consumed so it can't be replayed
-    console.error('[checkoutPhoneOtpService] Twilio send error:', twilioErr.message);
-    await supabase
-      .from('checkout_otp_challenges')
-      .update({ consumed: true })
-      .eq('id', challenge.id);
+      return {
+        success: true,
+        maskedPhone: maskPhone(phoneE164),
+        challengeId: challenge.id,
+        expiresIn:  CHALLENGE_EXPIRY_MS / 1000,
+        cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+      };
+    } catch (twilioErr) {
+      console.error('[checkoutPhoneOtpService] Twilio send error:', twilioErr.message);
+      await supabase
+        .from('checkout_otp_challenges')
+        .update({ consumed: true })
+        .eq('id', challenge.id);
 
-    return {
-      success: false,
-      error: 'Failed to send SMS verification code. Please check the phone number and try again.',
-    };
+      return {
+        success: false,
+        error: 'Failed to send SMS verification code. Please check the phone number and try again.',
+      };
+    }
+  } else {
+    // Dispatch via Supabase Twilio Phone Provider
+    try {
+      const { error: sbErr } = await supabase.auth.signInWithOtp({ phone: phoneE164 });
+
+      if (sbErr) {
+        console.error('[checkoutPhoneOtpService] Supabase Twilio send error:', sbErr.message);
+        await supabase
+          .from('checkout_otp_challenges')
+          .update({ consumed: true })
+          .eq('id', challenge.id);
+
+        const msg = String(sbErr.message || '');
+        if (msg.includes('21608') || msg.toLowerCase().includes('verified tester')) {
+          return {
+            success: false,
+            error: 'Twilio Trial Mode: during trial, this phone number must be added as a Verified Caller ID in your Twilio Console (https://console.twilio.com/us1/develop/phone-numbers/manage/verified), or upgrade your Twilio account balance.',
+          };
+        }
+        return {
+          success: false,
+          error: `SMS delivery failed: ${msg}`,
+        };
+      }
+
+      console.log(`[checkoutPhoneOtpService] SMS OTP dispatched via Supabase Twilio → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
+
+      return {
+        success: true,
+        maskedPhone: maskPhone(phoneE164),
+        challengeId: challenge.id,
+        expiresIn:  CHALLENGE_EXPIRY_MS / 1000,
+        cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+      };
+    } catch (sbErr) {
+      console.error('[checkoutPhoneOtpService] Supabase SMS dispatch exception:', sbErr.message);
+      await supabase
+        .from('checkout_otp_challenges')
+        .update({ consumed: true })
+        .eq('id', challenge.id);
+
+      return {
+        success: false,
+        error: 'Failed to send SMS verification code. Please check your phone number and try again.',
+      };
+    }
   }
 };
 
@@ -383,25 +437,46 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: 'Too many incorrect attempts. Please request a new verification code.' };
   }
 
-  // 4. Verify with Twilio — the actual OTP comparison happens server-side at Twilio
-  try {
-    const client = getTwilioClient();
-    const svcSid = getVerifyServiceSid();
+  // 4. Verify code via Direct Twilio Verify OR Supabase Twilio Phone Provider
+  if (isDirectTwilioConfigured()) {
+    try {
+      const client = getTwilioClient();
+      const svcSid = getVerifyServiceSid();
 
-    const verificationCheck = await client.verify.v2.services(svcSid)
-      .verificationChecks
-      .create({ to: phoneE164, code: String(code).trim() });
+      const verificationCheck = await client.verify.v2.services(svcSid)
+        .verificationChecks
+        .create({ to: phoneE164, code: String(code).trim() });
 
-    if (verificationCheck.status !== 'approved') {
-      return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
+      if (verificationCheck.status !== 'approved') {
+        return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
+      }
+    } catch (twilioErr) {
+      console.error('[checkoutPhoneOtpService] Twilio verify error:', twilioErr.message);
+      if (twilioErr.status === 404 || String(twilioErr.message).toLowerCase().includes('not found')) {
+        return { success: false, error: 'Incorrect or expired verification code. Please try again.' };
+      }
+      return { success: false, error: 'Verification service error. Please try again.' };
     }
-  } catch (twilioErr) {
-    console.error('[checkoutPhoneOtpService] Twilio verify error:', twilioErr.message);
-    // Twilio returns status 404 for wrong/expired codes
-    if (twilioErr.status === 404 || String(twilioErr.message).toLowerCase().includes('not found')) {
-      return { success: false, error: 'Incorrect or expired verification code. Please try again.' };
+  } else {
+    // Verify via Supabase Twilio Phone Provider
+    try {
+      const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
+        phone: phoneE164,
+        token: String(code).trim(),
+        type: 'sms',
+      });
+
+      if (verifyErr || !verifyData?.user) {
+        console.warn('[checkoutPhoneOtpService] Supabase verify error:', verifyErr?.message);
+        if (verifyErr?.message?.toLowerCase().includes('expired')) {
+          return { success: false, error: 'Verification code has expired. Please request a new code.' };
+        }
+        return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
+      }
+    } catch (sbVerifyErr) {
+      console.error('[checkoutPhoneOtpService] Supabase verify exception:', sbVerifyErr.message);
+      return { success: false, error: 'Verification service error. Please try again.' };
     }
-    return { success: false, error: 'Verification service error. Please try again.' };
   }
 
   // 5. Issue opaque one-time verification token
