@@ -79,8 +79,8 @@ let twilioClient = null;
 const getTwilioClient = () => {
   if (twilioClient) return twilioClient;
 
-  const enabled = String(process.env.CHECKOUT_PHONE_OTP_ENABLED || 'false').toLowerCase() === 'true';
-  if (!enabled) return null;
+  const flag = process.env.CHECKOUT_PHONE_OTP_ENABLED;
+  if (flag && (flag.toLowerCase() === 'false' || flag === '0')) return null;
 
   const sid    = process.env.TWILIO_ACCOUNT_SID;
   const token  = process.env.TWILIO_AUTH_TOKEN;
@@ -112,10 +112,14 @@ const isDirectTwilioConfigured = () => {
  * Supports:
  *   1. Direct Twilio Verify (via backend environment variables)
  *   2. Supabase-integrated Twilio Phone Provider (via Supabase Dashboard)
+ *
+ * Automatically enabled when provider credentials (Twilio or Supabase) exist,
+ * unless explicitly disabled by setting CHECKOUT_PHONE_OTP_ENABLED=false.
  */
 const isProviderConfigured = () => {
-  const enabled = String(process.env.CHECKOUT_PHONE_OTP_ENABLED || 'false').toLowerCase() === 'true';
-  if (!enabled) return false;
+  const flag = process.env.CHECKOUT_PHONE_OTP_ENABLED;
+  if (flag && (flag.toLowerCase() === 'false' || flag === '0')) return false;
+
   return isDirectTwilioConfigured() || Boolean(process.env.SUPABASE_URL);
 };
 

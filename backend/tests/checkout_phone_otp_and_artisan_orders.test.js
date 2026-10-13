@@ -69,14 +69,18 @@ describe('KALASTYLE AI — CHECKOUT PHONE OTP & ARTISAN ORDER SUITE', () => {
   describe('2. Provider Configuration & Fail-Closed Behavior', () => {
     const { isProviderConfigured } = require('../services/checkoutPhoneOtpService');
 
-    test('fails closed when CHECKOUT_PHONE_OTP_ENABLED is not set or false', () => {
+    test('fails closed when CHECKOUT_PHONE_OTP_ENABLED is false or provider is missing', () => {
       const origEnabled = process.env.CHECKOUT_PHONE_OTP_ENABLED;
-      delete process.env.CHECKOUT_PHONE_OTP_ENABLED;
-
-      assert.strictEqual(isProviderConfigured(), false);
 
       process.env.CHECKOUT_PHONE_OTP_ENABLED = 'false';
       assert.strictEqual(isProviderConfigured(), false);
+
+      delete process.env.CHECKOUT_PHONE_OTP_ENABLED;
+      // Missing provider fails closed
+      const origSbUrl = process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_URL;
+      assert.strictEqual(isProviderConfigured(), false);
+      if (origSbUrl) process.env.SUPABASE_URL = origSbUrl;
 
       if (origEnabled) process.env.CHECKOUT_PHONE_OTP_ENABLED = origEnabled;
     });
