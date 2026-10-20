@@ -99,6 +99,78 @@ function renderFormattedText(text) {
   });
 }
 
+function getServiceStatusBadge(status) {
+  switch (status) {
+    case 'healthy':
+      return {
+        borderClass: 'border-emerald-500/30',
+        badgeClass: 'bg-emerald-500/10 text-emerald-400',
+        label: '✅ HEALTHY',
+      };
+    case 'degraded':
+      return {
+        borderClass: 'border-amber-500/30',
+        badgeClass: 'bg-amber-500/10 text-amber-400',
+        label: '⚠️ DEGRADED',
+      };
+    case 'not_configured':
+      return {
+        borderClass: 'border-gray-500/30',
+        badgeClass: 'bg-gray-500/10 text-gray-400',
+        label: '⚙️ NOT CONFIGURED',
+      };
+    default:
+      return {
+        borderClass: 'border-red-500/30',
+        badgeClass: 'bg-red-500/10 text-red-400',
+        label: '❌ UNREACHABLE',
+      };
+  }
+}
+
+function renderServiceHealthMessage(rawMessage) {
+  if (!rawMessage) return 'Operational and responding normally.';
+  let msg = typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage);
+
+  try {
+    if (msg.includes('{') && msg.includes('"error"')) {
+      const match = msg.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.error?.message) {
+          msg = parsed.error.message;
+        }
+      }
+    }
+  } catch (_) {}
+
+  if (msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429')) {
+    const retryMatch = msg.match(/retry in ([^.\n]+)/i);
+    const retryTime = retryMatch ? retryMatch[1].trim() : 'shortly';
+    return (
+      <div className="space-y-1.5">
+        <div className="text-amber-400 font-semibold text-xs flex items-center gap-1.5">
+          <span>⚠️ Free-tier daily quota limit reached</span>
+        </div>
+        <p className="text-[11px] text-gray-400 leading-normal">
+          Google Gemini API requests reached the daily free tier ceiling. System will safely auto-retry in <span className="text-amber-300 font-medium">{retryTime}</span>. You can upgrade to pay-as-you-go billing at{' '}
+          <a
+            href="https://ai.google.dev/pricing"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gold-400 hover:text-gold-300 underline font-medium"
+          >
+            ai.google.dev
+          </a>{' '}
+          for unlimited queries.
+        </p>
+      </div>
+    );
+  }
+
+  return <span>{msg}</span>;
+}
+
 export default function AIManagement() {
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'approvals' | 'rules' | 'actions' | 'queue' | 'reports'
   const [statusInfo, setStatusInfo] = useState(null);
@@ -429,7 +501,7 @@ export default function AIManagement() {
             {/* Model Badge */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-700 border border-dark-600 text-gray-300 text-xs">
               <HiServer className="w-4 h-4 text-gold-400" />
-              <span>Model: <strong className="text-white">{statusInfo?.model || 'Google Gemini 2.5 Flash'}</strong></span>
+              <span>Model: <strong className="text-white">{statusInfo?.model || 'gemini-3.5-flash-lite'}</strong></span>
             </div>
 
             {/* Queue Counter */}
@@ -1085,17 +1157,25 @@ export default function AIManagement() {
               {/* Service Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(healthData.services || []).map((svc) => {
-                  const statusColor = svc.status === 'healthy' ? 'emerald' : svc.status === 'not_configured' ? 'gray' : svc.status === 'degraded' ? 'amber' : 'red';
-                  const statusLabel = svc.status === 'healthy' ? '✅ HEALTHY' : svc.status === 'not_configured' ? '⚙️ NOT CONFIGURED' : svc.status === 'degraded' ? '⚠️ DEGRADED' : '❌ UNREACHABLE';
+                  const { borderClass, badgeClass, label } = getServiceStatusBadge(svc.status);
                   return (
-                    <div key={svc.service} className={`bg-dark-800 border rounded-2xl p-4 space-y-2 border-${statusColor}-500/20`}>
+                    <div key={svc.service} className={`bg-dark-800 border rounded-2xl p-4 space-y-2 ${borderClass}`}>
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-bold text-white capitalize">{svc.service.replace(/_/g, ' ')}</div>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full bg-${statusColor}-500/10 text-${statusColor}-400`}>
-                          {statusLabel}
+                        <div className="text-sm font-bold text-white capitalize flex items-center gap-1.5">
+                          <span>{svc.service.replace(/_/g, ' ')}</span>
+                          {svc.model && (
+                            <span className="text-[10px] font-mono font-normal text-gray-400 bg-dark-700 px-1.5 py-0.5 rounded">
+                              {svc.model}
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${badgeClass}`}>
+                          {label}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 leading-relaxed">{svc.message}</p>
+                      <div className="text-xs text-gray-400 leading-relaxed">
+                        {renderServiceHealthMessage(svc.message)}
+                      </div>
                       {svc.latencyMs > 0 && (
                         <div className="text-[10px] text-gray-500">Latency: {svc.latencyMs}ms</div>
                       )}

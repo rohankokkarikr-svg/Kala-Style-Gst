@@ -6,7 +6,7 @@
  *       Tool Result -> Gemini Evaluation -> Final Action & Audit Log.
  */
 
-const { getClient, getModel, isConfigured } = require('./geminiClient');
+const { getClient, getModel, setActiveModel, isConfigured, formatErrorMessage, CANDIDATE_MODELS } = require('./geminiClient');
 const { SYSTEM_PROMPT } = require('./aiSystemPrompt');
 const { GEMINI_TOOLS } = require('./aiTools');
 const { executeTool } = require('./aiToolExecutor');
@@ -172,22 +172,48 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
       });
     }
 
-    // 5. Initialize Gemini multi-turn chat session with tools, history, and system instruction
-    const chat = ai.chats.create({
+    // 5. Initialize Gemini multi-turn chat session with candidate model fallback
+    const candidateModels = Array.from(new Set([
       model,
-      history,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        tools: GEMINI_TOOLS,
-        temperature: 0.2, // Low temperature for deterministic operational decisions
-      },
-    });
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      ...CANDIDATE_MODELS,
+    ]));
+
+    let chat = null;
+    let response = null;
+    let workingModel = model;
+    let lastError = null;
+
+    for (const tryModel of candidateModels) {
+      try {
+        const testChat = ai.chats.create({
+          model: tryModel,
+          history,
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            tools: GEMINI_TOOLS,
+            temperature: 0.2, // Low temperature for deterministic operational decisions
+          },
+        });
+        response = await testChat.sendMessage({ message: userPrompt });
+        chat = testChat;
+        workingModel = tryModel;
+        setActiveModel(tryModel);
+        break;
+      } catch (err) {
+        lastError = err;
+        const msg = formatErrorMessage(err);
+        console.warn(`⚠️ [AI Orchestrator] Model ${tryModel} failed:`, msg);
+      }
+    }
+
+    if (!chat || !response) {
+      throw lastError || new Error('All candidate Gemini models failed to initialize');
+    }
 
     let currentStep = 0;
     let finalContent = '';
-
-    // First turn: send user directive
-    let response = await chat.sendMessage({ message: userPrompt });
 
     while (currentStep < MAX_STEPS) {
       currentStep++;
@@ -231,7 +257,7 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
 
     logUsage({
       feature: context.eventType || 'ai_admin_orchestrator',
-      model,
+      model: workingModel,
       status: 'success',
       promptLength: userPrompt.length,
       responseLength: finalContent.length,
@@ -247,26 +273,27 @@ async function runAutonomousLoop({ messages = [], context = {} }) {
     };
   } catch (error) {
     const isDuplicateTool = error.message && error.message.includes('Duplicate AI tool declaration');
+    const cleanErrorMsg = formatErrorMessage(error);
     if (isDuplicateTool) {
       console.error(`Duplicate AI tool declaration:\n${error.message}`);
     } else {
-      console.error('❌ [AI Orchestrator] Google Gemini API Error:', error.message);
+      console.error('❌ [AI Orchestrator] Google Gemini API Error:', cleanErrorMsg);
     }
 
     logUsage({
       feature: context.eventType || 'ai_admin_orchestrator',
       model,
       status: 'failed',
-      metadata: { error: error.message, conversationId },
+      metadata: { error: cleanErrorMsg, conversationId },
     });
 
     const userFacingMessage = isDuplicateTool
       ? 'AI Operations could not process the request. Please try again.'
-      : `AI Operations Manager encountered an API error: ${error.message}. Backend safeguards remain active.`;
+      : `AI Operations Manager notice: ${cleanErrorMsg}`;
 
     return {
       success: false,
-      error: isDuplicateTool ? 'Duplicate AI tool declaration' : error.message,
+      error: isDuplicateTool ? 'Duplicate AI tool declaration' : cleanErrorMsg,
       message: userFacingMessage,
       toolCallsExecuted,
       actionsCount: toolCallsExecuted.length,
