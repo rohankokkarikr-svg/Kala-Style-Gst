@@ -315,7 +315,7 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
   } catch (dbErr) {
     console.error('[checkoutPhoneOtpService] DB rate-limit check error:', dbErr.message);
     // Fail closed — do not allow bypass
-    return { success: false, error: 'Verification service temporarily unavailable. Please try again.' };
+    return { success: false, error: dbErr?.message || 'Verification service temporarily unavailable. Please try again.' };
   }
 
   // 6. Create challenge record BEFORE calling Twilio
@@ -325,66 +325,30 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
     challenge = await createChallenge(userId, phoneE164);
   } catch (dbErr) {
     console.error('[checkoutPhoneOtpService] createChallenge DB error:', dbErr.message);
-    return { success: false, error: 'Verification service error. Please try again.' };
+    return { success: false, error: dbErr?.message || 'Verification service error. Please try again.' };
   }
 
   // 7. Dispatch OTP via Direct Twilio Verify OR Supabase Twilio Phone Provider
+  let dispatchSuccess = false;
+
   if (isDirectTwilioConfigured()) {
     try {
-      const client  = getTwilioClient();
-      const svcSid  = getVerifyServiceSid();
+      const client = getTwilioClient();
+      const svcSid = getVerifyServiceSid();
 
       await client.verify.v2.services(svcSid)
         .verifications
         .create({ to: phoneE164, channel: 'sms' });
 
       console.log(`[checkoutPhoneOtpService] SMS OTP dispatched via Twilio Verify → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
-
-      return {
-        success: true,
-        maskedPhone: maskPhone(phoneE164),
-        challengeId: challenge.id,
-        expiresIn:  CHALLENGE_EXPIRY_MS / 1000,
-        cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
-      };
+      dispatchSuccess = true;
     } catch (twilioErr) {
-      console.error('[checkoutPhoneOtpService] Twilio send error:', twilioErr.message);
-      const msg = String(twilioErr.message || '');
-      if (msg.includes('21608') || msg.toLowerCase().includes('verified tester') || msg.toLowerCase().includes('trial') || process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
-        console.warn('[checkoutPhoneOtpService] Twilio Trial Mode restriction detected. Enabling test code 123456 for challenge', challenge.id);
-        trialChallenges.add(challenge.id);
-        await safeQuery(() =>
-          supabase
-            .from('checkout_otp_challenges')
-            .update({ purpose: `${CHECKOUT_OTP_PURPOSE}:trial` })
-            .eq('id', challenge.id)
-        );
-        return {
-          success: true,
-          maskedPhone: maskPhone(phoneE164),
-          challengeId: challenge.id,
-          expiresIn: CHALLENGE_EXPIRY_MS / 1000,
-          cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
-          devOtp: process.env.DEV_OTP_CODE || '123456',
-          isTrialFallback: true,
-          message: `Twilio Trial Mode: verification code is ${process.env.DEV_OTP_CODE || '123456'}.`,
-        };
-      }
-
-      await safeQuery(() =>
-        supabase
-          .from('checkout_otp_challenges')
-          .update({ consumed: true })
-          .eq('id', challenge.id)
-      );
-
-      return {
-        success: false,
-        error: 'Failed to send SMS verification code. Please check the phone number and try again.',
-      };
+      console.warn('[checkoutPhoneOtpService] Direct Twilio send failed, falling back to Supabase Twilio provider:', twilioErr.message);
     }
-  } else {
-    // Dispatch via Supabase Twilio Phone Provider
+  }
+
+  // If not dispatched via direct Twilio (or direct Twilio failed), use Supabase Twilio provider
+  if (!dispatchSuccess) {
     try {
       const { error: sbErr } = await supabase.auth.signInWithOtp({ phone: phoneE164 });
 
@@ -393,7 +357,7 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
 
         const msg = String(sbErr.message || '');
         if (msg.includes('21608') || msg.toLowerCase().includes('verified tester') || msg.toLowerCase().includes('trial') || process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
-          console.warn('[checkoutPhoneOtpService] Supabase Twilio Trial Mode restriction detected. Enabling test code 123456 for challenge', challenge.id);
+          console.warn('[checkoutPhoneOtpService] Twilio Trial/Sandbox restriction detected. Enabling test code 123456 for challenge', challenge.id);
           trialChallenges.add(challenge.id);
           await safeQuery(() =>
             supabase
@@ -413,6 +377,21 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
           };
         }
 
+        // Check if dev bypass allowed in non-production
+        if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
+          trialChallenges.add(challenge.id);
+          return {
+            success: true,
+            maskedPhone: maskPhone(phoneE164),
+            challengeId: challenge.id,
+            expiresIn: CHALLENGE_EXPIRY_MS / 1000,
+            cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+            devOtp: process.env.DEV_OTP_CODE || '123456',
+            isTrialFallback: true,
+            message: `Development mode fallback: code is ${process.env.DEV_OTP_CODE || '123456'}.`,
+          };
+        }
+
         await safeQuery(() =>
           supabase
             .from('checkout_otp_challenges')
@@ -427,29 +406,33 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
       }
 
       console.log(`[checkoutPhoneOtpService] SMS OTP dispatched via Supabase Twilio → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
-
-      return {
-        success: true,
-        maskedPhone: maskPhone(phoneE164),
-        challengeId: challenge.id,
-        expiresIn:  CHALLENGE_EXPIRY_MS / 1000,
-        cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
-      };
-    } catch (sbErr) {
-      console.error('[checkoutPhoneOtpService] Supabase SMS dispatch exception:', sbErr.message);
-      await safeQuery(() =>
-        supabase
-          .from('checkout_otp_challenges')
-          .update({ consumed: true })
-          .eq('id', challenge.id)
-      );
-
-      return {
-        success: false,
-        error: 'Failed to send SMS verification code. Please check your phone number and try again.',
-      };
+      dispatchSuccess = true;
+    } catch (sbEx) {
+      console.error('[checkoutPhoneOtpService] Supabase Twilio exception:', sbEx.message);
+      if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
+        trialChallenges.add(challenge.id);
+        return {
+          success: true,
+          maskedPhone: maskPhone(phoneE164),
+          challengeId: challenge.id,
+          expiresIn: CHALLENGE_EXPIRY_MS / 1000,
+          cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+          devOtp: process.env.DEV_OTP_CODE || '123456',
+          isTrialFallback: true,
+          message: `Development mode fallback: code is ${process.env.DEV_OTP_CODE || '123456'}.`,
+        };
+      }
+      return { success: false, error: sbEx.message || 'SMS service error. Please try again.' };
     }
   }
+
+  return {
+    success: true,
+    maskedPhone: maskPhone(phoneE164),
+    challengeId: challenge.id,
+    expiresIn: CHALLENGE_EXPIRY_MS / 1000,
+    cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+  };
 };
 
 /**
@@ -569,50 +552,51 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     process.env.ALLOW_DEV_PHONE_OTP === 'true'
   );
 
+  let isVerified = false;
+
   if (isDevAllowed) {
     console.log(`[checkoutPhoneOtpService] Dev/Trial OTP accepted for challenge ${challenge.id}, user ${userId}`);
-  } else if (isDirectTwilioConfigured()) {
-    try {
-      const client = getTwilioClient();
-      const svcSid = getVerifyServiceSid();
-
-      const verificationCheck = await client.verify.v2.services(svcSid)
-        .verificationChecks
-        .create({ to: phoneE164, code: String(code).trim() });
-
-      if (verificationCheck.status !== 'approved') {
-        return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
-      }
-    } catch (twilioErr) {
-      console.error('[checkoutPhoneOtpService] Twilio verify error:', twilioErr.message, twilioErr.status);
-      if (twilioErr.status === 404 || String(twilioErr.message).toLowerCase().includes('not found')) {
-        return { success: false, error: 'Incorrect or expired verification code. Please try again.' };
-      }
-      return { success: false, error: twilioErr.message || 'Verification service error. Please try again.' };
-    }
+    isVerified = true;
   } else {
-    // Verify via Supabase Twilio Phone Provider
-    try {
-      const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
-        phone: phoneE164,
-        token: String(code).trim(),
-        type: 'sms',
-      });
+    // 4a. Check via Direct Twilio Verify if configured
+    if (isDirectTwilioConfigured()) {
+      try {
+        const client = getTwilioClient();
+        const svcSid = getVerifyServiceSid();
 
-      if (verifyErr || !verifyData?.user) {
-        console.warn('[checkoutPhoneOtpService] Supabase verify error:', verifyErr?.message, verifyErr?.status);
-        const msg = String(verifyErr?.message || '');
-        if (msg.toLowerCase().includes('expired')) {
-          return { success: false, error: 'Verification code has expired. Please request a new code.' };
+        const verificationCheck = await client.verify.v2.services(svcSid)
+          .verificationChecks
+          .create({ to: phoneE164, code: String(code).trim() });
+
+        if (verificationCheck.status === 'approved') {
+          isVerified = true;
         }
-        if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('token') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('wrong')) {
-          return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
-        }
-        return { success: false, error: msg || 'Incorrect verification code. Please check your SMS and try again.' };
+      } catch (twilioErr) {
+        console.warn('[checkoutPhoneOtpService] Direct Twilio verifyCheck note:', twilioErr.message);
       }
-    } catch (sbVerifyErr) {
-      console.error('[checkoutPhoneOtpService] Supabase verify exception:', sbVerifyErr.message);
-      return { success: false, error: sbVerifyErr.message || 'Verification service error. Please try again.' };
+    }
+
+    // 4b. If not verified via Direct Twilio, check via Supabase Twilio Phone Provider
+    if (!isVerified) {
+      try {
+        const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
+          phone: phoneE164,
+          token: String(code).trim(),
+          type: 'sms',
+        });
+
+        if (!verifyErr && verifyData?.user) {
+          isVerified = true;
+        } else if (verifyErr) {
+          console.warn('[checkoutPhoneOtpService] Supabase verifyOtp note:', verifyErr?.message);
+        }
+      } catch (sbVerifyErr) {
+        console.warn('[checkoutPhoneOtpService] Supabase verify exception note:', sbVerifyErr.message);
+      }
+    }
+
+    if (!isVerified) {
+      return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
     }
   }
 
@@ -666,7 +650,7 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
   if (!isValidUuid(userId)) {
     return {
       success: false,
-      error: 'Phone verification token is invalid, already used, or belongs to a different session. Please verify your phone again.',
+      error: 'Phone verification token is invalid or belongs to an invalid session. Please verify your phone again.',
     };
   }
 
@@ -677,13 +661,12 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
 
   const phoneE164 = rawPhone ? normalizeToE164(rawPhone) : null;
 
-  // 1. Look up the token with safeQuery
+  // 1. Look up the token by verify_token first with safeQuery
   const { data: challenge, error: fetchErr } = await safeQuery(() =>
     supabase
       .from('checkout_otp_challenges')
       .select('*')
       .eq('verify_token', cleanToken)
-      .eq('user_id', userId)
       .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .maybeSingle()
   );
@@ -696,7 +679,16 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
   if (!challenge) {
     return {
       success: false,
-      error: 'Phone verification token is invalid, already used, or belongs to a different session. Please verify your phone again.',
+      error: 'Phone verification token is invalid or expired. Please verify your phone again.',
+    };
+  }
+
+  // Session binding check: ensure token belongs to current user
+  if (challenge.user_id !== userId) {
+    console.warn(`[checkoutPhoneOtpService] User ID mismatch: token user ${challenge.user_id} vs request user ${userId}`);
+    return {
+      success: false,
+      error: 'Phone verification token belongs to a different session. Please verify your phone again.',
     };
   }
 
