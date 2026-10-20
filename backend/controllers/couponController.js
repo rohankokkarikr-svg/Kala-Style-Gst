@@ -171,9 +171,25 @@ exports.validateCoupon = async (req, res) => {
 
     // 1. Check against the Storefront Discount Banner Promotional Code
     try {
-      const { readSettings } = require('./settingsController');
-      const settings = readSettings();
-      const banner = settings?.discountBanner;
+      let banner = null;
+      try {
+        const { data: supaRow } = await dbClient
+          .from('platform_settings')
+          .select('discount_banner')
+          .eq('id', 'main')
+          .maybeSingle();
+        if (supaRow?.discount_banner && typeof supaRow.discount_banner === 'object') {
+          banner = supaRow.discount_banner;
+        }
+      } catch (dbErr) {
+        console.warn('[couponController] platform_settings query error:', dbErr?.message);
+      }
+
+      if (!banner) {
+        const { readSettings } = require('./settingsController');
+        const settings = readSettings();
+        banner = settings?.discountBanner;
+      }
 
       if (banner && (banner.code || '').trim().toUpperCase() === cleanCode) {
         const isBannerActive = banner.isActive !== undefined ? Boolean(banner.isActive) : (banner.is_active !== undefined ? Boolean(banner.is_active) : true);
@@ -201,10 +217,28 @@ exports.validateCoupon = async (req, res) => {
         }
 
         if (audience === 'specific') {
-          const rawEmails = banner.selectedUserEmails || banner.selected_user_emails || [];
-          const emailList = (Array.isArray(rawEmails) ? rawEmails : String(rawEmails).split(',')).map(e => e.trim().toLowerCase());
-          
-          if (!user || !emailList.includes((user.email || '').toLowerCase())) {
+          if (!user) {
+            return res.status(401).json({ error: 'Please sign in to your account to redeem this exclusive promotional code.' });
+          }
+
+          const rawList = banner.selectedUserEmails || banner.selected_user_emails || [];
+          const list = (Array.isArray(rawList) ? rawList : String(rawList).split(','))
+            .map(e => String(e).trim().toLowerCase())
+            .filter(Boolean);
+
+          const userEmail = (user.email || '').toLowerCase().trim();
+          const userId = String(user.id || '').toLowerCase().trim();
+          const userPhone = String(user.phone || '').replace(/\D/g, '');
+
+          const isTargeted = list.some(target => {
+            const cleanTarget = target.toLowerCase().trim();
+            if (userEmail && cleanTarget === userEmail) return true;
+            if (userId && cleanTarget === userId) return true;
+            if (userPhone && cleanTarget.replace(/\D/g, '') === userPhone) return true;
+            return false;
+          });
+
+          if (!isTargeted) {
             return res.status(403).json({ error: 'This exclusive discount code is valid only for selected accounts.' });
           }
         }

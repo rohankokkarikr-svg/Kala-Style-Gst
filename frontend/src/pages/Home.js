@@ -8,7 +8,7 @@ import HeroSlider from '../components/HeroSlider';
 import IndianHandicraftsSection from '../components/IndianHandicraftsSection';
 import Testimonials from '../components/Testimonials';
 import Footer from '../components/Footer';
-import { productAPI, artisanAPI } from '../services/api';
+import { productAPI, artisanAPI, orderAPI } from '../services/api';
 import { useSettings, DEFAULT_DISCOUNT_BANNER } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { apiCache } from '../utils/apiCache';
@@ -29,6 +29,34 @@ export default function Home() {
 
   const discountBanner = settings?.discountBanner || DEFAULT_DISCOUNT_BANNER;
 
+  const [userOrderCount, setUserOrderCount] = useState(() => {
+    if (user?.orderCount !== undefined) return user.orderCount;
+    if (user?.orders_count !== undefined) return user.orders_count;
+    return null;
+  });
+
+  useEffect(() => {
+    if (!user) {
+      setUserOrderCount(0);
+      return;
+    }
+    if (user.orderCount !== undefined) {
+      setUserOrderCount(user.orderCount);
+      return;
+    }
+    if (user.orders_count !== undefined) {
+      setUserOrderCount(user.orders_count);
+      return;
+    }
+    orderAPI.getMyOrders()
+      .then(({ data }) => {
+        if (Array.isArray(data)) {
+          setUserOrderCount(data.length);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
   const shouldShowBanner = React.useMemo(() => {
     const isAct = discountBanner.isActive !== undefined 
       ? Boolean(discountBanner.isActive) 
@@ -43,18 +71,36 @@ export default function Home() {
     if (audience === 'logged_in') return Boolean(user);
 
     if (audience === 'new_users') {
-      return !user || (user.orderCount === 0 || user.orders_count === 0);
+      if (!user) return true;
+      const orders = user.orderCount !== undefined ? user.orderCount : (user.orders_count !== undefined ? user.orders_count : userOrderCount);
+      if (orders === null || orders === undefined) return true;
+      return Number(orders) === 0;
     }
 
     if (audience === 'specific') {
-      if (!user?.email) return false;
-      const rawEmails = discountBanner.selectedUserEmails || discountBanner.selected_user_emails || [];
-      const emailList = (Array.isArray(rawEmails) ? rawEmails : String(rawEmails).split(',')).map(e => e.trim().toLowerCase());
-      return emailList.includes(user.email.toLowerCase());
+      if (!user) return false;
+      const rawList = discountBanner.selectedUserEmails || discountBanner.selected_user_emails || [];
+      const list = (Array.isArray(rawList) ? rawList : String(rawList).split(','))
+        .map(e => String(e).trim().toLowerCase())
+        .filter(Boolean);
+
+      if (list.length === 0) return false;
+
+      const userEmail = (user.email || '').toLowerCase().trim();
+      const userId = String(user.id || '').toLowerCase().trim();
+      const userPhone = String(user.phone || '').replace(/\D/g, '');
+
+      return list.some(target => {
+        const cleanTarget = target.toLowerCase().trim();
+        if (userEmail && cleanTarget === userEmail) return true;
+        if (userId && cleanTarget === userId) return true;
+        if (userPhone && cleanTarget.replace(/\D/g, '') === userPhone) return true;
+        return false;
+      });
     }
 
     return true;
-  }, [discountBanner, user]);
+  }, [discountBanner, user, userOrderCount]);
 
   const fetchData = React.useCallback(async (isBackground = false) => {
     if (!isBackground && initialFeatured.length === 0) setLoading(true);

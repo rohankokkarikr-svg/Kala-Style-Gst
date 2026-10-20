@@ -282,19 +282,25 @@ export const SettingsProvider = ({ children }) => {
           ? { ...DEFAULT_CATEGORY_BANNERS, ...loadedData.categoryBanners }
           : DEFAULT_CATEGORY_BANNERS);
 
-    const rawDiscountBanner = cloudDiscountBanner || loadedData?.discountBanner || loadedData?.discount_banner;
+    const rawDiscountBanner = loadedData?.discount_banner || loadedData?.discountBanner || cloudDiscountBanner;
     let activeDiscountBanner = DEFAULT_DISCOUNT_BANNER;
     if (rawDiscountBanner && typeof rawDiscountBanner === 'object') {
       const isAct = rawDiscountBanner.isActive !== undefined 
         ? Boolean(rawDiscountBanner.isActive) 
         : (rawDiscountBanner.is_active !== undefined ? Boolean(rawDiscountBanner.is_active) : true);
+      const discountPct = Number(rawDiscountBanner.discountPercentage !== undefined ? rawDiscountBanner.discountPercentage : rawDiscountBanner.discount_percentage) || 30;
       activeDiscountBanner = {
         ...DEFAULT_DISCOUNT_BANNER,
         ...rawDiscountBanner,
         isActive: isAct,
         is_active: isAct,
+        title: rawDiscountBanner.title || DEFAULT_DISCOUNT_BANNER.title,
         code: (rawDiscountBanner.code || 'KALA30').trim().toUpperCase(),
-        discountPercentage: Number(rawDiscountBanner.discountPercentage !== undefined ? rawDiscountBanner.discountPercentage : rawDiscountBanner.discount_percentage) || 30,
+        discountPercentage: discountPct,
+        discount: rawDiscountBanner.discount || `${discountPct}%`,
+        description: rawDiscountBanner.description || `Use this code and get upto ${discountPct}% off on handmade products`,
+        buttonText: rawDiscountBanner.buttonText || DEFAULT_DISCOUNT_BANNER.buttonText,
+        buttonLink: rawDiscountBanner.buttonLink || DEFAULT_DISCOUNT_BANNER.buttonLink,
         targetAudience: rawDiscountBanner.targetAudience || rawDiscountBanner.target_audience || 'all',
         selectedUserEmails: Array.isArray(rawDiscountBanner.selectedUserEmails) 
           ? rawDiscountBanner.selectedUserEmails 
@@ -344,7 +350,22 @@ export const SettingsProvider = ({ children }) => {
         localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(updated));
       } catch {}
 
-      // 2. Persist to backend server API
+      // 2. Direct Supabase Cloud update (fail-safe and instant)
+      if (partialUpdates.discountBanner) {
+        try {
+          await supabase
+            .from('platform_settings')
+            .upsert([{ 
+              id: 'main', 
+              discount_banner: updated.discountBanner, 
+              updated_at: new Date().toISOString() 
+            }]);
+        } catch (dbErr) {
+          console.warn('[SettingsContext] Direct Supabase platform_settings update error:', dbErr?.message);
+        }
+      }
+
+      // 3. Persist to backend server API
       try {
         await settingsAPI.update(partialUpdates);
       } catch (apiErr) {

@@ -354,7 +354,21 @@ exports.getMe = async (req, res) => {
       console.warn('[authController.getMe] Error checking artisan profile:', profErr?.message || profErr);
     }
 
-    res.json({ ...user, artisan_profile: artisanProfile });
+    let orderCount = 0;
+    try {
+      const { count } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      orderCount = count || 0;
+    } catch (_) {}
+
+    res.json({
+      ...user,
+      orderCount,
+      orders_count: orderCount,
+      artisan_profile: artisanProfile
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

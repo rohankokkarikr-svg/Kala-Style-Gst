@@ -45,7 +45,7 @@ export default function DiscountBanner() {
 
   // Load customer accounts for targeted promotion selection
   useEffect(() => {
-    adminAPI.getCustomers()
+    adminAPI.getCustomers({ role: 'all' })
       .then(({ data }) => {
         if (Array.isArray(data)) setCustomers(data);
       })
@@ -97,6 +97,10 @@ export default function DiscountBanner() {
         code: codeUpper,
         discountPercentage: pct,
         discount: `${pct}%`,
+        description: banner.description || `Use this code and get upto ${pct}% off on handmade products`,
+        title: banner.title || 'Artisan Launch Sale',
+        buttonText: banner.buttonText || 'Grab the Deal',
+        buttonLink: banner.buttonLink || '/products',
         isActive: isAct,
         is_active: isAct,
         targetAudience: banner.targetAudience || 'all',
@@ -141,12 +145,12 @@ export default function DiscountBanner() {
     handleChange('description', `Use this code and get upto ${pct}% off on handmade products`);
   };
 
-  // Toggle user email in selectedUserEmails array
-  const toggleUserEmail = (email) => {
-    if (!email) return;
-    const lower = email.toLowerCase().trim();
+  // Toggle user email/identifier in selectedUserEmails array
+  const toggleUserEmail = (identifier) => {
+    if (!identifier) return;
+    const lower = String(identifier).toLowerCase().trim();
     const current = Array.isArray(banner.selectedUserEmails) ? [...banner.selectedUserEmails] : [];
-    const idx = current.findIndex(e => e.toLowerCase() === lower);
+    const idx = current.findIndex(e => String(e).toLowerCase().trim() === lower);
     if (idx > -1) {
       current.splice(idx, 1);
     } else {
@@ -155,7 +159,7 @@ export default function DiscountBanner() {
     handleChange('selectedUserEmails', current);
   };
 
-  // Add manual email to selected list
+  // Add manual email or phone to selected list
   const handleAddManualEmail = (e) => {
     e.preventDefault();
     const trimmed = manualEmailInput.trim().toLowerCase();
@@ -164,18 +168,43 @@ export default function DiscountBanner() {
     const current = Array.isArray(banner.selectedUserEmails) ? [...banner.selectedUserEmails] : [];
     
     emailsToAdd.forEach(em => {
-      if (!current.includes(em)) current.push(em);
+      const clean = em.toLowerCase().trim();
+      if (!current.some(c => String(c).toLowerCase().trim() === clean)) {
+        current.push(clean);
+      }
     });
 
     handleChange('selectedUserEmails', current);
     setManualEmailInput('');
-    toast.success(`Added ${emailsToAdd.length} user email(s)`);
+    toast.success(`Added ${emailsToAdd.length} user identifier(s)`);
+  };
+
+  const handleSelectAllFiltered = () => {
+    const current = Array.isArray(banner.selectedUserEmails) ? [...banner.selectedUserEmails] : [];
+    filteredCustomers.forEach(c => {
+      const idf = (c.email || c.phone || c.id || '').toLowerCase().trim();
+      if (idf && !current.some(e => String(e).toLowerCase().trim() === idf)) {
+        current.push(idf);
+      }
+    });
+    handleChange('selectedUserEmails', current);
+    toast.success(`Selected ${filteredCustomers.length} user(s)`);
+  };
+
+  const handleClearAllSelected = () => {
+    handleChange('selectedUserEmails', []);
+    toast.success('Cleared all selected users');
   };
 
   const filteredCustomers = customers.filter(c => {
     if (!customerSearch) return true;
-    const s = customerSearch.toLowerCase();
-    return (c.name || '').toLowerCase().includes(s) || (c.email || '').toLowerCase().includes(s);
+    const s = customerSearch.toLowerCase().trim();
+    return (
+      (c.name || '').toLowerCase().includes(s) ||
+      (c.email || '').toLowerCase().includes(s) ||
+      String(c.phone || '').includes(s) ||
+      String(c.id || '').includes(s)
+    );
   });
 
   return (
@@ -483,36 +512,58 @@ export default function DiscountBanner() {
             {banner.targetAudience === 'specific' && (
               <div className="space-y-3 pt-2 border-t border-dark-700">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="font-bold text-gold-400 text-xs">
-                    Select Customer Accounts ({(banner.selectedUserEmails || []).length} selected)
-                  </span>
-                  <div className="relative w-full sm:w-64">
-                    <HiSearch className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={customerSearch}
-                      onChange={e => setCustomerSearch(e.target.value)}
-                      placeholder="Search customers..."
-                      className="w-full bg-dark-750 border border-dark-600 rounded-lg pl-8 pr-2.5 py-1 text-xs text-white"
-                    />
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gold-400 text-xs">
+                      Targeted Accounts: ({(banner.selectedUserEmails || []).length} selected)
+                    </span>
+                    {(banner.selectedUserEmails || []).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllSelected}
+                        className="text-[10px] text-red-400 hover:text-red-300 underline font-medium cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {filteredCustomers.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSelectAllFiltered}
+                        className="px-2 py-1 bg-dark-700 hover:bg-dark-650 border border-dark-600 rounded text-[10px] text-gold-400 font-semibold cursor-pointer transition-colors"
+                      >
+                        + Select All Shown ({filteredCustomers.length})
+                      </button>
+                    )}
+                    <div className="relative w-full sm:w-56">
+                      <HiSearch className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={customerSearch}
+                        onChange={e => setCustomerSearch(e.target.value)}
+                        placeholder="Search name, email, phone..."
+                        className="w-full bg-dark-750 border border-dark-600 rounded-lg pl-8 pr-2.5 py-1 text-xs text-white"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Add Manual Email Input */}
+                {/* Add Manual Email / Phone Input */}
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={manualEmailInput}
                     onChange={e => setManualEmailInput(e.target.value)}
-                    placeholder="Enter email address (or comma separated: user1@gmail.com, user2@gmail.com)"
+                    placeholder="Enter email or phone (e.g. user@gmail.com, 9876543210)"
                     className="flex-1 bg-dark-750 border border-dark-600 rounded-lg p-2 text-xs text-white"
                   />
                   <button
                     type="button"
                     onClick={handleAddManualEmail}
-                    className="btn-secondary text-xs px-3 whitespace-nowrap"
+                    className="btn-secondary text-xs px-3 whitespace-nowrap cursor-pointer"
                   >
-                    + Add Email
+                    + Add Identifier
                   </button>
                 </div>
 
@@ -528,7 +579,7 @@ export default function DiscountBanner() {
                         <button
                           type="button"
                           onClick={() => toggleUserEmail(email)}
-                          className="hover:text-red-400 text-gray-400"
+                          className="hover:text-red-400 text-gray-400 cursor-pointer"
                         >
                           <HiX className="w-3 h-3" />
                         </button>
@@ -540,18 +591,19 @@ export default function DiscountBanner() {
                 {/* Customers Selection List */}
                 <div className="border border-dark-700 rounded-xl overflow-hidden max-h-48 overflow-y-auto divide-y divide-dark-700 bg-dark-900">
                   {filteredCustomers.length === 0 ? (
-                    <p className="p-3 text-center text-gray-500 text-xs">No registered customer found</p>
+                    <p className="p-3 text-center text-gray-500 text-xs">No registered customer or user found</p>
                   ) : (
                     filteredCustomers.map(c => {
+                      const userIdentifier = c.email || c.phone || c.id;
                       const isSelected = (banner.selectedUserEmails || []).some(
-                        e => e.toLowerCase() === (c.email || '').toLowerCase()
+                        e => String(e).toLowerCase().trim() === String(userIdentifier || '').toLowerCase().trim()
                       );
                       return (
                         <div
                           key={c.id}
-                          onClick={() => toggleUserEmail(c.email)}
+                          onClick={() => toggleUserEmail(userIdentifier)}
                           className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
-                            isSelected ? 'bg-gold-500/10' : 'hover:bg-dark-800'
+                            isSelected ? 'bg-gold-500/15 border-l-2 border-gold-500' : 'hover:bg-dark-800'
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -561,13 +613,15 @@ export default function DiscountBanner() {
                               {isSelected && <HiCheck className="w-3 h-3 font-bold" />}
                             </div>
                             <div>
-                              <p className="text-white text-xs font-medium">{c.name || 'Anonymous'}</p>
-                              <p className="text-gray-400 text-[10px]">{c.email}</p>
+                              <p className="text-white text-xs font-medium">{c.name || 'Registered User'}</p>
+                              <p className="text-gray-400 text-[10px]">{c.email || c.phone || c.id}</p>
                             </div>
                           </div>
-                          <span className="text-[10px] text-gray-500">
-                            {c.orderCount ? `${c.orderCount} orders` : 'New User'}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-[10px] text-gray-400 block">
+                              {c.orderCount !== undefined ? `${c.orderCount} orders` : (c.role ? `${c.role}` : 'Customer')}
+                            </span>
+                          </div>
                         </div>
                       );
                     })

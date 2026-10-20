@@ -228,18 +228,25 @@ exports.getSettings = async (req, res) => {
       supabase.from('platform_settings').select('*').eq('id', 'main').single()
     );
 
-    const rawBanner = cloudDiscountBanner || supaData?.discount_banner || supaData?.discountBanner || local.discountBanner || DEFAULT_DISCOUNT_BANNER;
+    const rawBanner = supaData?.discount_banner || supaData?.discountBanner || cloudDiscountBanner || local.discountBanner || DEFAULT_DISCOUNT_BANNER;
     const isBannerActive = rawBanner.isActive !== undefined 
       ? Boolean(rawBanner.isActive) 
       : (rawBanner.is_active !== undefined ? Boolean(rawBanner.is_active) : true);
+
+    const discountPct = Number(rawBanner.discountPercentage !== undefined ? rawBanner.discountPercentage : rawBanner.discount_percentage) || 30;
 
     const normalizedDiscountBanner = {
       ...DEFAULT_DISCOUNT_BANNER,
       ...rawBanner,
       isActive: isBannerActive,
       is_active: isBannerActive,
+      title: rawBanner.title || DEFAULT_DISCOUNT_BANNER.title,
       code: (rawBanner.code || 'KALA30').trim().toUpperCase(),
-      discountPercentage: Number(rawBanner.discountPercentage) || 30,
+      discountPercentage: discountPct,
+      discount: rawBanner.discount || `${discountPct}%`,
+      description: rawBanner.description || `Use this code and get upto ${discountPct}% off on handmade products`,
+      buttonText: rawBanner.buttonText || DEFAULT_DISCOUNT_BANNER.buttonText,
+      buttonLink: rawBanner.buttonLink || DEFAULT_DISCOUNT_BANNER.buttonLink,
       targetAudience: rawBanner.targetAudience || rawBanner.target_audience || 'all',
       selectedUserEmails: Array.isArray(rawBanner.selectedUserEmails)
         ? rawBanner.selectedUserEmails
@@ -311,13 +318,19 @@ async function applySettingsUpdate(updates = {}) {
     ...(updates.discountBanner || updates.discount_banner ? (() => {
       const raw = updates.discountBanner || updates.discount_banner;
       const isBannerActive = raw.isActive !== undefined ? Boolean(raw.isActive) : (raw.is_active !== undefined ? Boolean(raw.is_active) : true);
+      const pct = Number(raw.discountPercentage !== undefined ? raw.discountPercentage : raw.discount_percentage) || 30;
       const normalizedDiscountBanner = {
         ...(current.discountBanner || DEFAULT_DISCOUNT_BANNER),
         ...raw,
         isActive: isBannerActive,
         is_active: isBannerActive,
-        code: (raw.code || 'KALA30').trim().toUpperCase(),
-        discountPercentage: Number(raw.discountPercentage !== undefined ? raw.discountPercentage : raw.discount_percentage) || 30,
+        title: raw.title || current.discountBanner?.title || DEFAULT_DISCOUNT_BANNER.title,
+        code: (raw.code || current.discountBanner?.code || 'KALA30').trim().toUpperCase(),
+        discountPercentage: pct,
+        discount: raw.discount || `${pct}%`,
+        description: raw.description || `Use this code and get upto ${pct}% off on handmade products`,
+        buttonText: raw.buttonText || current.discountBanner?.buttonText || DEFAULT_DISCOUNT_BANNER.buttonText,
+        buttonLink: raw.buttonLink || current.discountBanner?.buttonLink || DEFAULT_DISCOUNT_BANNER.buttonLink,
         targetAudience: raw.targetAudience || raw.target_audience || 'all',
         selectedUserEmails: Array.isArray(raw.selectedUserEmails)
           ? raw.selectedUserEmails
@@ -400,7 +413,7 @@ async function applySettingsUpdate(updates = {}) {
     'tax_rate', 'platform_commission', 'ai_features_enabled', 'daily_ai_limit_per_artisan',
     'auto_approve_products', 'maintenance_mode', 'delivery_fee', 'free_delivery_above',
     'cod_enabled', 'cod_max_order_value', 'cod_min_order_value', 'cancellation_window_hours',
-    'reward_eligible_count'
+    'reward_eligible_count', 'discount_banner', 'hero_slides'
   ];
   const platformPayload = { id: 'main', updated_at: new Date().toISOString() };
   for (const key of validPlatformCols) {
