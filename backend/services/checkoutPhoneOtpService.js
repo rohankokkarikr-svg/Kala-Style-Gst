@@ -149,6 +149,7 @@ const getActiveChallenge = async (userId, phoneE164) => {
       .eq('phone_e164', phoneE164)
       .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .eq('consumed', false)
+      .is('verify_token', null)
       .gt('expires_at', new Date().toISOString())
       .order('issued_at', { ascending: false })
       .limit(1)
@@ -176,6 +177,7 @@ const invalidateExistingChallenges = async (userId, phoneE164) => {
       .eq('user_id', userId)
       .eq('phone_e164', phoneE164)
       .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
+      .is('verify_token', null)
       .eq('consumed', false)
   );
 
@@ -514,6 +516,22 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: 'No active verification request found. Please request a new code.' };
   }
 
+  // Idempotency: If challenge is already verified and not yet consumed, return existing token
+  if (challenge.verify_token && !challenge.consumed) {
+    const tokenExpiry = challenge.token_expires_at
+      ? new Date(challenge.token_expires_at).getTime()
+      : new Date(challenge.expires_at).getTime();
+
+    if (Date.now() <= tokenExpiry) {
+      console.log(`[checkoutPhoneOtpService] Challenge ${challenge.id} already verified, returning existing token`);
+      return {
+        success: true,
+        verificationToken: challenge.verify_token,
+        maskedPhone: maskPhone(phoneE164),
+      };
+    }
+  }
+
   // 2. Expiry check
   if (new Date(challenge.expires_at).getTime() < Date.now()) {
     await safeQuery(() =>
@@ -667,7 +685,6 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
       .eq('verify_token', cleanToken)
       .eq('user_id', userId)
       .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
-      .eq('consumed', false)
       .maybeSingle()
   );
 
@@ -680,6 +697,13 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
     return {
       success: false,
       error: 'Phone verification token is invalid, already used, or belongs to a different session. Please verify your phone again.',
+    };
+  }
+
+  if (challenge.consumed) {
+    return {
+      success: false,
+      error: 'Phone verification token has already been used for an order. Please verify your phone again.',
     };
   }
 
@@ -706,17 +730,25 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
   }
 
   // 4. Atomically consume the token with safeQuery
-  const { error: consumeErr } = await safeQuery(() =>
+  const { data: updatedRows, error: consumeErr } = await safeQuery(() =>
     supabase
       .from('checkout_otp_challenges')
       .update({ consumed: true, consumed_at: new Date().toISOString() })
       .eq('id', challenge.id)
       .eq('consumed', false) // Guard: prevent double-consume race condition
+      .select()
   );
 
   if (consumeErr) {
     console.error('[checkoutPhoneOtpService] consumeVerificationToken consume error:', consumeErr.message);
     return { success: false, error: consumeErr.message || 'Verification service error. Please try again.' };
+  }
+
+  if (!updatedRows || updatedRows.length === 0) {
+    return {
+      success: false,
+      error: 'Phone verification token was already used by a concurrent request. Please verify your phone again.',
+    };
   }
 
   console.log(`[checkoutPhoneOtpService] Token consumed → challenge ${challenge.id}, user ${userId}`);
