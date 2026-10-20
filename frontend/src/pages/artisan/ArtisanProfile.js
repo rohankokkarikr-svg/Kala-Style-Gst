@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { artisanAPI, productAPI, aiAPI } from '../../services/api';
+import { artisanAPI, productAPI, aiAPI, authAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { Link } from 'react-router-dom';
 import { HiCamera, HiSparkles, HiEye } from 'react-icons/hi';
+import { FaTrophy } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import LiveCameraModal from '../../components/LiveCameraModal';
 
@@ -11,6 +13,7 @@ const ARTISAN_TYPES = ['Weaver / Handloom', 'Tailor / Clothing Maker', 'Jewelry 
 export default function ArtisanProfile() {
   const { user } = useAuth();
   const [profile, setProfile] = useState(null);
+  const [leaderboardRank, setLeaderboardRank] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -25,6 +28,12 @@ export default function ArtisanProfile() {
         setProfile(data); setForm(data || {}); setLoading(false);
       }
     }).catch(() => setLoading(false));
+
+    authAPI.getLeaderboard().then(({ data }) => {
+      if (data?.currentArtisanRank) {
+        setLeaderboardRank(data.currentArtisanRank);
+      }
+    }).catch(() => {});
   };
 
   const handleGenerateBio = async () => {
@@ -213,6 +222,36 @@ export default function ArtisanProfile() {
           </div>
         </div>
       )}
+
+      {/* ── Artisan Leaderboard Standing Card ── */}
+      <div className="card p-5 bg-gradient-to-r from-gold-500/15 via-amber-600/10 to-dark-800 border border-gold-500/40 rounded-2xl relative overflow-hidden shadow-lg">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-gold-500/20 border border-gold-500/40 flex items-center justify-center text-2xl shadow-gold shrink-0">
+              {leaderboardRank?.rank === 1 ? '👑' : leaderboardRank?.rank === 2 ? '🥈' : leaderboardRank?.rank === 3 ? '🥉' : '🎨'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gold-400 uppercase tracking-wider">Artisan Sales Leaderboard</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-gold-500/20 text-gold-300 border border-gold-500/30 font-bold">
+                  Rank #{leaderboardRank?.rank || '1'}
+                </span>
+              </div>
+              <p className="text-sm text-gray-200 mt-0.5">
+                Total Sales: <strong className="text-white font-mono font-bold">₹{(leaderboardRank?.totalSales || 0).toLocaleString()}</strong>
+                <span className="mx-2 text-gray-500">•</span>
+                <span className="text-gold-300 font-medium">{leaderboardRank?.masteryLevel || 'Rising Artisan'}</span>
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/leaderboard?tab=artisans"
+            className="btn-outline text-xs px-4 py-2 border-gold-500/50 text-gold-300 hover:bg-gold-500/20 flex items-center gap-1.5 shrink-0 shadow-sm"
+          >
+            <FaTrophy className="w-3.5 h-3.5 text-gold-400" /> View Leaderboard &rarr;
+          </Link>
+        </div>
+      </div>
       <form onSubmit={handleSave} className="card p-6 space-y-5">
         {/* Profile Image & Cloudinary Storage */}
         <div className="flex items-center gap-5 p-4 rounded-xl bg-dark-700/50 border border-dark-600">

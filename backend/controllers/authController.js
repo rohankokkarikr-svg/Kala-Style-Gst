@@ -491,78 +491,202 @@ exports.getRewards = async (req, res) => {
 
 exports.getLeaderboard = async (req, res) => {
   try {
-    const [usersRes, ordersRes] = await Promise.all([
+    const [usersRes, ordersRes, artisansRes, artisanOrdersRes, orderItemsRes] = await Promise.all([
       safeQuery(() =>
         supabase
           .from('users')
-          .select('id, name, email, created_at')
+          .select('id, name, email, role, created_at')
       ),
       safeQuery(() =>
         supabase
           .from('orders')
-          .select('user_id, total_price, status')
-          .in('status', ['delivered', 'Delivered', 'DELIVERED'])
+          .select('id, user_id, total_amount, total_price, status, payment_status, created_at')
+      ),
+      safeQuery(() =>
+        supabase
+          .from('artisan_profiles')
+          .select('id, user_id, store_name, artisan_type, specialization, profile_image, location, earnings_total, created_at')
+      ),
+      safeQuery(() =>
+        supabase
+          .from('artisan_orders')
+          .select('id, order_id, artisan_id, subtotal, total_amount, status')
+      ),
+      safeQuery(() =>
+        supabase
+          .from('order_items')
+          .select('id, order_id, product_id, artisan_id, quantity, total_price')
       )
     ]);
 
     if (usersRes.error) throw usersRes.error;
-    if (ordersRes.error) throw ordersRes.error;
 
     const users = usersRes.data || [];
     const orders = ordersRes.data || [];
+    const artisans = artisansRes.data || [];
+    const artisanOrders = artisanOrdersRes.data || [];
+    const orderItems = orderItemsRes.data || [];
+
+    const currentUserId = req.user?.id ? String(req.user.id) : null;
+
+    // ══════════════════════════════════════════════════════════════
+    // 1. CUSTOMER / BUYER LEADERBOARD (Ranked by Total Purchases)
+    // ══════════════════════════════════════════════════════════════
+    // Count all active, confirmed, paid, or delivered orders (excluding only cancelled/rejected)
+    const validOrders = orders.filter(o => {
+      const st = String(o.status || '').toLowerCase();
+      return st !== 'cancelled' && st !== 'rejected';
+    });
 
     const userSpendMap = {};
     const userOrdersCountMap = {};
 
-    orders.forEach(o => {
-      const price = Number(o.total_price) || 0;
+    validOrders.forEach(o => {
+      const price = Number(o.total_amount || o.total_price) || 0;
       const uid = String(o.user_id);
       userSpendMap[uid] = (userSpendMap[uid] || 0) + price;
       userOrdersCountMap[uid] = (userOrdersCountMap[uid] || 0) + 1;
     });
 
-    const leaderboard = users.map(u => {
-      const uIdStr = String(u.id);
-      const totalSpent = Math.round(userSpendMap[uIdStr] || 0);
-      const totalOrders = userOrdersCountMap[uIdStr] || 0;
+    const customerList = users
+      .filter(u => (u.role || '').toLowerCase() !== 'admin')
+      .map(u => {
+        const uIdStr = String(u.id);
+        const totalSpent = Math.round(userSpendMap[uIdStr] || 0);
+        const totalOrders = userOrdersCountMap[uIdStr] || 0;
 
-      let level = 'Bronze';
-      if (totalSpent > 50000)      level = 'Elite';
-      else if (totalSpent > 35000) level = 'Diamond';
-      else if (totalSpent > 20000) level = 'Gold';
-      else if (totalSpent > 5000)  level = 'Silver';
+        let level = 'Bronze';
+        if (totalSpent > 50000)      level = 'Elite';
+        else if (totalSpent > 35000) level = 'Diamond';
+        else if (totalSpent > 20000) level = 'Gold';
+        else if (totalSpent > 5000)  level = 'Silver';
 
-      return {
-        id: u.id,
-        name: u.name,
-        totalSpent,
-        totalOrders,
-        membershipLevel: level,
-        joinedAt: u.created_at
-      };
-    });
+        return {
+          id: u.id,
+          name: u.name || 'Patron',
+          role: u.role || 'user',
+          totalSpent,
+          totalOrders,
+          membershipLevel: level,
+          joinedAt: u.created_at,
+          isCurrentUser: currentUserId ? uIdStr === currentUserId : false
+        };
+      });
 
-    leaderboard.sort((a, b) => b.totalSpent - a.totalSpent || b.totalOrders - a.totalOrders);
+    // Customer with the highest total purchases ranks #1
+    customerList.sort((a, b) => 
+      b.totalSpent - a.totalSpent || 
+      b.totalOrders - a.totalOrders || 
+      new Date(a.joinedAt) - new Date(b.joinedAt)
+    );
 
-    const currentUserId = req.user?.id ? String(req.user.id) : null;
-    const rankedLeaderboard = leaderboard.map((item, index) => ({
+    const rankedCustomers = customerList.map((item, index) => ({
       ...item,
-      rank: index + 1,
-      isCurrentUser: currentUserId ? String(item.id) === currentUserId : false
+      rank: index + 1
     }));
 
-    const currentUserItem = rankedLeaderboard.find(item => String(item.id) === currentUserId);
-
+    const currentUserItem = rankedCustomers.find(item => String(item.id) === currentUserId);
     let nextRankAmountNeeded = 0;
     if (currentUserItem && currentUserItem.rank > 1) {
-      const userAbove = rankedLeaderboard[currentUserItem.rank - 2];
+      const userAbove = rankedCustomers[currentUserItem.rank - 2];
       if (userAbove) {
         nextRankAmountNeeded = Math.max(0, userAbove.totalSpent - currentUserItem.totalSpent + 1);
       }
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // 2. ARTISAN / CREATOR LEADERBOARD (Ranked by Total Sales)
+    // ══════════════════════════════════════════════════════════════
+    const validArtOrders = artisanOrders.filter(ao => {
+      const st = String(ao.status || '').toLowerCase();
+      return st !== 'cancelled' && st !== 'rejected';
+    });
+
+    const artisanSalesMap = {};
+    const artisanOrdersCountMap = {};
+    const artisanItemsSoldMap = {};
+
+    validArtOrders.forEach(ao => {
+      const amount = Number(ao.total_amount || ao.subtotal) || 0;
+      const aid = String(ao.artisan_id);
+      artisanSalesMap[aid] = (artisanSalesMap[aid] || 0) + amount;
+      artisanOrdersCountMap[aid] = (artisanOrdersCountMap[aid] || 0) + 1;
+    });
+
+    orderItems.forEach(oi => {
+      if (oi.artisan_id) {
+        const aid = String(oi.artisan_id);
+        artisanItemsSoldMap[aid] = (artisanItemsSoldMap[aid] || 0) + (Number(oi.quantity) || 1);
+      }
+    });
+
+    const artisanList = artisans.map(art => {
+      const artId = String(art.id);
+      const userArtId = art.user_id ? String(art.user_id) : null;
+
+      // Consolidate sales attributed by profile ID or user ID
+      const orderSales = (artisanSalesMap[artId] || 0) + (userArtId ? (artisanSalesMap[userArtId] || 0) : 0);
+      const baseEarnings = Number(art.earnings_total) || 0;
+      const totalSales = Math.round(Math.max(orderSales, baseEarnings));
+
+      const totalOrders = (artisanOrdersCountMap[artId] || 0) + (userArtId ? (artisanOrdersCountMap[userArtId] || 0) : 0);
+      const totalItemsSold = (artisanItemsSoldMap[artId] || 0) + (userArtId ? (artisanItemsSoldMap[userArtId] || 0) : 0);
+
+      let mastery = 'Rising Artisan';
+      if (totalSales > 100000)      mastery = 'Grandmaster Creator';
+      else if (totalSales > 50000)  mastery = 'Master Artisan';
+      else if (totalSales > 25000)  mastery = 'Craft Guild Leader';
+      else if (totalSales > 10000)  mastery = 'Distinguished Maker';
+
+      const isCurrentArtisan = currentUserId
+        ? (userArtId === currentUserId || artId === currentUserId)
+        : false;
+
+      return {
+        id: art.id,
+        userId: art.user_id,
+        name: art.store_name || 'Handmade Workshop',
+        storeName: art.store_name || 'Handmade Workshop',
+        artisanType: art.artisan_type || art.specialization || 'Heritage Handloom',
+        specialization: art.specialization || art.artisan_type || 'Traditional Craft',
+        profileImage: art.profile_image,
+        location: art.location || 'India',
+        totalSales,
+        totalOrders,
+        totalItemsSold,
+        masteryLevel: mastery,
+        joinedAt: art.created_at,
+        isCurrentArtisan
+      };
+    });
+
+    // Artisan with the most sales ranks #1
+    artisanList.sort((a, b) => 
+      b.totalSales - a.totalSales || 
+      b.totalOrders - a.totalOrders || 
+      new Date(a.joinedAt) - new Date(b.joinedAt)
+    );
+
+    const rankedArtisans = artisanList.map((item, index) => ({
+      ...item,
+      rank: index + 1
+    }));
+
+    const currentArtisanItem = rankedArtisans.find(item => item.isCurrentArtisan);
+    let nextRankSalesNeeded = 0;
+    if (currentArtisanItem && currentArtisanItem.rank > 1) {
+      const artisanAbove = rankedArtisans[currentArtisanItem.rank - 2];
+      if (artisanAbove) {
+        nextRankSalesNeeded = Math.max(0, artisanAbove.totalSales - currentArtisanItem.totalSales + 1);
+      }
+    }
+
     res.json({
-      leaderboard: rankedLeaderboard,
+      success: true,
+      customers: rankedCustomers,
+      artisans: rankedArtisans,
+      // Backward compatibility alias for existing consumers expecting 'leaderboard'
+      leaderboard: rankedCustomers,
       currentUserRank: currentUserItem ? {
         rank: currentUserItem.rank,
         totalSpent: currentUserItem.totalSpent,
@@ -570,7 +694,18 @@ exports.getLeaderboard = async (req, res) => {
         membershipLevel: currentUserItem.membershipLevel,
         nextRankAmountNeeded
       } : null,
-      totalUsers: rankedLeaderboard.length
+      currentArtisanRank: currentArtisanItem ? {
+        rank: currentArtisanItem.rank,
+        storeName: currentArtisanItem.storeName,
+        totalSales: currentArtisanItem.totalSales,
+        totalOrders: currentArtisanItem.totalOrders,
+        totalItemsSold: currentArtisanItem.totalItemsSold,
+        masteryLevel: currentArtisanItem.masteryLevel,
+        nextRankSalesNeeded
+      } : null,
+      totalCustomers: rankedCustomers.length,
+      totalArtisans: rankedArtisans.length,
+      totalUsers: rankedCustomers.length
     });
   } catch (error) {
     console.error('Leaderboard error:', error);

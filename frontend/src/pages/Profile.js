@@ -92,7 +92,7 @@ export default function Profile() {
                 <HiUser className="w-4 h-4 text-gold-400" /> My Profile
               </div>
               <Link
-                to="/leaderboard"
+                to="/leaderboard?tab=customers"
                 className="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-400 hover:text-white hover:bg-dark-800 transition-colors flex items-center gap-2 border border-transparent hover:border-dark-600"
               >
                 <FaTrophy className="w-4 h-4 text-gold-400" /> View Leaderboard
@@ -198,7 +198,7 @@ export default function Profile() {
               </div>
               <p className="text-xl font-bold gold-text">Rank #{userRankNum}</p>
               <Link
-                to="/leaderboard"
+                to="/leaderboard?tab=customers"
                 className="text-[11px] text-gold-400 hover:text-gold-300 font-semibold mt-1 inline-flex items-center gap-1"
               >
                 View Full Rankings &rarr;
@@ -274,7 +274,7 @@ export default function Profile() {
             </Link>
 
             <Link
-              to="/leaderboard"
+              to="/leaderboard?tab=customers"
               className="p-5 rounded-2xl bg-dark-800/60 border border-dark-600 hover:border-gold-500/50 hover:bg-dark-800 transition-all group"
             >
               <FaTrophy className="w-6 h-6 text-gold-400 mb-2 group-hover:scale-110 transition-transform" />
