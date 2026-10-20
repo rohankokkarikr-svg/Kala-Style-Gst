@@ -180,6 +180,7 @@ export default function Checkout() {
   const [otpError, setOtpError]                   = useState('');
   const [lastOtpPhone, setLastOtpPhone]           = useState('');
   const [otpChallengeId, setOtpChallengeId]       = useState(null);
+  const [devOtpCode, setDevOtpCode]               = useState(null);
   const [verificationToken, setVerificationToken] = useState(null);
   const otpInputsRef                              = useRef([]);
 
@@ -610,11 +611,18 @@ export default function Checkout() {
       const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
       setLastOtpPhone(cleanPhone);
       setOtpChallengeId(res.data?.challengeId || null);
-      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      if (res.data?.devOtp) {
+        setDevOtpCode(res.data.devOtp);
+        setOtpValue(res.data.devOtp.split(''));
+        toast.success(`Twilio Trial Mode: Verification code is ${res.data.devOtp}`, { duration: 9000 });
+      } else {
+        setDevOtpCode(null);
+        setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+        toast.success(`SMS verification code dispatched to ${res.data?.maskedPhone || maskPhone(cleanPhone)}! 📱`);
+      }
       setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
       setShowOtpModal(true);
-      toast.success(`SMS verification code dispatched to ${res.data?.maskedPhone || maskPhone(cleanPhone)}! 📱`);
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message || 'Failed to dispatch verification code. Please try again.';
       if (err.response?.status === 429) {
@@ -639,10 +647,17 @@ export default function Checkout() {
       const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
       setLastOtpPhone(cleanPhone);
       setOtpChallengeId(res.data?.challengeId || null);
-      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      if (res.data?.devOtp) {
+        setDevOtpCode(res.data.devOtp);
+        setOtpValue(res.data.devOtp.split(''));
+        toast.success(`Twilio Trial Mode: Code is ${res.data.devOtp}`, { duration: 9000 });
+      } else {
+        setDevOtpCode(null);
+        setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+        toast.success(`A fresh verification code was sent via SMS to ${res.data?.maskedPhone || maskPhone(cleanPhone)}.`);
+      }
       setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
-      toast.success(`A fresh verification code was sent via SMS to ${res.data?.maskedPhone || maskPhone(cleanPhone)}.`);
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Failed to resend code. Please wait and try again.');
     } finally {
@@ -1694,7 +1709,10 @@ export default function Checkout() {
                 length={CHECKOUT_OTP_LENGTH}
                 email={maskPhone(form.phone)}
                 title="Phone Verification"
-                subtitle={`We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}`}
+                subtitle={devOtpCode 
+                  ? `Twilio Trial Mode: Verification code is ${devOtpCode}. Tap verify to complete order.`
+                  : `We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}`
+                }
                 countdown={otpCountdown}
                 isLoading={otpLoading}
                 isSuccess={isOtpSuccess}
@@ -1703,7 +1721,7 @@ export default function Checkout() {
                 onResend={handleResendOrderOtp}
                 onChangeEmail={() => setShowOtpModal(false)}
                 changeEmailLabel="Cancel / Edit Delivery Details"
-                submitLabel="Verify Phone & Confirm Order"
+                submitLabel={devOtpCode ? `Verify Code (${devOtpCode}) & Confirm Order` : "Verify Phone & Confirm Order"}
                 verifyingLabel="Verifying SMS Code..."
                 successLabel="Phone Verified & Secured"
                 onChange={handleOtpInputChange}

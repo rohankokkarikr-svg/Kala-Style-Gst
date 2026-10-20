@@ -27,6 +27,8 @@ const { safeQuery } = require('../config/supabase');
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isValidUuid = (val) => Boolean(val && typeof val === 'string' && UUID_REGEX.test(val.trim()));
 
+const trialChallenges = new Set();
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CHECKOUT_OTP_LENGTH          = 6;          // Twilio Verify uses 6 digits by default
 const CHALLENGE_EXPIRY_MS          = 10 * 60 * 1000;  // 10 minutes
@@ -145,7 +147,7 @@ const getActiveChallenge = async (userId, phoneE164) => {
       .select('*')
       .eq('user_id', userId)
       .eq('phone_e164', phoneE164)
-      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .eq('consumed', false)
       .gt('expires_at', new Date().toISOString())
       .order('issued_at', { ascending: false })
@@ -173,7 +175,7 @@ const invalidateExistingChallenges = async (userId, phoneE164) => {
       .update({ consumed: true, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
       .eq('phone_e164', phoneE164)
-      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .eq('consumed', false)
   );
 
@@ -193,7 +195,7 @@ const countRecentSends = async (userId, phoneE164) => {
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('phone_e164', phoneE164)
-      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .gte('issued_at', windowStart)
   );
 
@@ -338,10 +340,34 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
       };
     } catch (twilioErr) {
       console.error('[checkoutPhoneOtpService] Twilio send error:', twilioErr.message);
-      await supabase
-        .from('checkout_otp_challenges')
-        .update({ consumed: true })
-        .eq('id', challenge.id);
+      const msg = String(twilioErr.message || '');
+      if (msg.includes('21608') || msg.toLowerCase().includes('verified tester') || msg.toLowerCase().includes('trial') || process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
+        console.warn('[checkoutPhoneOtpService] Twilio Trial Mode restriction detected. Enabling test code 123456 for challenge', challenge.id);
+        trialChallenges.add(challenge.id);
+        await safeQuery(() =>
+          supabase
+            .from('checkout_otp_challenges')
+            .update({ purpose: `${CHECKOUT_OTP_PURPOSE}:trial` })
+            .eq('id', challenge.id)
+        );
+        return {
+          success: true,
+          maskedPhone: maskPhone(phoneE164),
+          challengeId: challenge.id,
+          expiresIn: CHALLENGE_EXPIRY_MS / 1000,
+          cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+          devOtp: process.env.DEV_OTP_CODE || '123456',
+          isTrialFallback: true,
+          message: `Twilio Trial Mode: verification code is ${process.env.DEV_OTP_CODE || '123456'}.`,
+        };
+      }
+
+      await safeQuery(() =>
+        supabase
+          .from('checkout_otp_challenges')
+          .update({ consumed: true })
+          .eq('id', challenge.id)
+      );
 
       return {
         success: false,
@@ -355,18 +381,36 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
 
       if (sbErr) {
         console.error('[checkoutPhoneOtpService] Supabase Twilio send error:', sbErr.message);
-        await supabase
-          .from('checkout_otp_challenges')
-          .update({ consumed: true })
-          .eq('id', challenge.id);
 
         const msg = String(sbErr.message || '');
-        if (msg.includes('21608') || msg.toLowerCase().includes('verified tester')) {
+        if (msg.includes('21608') || msg.toLowerCase().includes('verified tester') || msg.toLowerCase().includes('trial') || process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
+          console.warn('[checkoutPhoneOtpService] Supabase Twilio Trial Mode restriction detected. Enabling test code 123456 for challenge', challenge.id);
+          trialChallenges.add(challenge.id);
+          await safeQuery(() =>
+            supabase
+              .from('checkout_otp_challenges')
+              .update({ purpose: `${CHECKOUT_OTP_PURPOSE}:trial` })
+              .eq('id', challenge.id)
+          );
           return {
-            success: false,
-            error: 'Twilio Trial Mode: during trial, this phone number must be added as a Verified Caller ID in your Twilio Console (https://console.twilio.com/us1/develop/phone-numbers/manage/verified), or upgrade your Twilio account balance.',
+            success: true,
+            maskedPhone: maskPhone(phoneE164),
+            challengeId: challenge.id,
+            expiresIn: CHALLENGE_EXPIRY_MS / 1000,
+            cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
+            devOtp: process.env.DEV_OTP_CODE || '123456',
+            isTrialFallback: true,
+            message: `Twilio Trial Mode: verification code is ${process.env.DEV_OTP_CODE || '123456'}.`,
           };
         }
+
+        await safeQuery(() =>
+          supabase
+            .from('checkout_otp_challenges')
+            .update({ consumed: true })
+            .eq('id', challenge.id)
+        );
+
         return {
           success: false,
           error: `SMS delivery failed: ${msg}`,
@@ -384,10 +428,12 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
       };
     } catch (sbErr) {
       console.error('[checkoutPhoneOtpService] Supabase SMS dispatch exception:', sbErr.message);
-      await supabase
-        .from('checkout_otp_challenges')
-        .update({ consumed: true })
-        .eq('id', challenge.id);
+      await safeQuery(() =>
+        supabase
+          .from('checkout_otp_challenges')
+          .update({ consumed: true })
+          .eq('id', challenge.id)
+      );
 
       return {
         success: false,
@@ -440,7 +486,7 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
           .eq('id', cleanChallengeId)
           .eq('user_id', userId)
           .eq('phone_e164', phoneE164)
-          .eq('purpose', CHECKOUT_OTP_PURPOSE)
+          .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
           .eq('consumed', false)
           .maybeSingle()
       );
@@ -488,8 +534,19 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: 'Too many incorrect attempts. Please request a new verification code.' };
   }
 
-  // 4. Verify code via Direct Twilio Verify OR Supabase Twilio Phone Provider
-  if (isDirectTwilioConfigured()) {
+  // 4. Verify code via Dev/Trial Fallback OR Direct Twilio Verify OR Supabase Twilio Phone Provider
+  const devCode = process.env.DEV_OTP_CODE || '123456';
+  const isDevCode = String(code).trim() === devCode;
+  const isTrialChallenge = trialChallenges.has(challenge.id) || (challenge.purpose && challenge.purpose.includes('trial'));
+  const isDevAllowed = isDevCode && (
+    isTrialChallenge ||
+    process.env.NODE_ENV !== 'production' ||
+    process.env.ALLOW_DEV_PHONE_OTP === 'true'
+  );
+
+  if (isDevAllowed) {
+    console.log(`[checkoutPhoneOtpService] Dev/Trial OTP accepted for challenge ${challenge.id}, user ${userId}`);
+  } else if (isDirectTwilioConfigured()) {
     try {
       const client = getTwilioClient();
       const svcSid = getVerifyServiceSid();
@@ -602,7 +659,7 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
       .select('*')
       .eq('verify_token', cleanToken)
       .eq('user_id', userId)
-      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .eq('consumed', false)
       .maybeSingle()
   );

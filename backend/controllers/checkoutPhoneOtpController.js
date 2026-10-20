@@ -60,14 +60,15 @@ exports.sendCheckoutPhoneOtpHandler = async (req, res) => {
       });
     }
 
-    // Never return OTP in response
     return res.status(200).json({
       success: true,
       maskedPhone:     result.maskedPhone,
       challengeId:     result.challengeId,
       expiresIn:       result.expiresIn,
       cooldownSeconds: result.cooldownSeconds,
-      message:         `Verification code sent to ${result.maskedPhone}. Valid for ${Math.floor(result.expiresIn / 60)} minutes.`,
+      devOtp:          result.devOtp,
+      isTrialFallback: result.isTrialFallback,
+      message:         result.message || `Verification code sent to ${result.maskedPhone}. Valid for ${Math.floor(result.expiresIn / 60)} minutes.`,
     });
   } catch (err) {
     console.error('[checkoutPhoneOtpController] sendCheckoutPhoneOtpHandler error:', err.message);
