@@ -782,6 +782,9 @@ export default function Checkout() {
         return;
       }
 
+      // Immediately consume from React state so it cannot be reused
+      setVerificationToken(null);
+
       // Use pre-captured location without blocking critical order placement
       let activeLat = liveLocation?.lat || (verifyResult?.lat ? parseFloat(verifyResult.lat) : null);
       let activeLng = liveLocation?.lng || (verifyResult?.lng ? parseFloat(verifyResult.lng) : null);
@@ -969,8 +972,9 @@ export default function Checkout() {
         setVerificationToken(null);
         setOtpChallengeId(null);
         setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
-        setOtpError(errMsg);
-        setShowOtpModal(true);
+        setDevOtpCode(null);
+        setOtpError('');
+        setShowOtpModal(false);
         toast.error(errMsg);
         return;
       }

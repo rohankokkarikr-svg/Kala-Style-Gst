@@ -507,7 +507,7 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     }
   } catch (dbErr) {
     console.error('[checkoutPhoneOtpService] verifyCheckoutPhoneOtp DB error:', dbErr.message);
-    return { success: false, error: 'Verification service error. Please try again.' };
+    return { success: false, error: dbErr.message || 'Verification service error. Please try again.' };
   }
 
   if (!challenge) {
@@ -673,7 +673,7 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
 
   if (fetchErr) {
     console.error('[checkoutPhoneOtpService] consumeVerificationToken DB error:', fetchErr.message);
-    return { success: false, error: 'Verification service error. Please try again.' };
+    return { success: false, error: fetchErr.message || 'Verification service error. Please try again.' };
   }
 
   if (!challenge) {
@@ -716,7 +716,7 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
 
   if (consumeErr) {
     console.error('[checkoutPhoneOtpService] consumeVerificationToken consume error:', consumeErr.message);
-    return { success: false, error: 'Verification service error. Please try again.' };
+    return { success: false, error: consumeErr.message || 'Verification service error. Please try again.' };
   }
 
   console.log(`[checkoutPhoneOtpService] Token consumed → challenge ${challenge.id}, user ${userId}`);
