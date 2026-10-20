@@ -2,17 +2,18 @@
  * backend/tests/order_calculation.test.js
  * ─────────────────────────────────────────────────────────────────
  * Tests for resilient order total calculation, UUID & barcode lookup,
- * and Supabase service role key resolution.
+ * and Supabase secret/service-role key resolution.
  */
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { calculateOrderTotals } = require('../services/orderService');
-const supabase = require('../config/supabase');
+const { supabase, resolveServiceRoleKey, getSupabaseDiagnostics } = require('../config/supabase');
 
 describe('Resilient Order Calculation & Product Lookup Suite', () => {
 
   let testProductId;
+  let createdTestProduct = false;
 
   test.before(async () => {
     const { data } = await supabase
@@ -21,7 +22,38 @@ describe('Resilient Order Calculation & Product Lookup Suite', () => {
       .eq('status', 'approved')
       .neq('is_hidden', true)
       .limit(1);
-    testProductId = data?.[0]?.id || '788d29e0-5752-4562-a552-0860f152ee8e';
+
+    if (data?.[0]?.id) {
+      testProductId = data[0].id;
+    } else {
+      // Create isolated test fixture for the suite
+      const { data: inserted, error: insertErr } = await supabase
+        .from('products')
+        .insert({
+          name: 'Test Handicraft Item',
+          category: 'Handloom & Textiles',
+          price: 500,
+          stock_quantity: 50,
+          is_in_stock: true,
+          status: 'approved',
+          is_hidden: false,
+        })
+        .select('id')
+        .single();
+
+      if (inserted?.id) {
+        testProductId = inserted.id;
+        createdTestProduct = true;
+      } else {
+        testProductId = '788d29e0-5752-4562-a552-0860f152ee8e';
+      }
+    }
+  });
+
+  test.after(async () => {
+    if (createdTestProduct && testProductId) {
+      await supabase.from('products').delete().eq('id', testProductId);
+    }
   });
 
   test('calculateOrderTotals handles valid UUID products and computes totals correctly', async () => {
@@ -75,22 +107,20 @@ describe('Resilient Order Calculation & Product Lookup Suite', () => {
     assert.match(negativeRes.error, /must be a positive integer/i);
   });
 
-  test('Supabase client resolves authoritative service_role key with valid RLS bypass role', () => {
-    const supabase = require('../config/supabase');
-    assert.ok(supabase, 'Supabase client must be initialized');
+  test('Supabase client resolves authoritative secret key without hardcoded fallbacks', () => {
+    const diag = getSupabaseDiagnostics();
+    assert.ok(diag.configured, 'Supabase client must be configured');
+    assert.ok(diag.host, 'Host must be resolved from SUPABASE_URL');
 
-    // Test resolution under various environment candidate configurations
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    delete process.env.SUPABASE_SERVICE_KEY;
-    delete process.env.SERVICE_ROLE_KEY;
-    
-    // Test that the client key has service_role privileges
-    const key = supabase.supabaseKey || supabase.rest?.headers?.apikey || '';
-    assert.ok(key, 'Supabase key must be non-empty');
-    const parts = key.split('.');
-    assert.strictEqual(parts.length, 3, 'Key must be a valid 3-part JWT');
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-    assert.strictEqual(payload.role, 'service_role', 'Resolved key MUST have service_role to bypass RLS on orders');
-    assert.strictEqual(payload.ref, 'fwuhlhaadhhveuljsqbh', 'Resolved key ref must match production project');
+    // Test that modern opaque sb_secret_... keys are resolved directly without JWT split errors
+    const savedSecretKey = process.env.SUPABASE_SECRET_KEY;
+    try {
+      process.env.SUPABASE_SECRET_KEY = 'sb_secret_test_mock_secret_key_12345';
+      const resolved = resolveServiceRoleKey();
+      assert.strictEqual(resolved, 'sb_secret_test_mock_secret_key_12345', 'Modern sb_secret_ key must be resolved directly');
+    } finally {
+      if (savedSecretKey) process.env.SUPABASE_SECRET_KEY = savedSecretKey;
+      else delete process.env.SUPABASE_SECRET_KEY;
+    }
   });
 });

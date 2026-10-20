@@ -1,25 +1,4 @@
-const { safeQuery } = require('../config/supabase');
-const supabase = require('../config/supabase');
-
-// Dedicated admin client guaranteed to bypass RLS via service_role key
-// This ensures review inserts are never blocked by RLS policies
-const { createClient } = require('@supabase/supabase-js');
-const _SUPABASE_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const _SERVICE_KEY = (
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SERVICE_ROLE_KEY ||
-  ''
-).trim();
-
-if (!_SERVICE_KEY) {
-  console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY env var is not set. Review write operations may fail.');
-}
-
-const supabaseAdmin = createClient(_SUPABASE_URL, _SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },
-});
+const { supabase, supabaseAdmin, safeQuery } = require('../config/supabase');
 
 
 // In-memory cache for fast review lookups

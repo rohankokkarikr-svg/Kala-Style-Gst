@@ -42,11 +42,15 @@ const SEVEN_CATEGORIES = [
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getApiKey() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || typeof key !== 'string' || !key.trim()) {
-    return null;
+  const adminKey = process.env.GEMINI_ADMIN_API_KEY;
+  if (adminKey && typeof adminKey === 'string' && adminKey.trim().length > 10 && !adminKey.startsWith('your_')) {
+    return adminKey.trim();
   }
-  return key.trim();
+  const key = process.env.GEMINI_API_KEY;
+  if (key && typeof key === 'string' && key.trim().length > 10 && !key.startsWith('your_')) {
+    return key.trim();
+  }
+  return null;
 }
 
 function getModelName() {

@@ -1358,14 +1358,7 @@ exports.sendOrderOtp = async (req, res) => {
       }
     }
 
-    console.log(`\n========================================`);
-    console.log(`🔐 [ORDER CONFIRMATION OTP DISPATCHED]`);
-    console.log(`📧 Registered Email: ${cleanEmail || 'N/A'}`);
-    console.log(`📱 Phone: ${cleanPhone ? `+91 ${cleanPhone}` : 'N/A'}`);
-    console.log(`💰 Order Amount: ₹${amount}`);
-    console.log(`💳 Method: ${methodLabel}`);
-    console.log(`📡 Channels: ${deliveredChannels.join(', ') || 'Email dispatch'}`);
-    console.log(`========================================\n`);
+    console.log(`[sendOrderOtp] Confirmation OTP dispatched via ${deliveredChannels.join(', ') || 'Email'}`);
 
     res.status(200).json({
       success: true,

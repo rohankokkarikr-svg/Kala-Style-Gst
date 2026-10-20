@@ -1,25 +1,5 @@
-const { safeQuery, formatSupabaseError } = require('../config/supabase');
-const supabase = require('../config/supabase');
+const { supabase, supabaseAdmin, safeQuery, formatSupabaseError } = require('../config/supabase');
 const { HANDICRAFT_CATEGORIES } = require('../data/handicraftsData');
-
-// Dedicated service_role client — bypasses RLS for all write/delete operations
-const { createClient } = require('@supabase/supabase-js');
-const _PA_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const _PA_KEY = (
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SERVICE_ROLE_KEY ||
-  ''
-).trim();
-
-if (!_PA_KEY) {
-  console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY env var is not set. Product write operations will fail.');
-}
-
-const supabaseAdmin = createClient(_PA_URL, _PA_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },
-});
 
 let productCache = {
   all: { data: null, timestamp: 0 },

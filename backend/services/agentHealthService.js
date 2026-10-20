@@ -10,39 +10,26 @@ const dns = require('dns').promises;
 const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
 
+const { checkSupabaseConnectivity } = require('../config/supabase');
+
 /**
  * Check Supabase / Database connectivity.
  */
 async function checkDatabase() {
-  const startMs = Date.now();
-  try {
-    const supabaseUrl = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-    if (!supabaseUrl || supabaseUrl.startsWith('https://your-')) {
-      return { service: 'database', status: 'not_configured', message: 'SUPABASE_URL not set', latencyMs: 0 };
-    }
-
-    const host = new URL(supabaseUrl).hostname;
-    await dns.lookup(host, { family: 4 });
-
-    // Lightweight query to confirm DB is responsive
-    const { data, error } = await safeQuery(() =>
-      supabase.from('platform_settings').select('id').limit(1)
-    );
-
-    const latencyMs = Date.now() - startMs;
-    if (error && error.code !== '42P01') {
-      return { service: 'database', status: 'degraded', message: error.message, latencyMs };
-    }
-
-    return { service: 'database', status: 'healthy', message: 'Supabase responding normally', latencyMs };
-  } catch (err) {
-    return {
-      service: 'database',
-      status: 'unreachable',
-      message: `DNS/connection failed: ${err.code || err.message}`,
-      latencyMs: Date.now() - startMs,
-    };
+  const result = await checkSupabaseConnectivity();
+  if (result.ok) {
+    return { service: 'database', status: 'healthy', message: result.message, latencyMs: result.latencyMs };
   }
+  if (result.category === 'not_configured') {
+    return { service: 'database', status: 'not_configured', message: result.message, latencyMs: 0 };
+  }
+  return {
+    service: 'database',
+    status: result.category === 'network_timeout' || result.category === 'dns_failed' ? 'unreachable' : 'degraded',
+    message: result.message,
+    code: result.code,
+    latencyMs: result.latencyMs,
+  };
 }
 
 /**

@@ -50,7 +50,7 @@ if (process.env.FRONTEND_URL) {
 
 const checkOrigin = (origin, callback) => {
   if (!origin) return callback(null, true);
-  if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com')) {
+  if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com') || origin.endsWith('.netlify.app')) {
     return callback(null, true);
   }
   if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -76,7 +76,7 @@ initRealtime(io);
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com')) {
+    if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com') || origin.endsWith('.netlify.app')) {
       return callback(null, origin);
     }
     if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -154,52 +154,23 @@ app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'Style Heaven Backend API', uptime: process.uptime() });
 });
 
-// Health check — also checks if Supabase is reachable and database queries succeed
-app.get('/health', async (req, res) => {
-  let supabaseStatus = 'unknown';
-  let dbQueryStatus = 'unknown';
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co';
-    if (supabaseUrl) {
-      const host = new URL(supabaseUrl).hostname;
-      await new Promise((resolve, reject) => {
-        dns.lookup(host, { family: 4 }, (err, address) => {
-          if (err) reject(err);
-          else resolve(address);
-        });
-      });
-      supabaseStatus = 'reachable';
+// Sanitized Public Health checks (root and /api)
+const { checkSupabaseConnectivity } = require('./config/supabase');
 
-      const supabaseClient = require('./config/supabase');
-      const { error: dbErr } = await supabaseClient.from('products').select('id').limit(1);
-      const { error: ordErr } = await supabaseClient.from('orders').select('id').limit(1);
-      if (dbErr) {
-        dbQueryStatus = `products_query_error: ${dbErr.message}`;
-      } else if (ordErr) {
-        dbQueryStatus = `orders_query_error: ${ordErr.message}`;
-      } else {
-        dbQueryStatus = 'connected';
-      }
-    } else {
-      supabaseStatus = 'not_configured';
-    }
-  } catch (e) {
-    supabaseStatus = `unreachable (${e.code || e.message})`;
-  }
-
-  const isHealthy = supabaseStatus === 'reachable' && !dbQueryStatus.startsWith('query_error');
-  res.status(isHealthy ? 200 : 503).json({ 
-    status: isHealthy ? 'ok' : 'degraded', 
-    time: new Date(),
-    node: process.version,
-    env: process.env.NODE_ENV,
-    supabase: supabaseStatus,
-    database_query: dbQueryStatus,
-    message: isHealthy
-      ? 'All systems operational'
-      : '⚠️  Cannot reach Supabase or database query failed. Check your project URL and service role key.'
+const handleHealthCheck = async (req, res) => {
+  const conn = await checkSupabaseConnectivity();
+  const isHealthy = conn.ok;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'ok' : 'degraded',
+    service: 'KalaStyle AI Backend API',
+    database: isHealthy ? 'connected' : conn.category,
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
   });
-});
+};
+
+app.get('/health', handleHealthCheck);
+app.get('/api/health', handleHealthCheck);
 
 // Error handling middleware — sanitized in production (no stack traces, no internal leaks)
 app.use((err, req, res, next) => {

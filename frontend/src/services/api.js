@@ -322,6 +322,7 @@ export const adminAPI = {
   getActivityLogs:      ()         => api.get('/admin/activity'),
   getSettings:          ()         => api.get('/admin/settings'),
   updateSettings:       (data)     => api.put('/admin/settings', data),
+  getIntegrationsStatus:(params)   => api.get('/admin/integrations/status', { params }),
 };
 
 export const notificationAPI = {

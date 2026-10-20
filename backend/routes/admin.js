@@ -79,4 +79,7 @@ router.get('/activity', adminController.getActivityLogs);
 router.get('/settings', adminController.getSettings);
 router.put('/settings', adminController.updateSettings);
 
+// 16. Integrations Status (Protected Admin Only)
+router.get('/integrations/status', adminController.getIntegrationsStatus);
+
 module.exports = router;

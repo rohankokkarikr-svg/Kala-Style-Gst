@@ -5,30 +5,10 @@
  * Handles all 15 Admin modules with robust queries and safe fallbacks.
  */
 
-const supabase = require('../config/supabase');
-const { safeQuery } = require('../config/supabase');
+const { supabase, supabaseAdmin, safeQuery } = require('../config/supabase');
 const { HANDICRAFT_CATEGORIES } = require('../data/handicraftsData');
 const { invalidateCache } = require('./productController');
 const { broadcastSync } = require('../utils/realtime');
-
-// Dedicated service_role admin client — bypasses RLS for all write operations
-const { createClient } = require('@supabase/supabase-js');
-const _ADMIN_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const _ADMIN_KEY = (
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SERVICE_ROLE_KEY ||
-  ''
-).trim();
-
-if (!_ADMIN_KEY) {
-  console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY env var is not set. Admin write operations will fail.');
-}
-
-const supabaseAdmin = createClient(_ADMIN_URL, _ADMIN_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },
-});
 
 // ── In-Memory Activity & AI Log Fallbacks ────────────────────────────────────
 let inMemoryActivityLogs = [];
@@ -1341,7 +1321,7 @@ exports.sendNotification = async (req, res) => {
 exports.getContent = async (req, res) => {
   try {
     const { data: settings } = await safeQuery(() =>
-      supabase.from('settings').select('*')
+      supabase.from('platform_settings').select('*')
     );
     res.json(settings || []);
   } catch (err) {
@@ -1621,6 +1601,113 @@ exports.updateUserRole = async (req, res) => {
   } catch (err) {
     console.error('updateUserRole error:', err);
     res.status(500).json({ error: 'Failed to update user role' });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 16. INTEGRATIONS STATUS (Admin Only) 🔌
+// ════════════════════════════════════════════════════════════════════════════
+
+exports.getIntegrationsStatus = async (req, res) => {
+  try {
+    const { getSupabaseDiagnostics, checkSupabaseConnectivity } = require('../config/supabase');
+    const geminiClient = require('../ai/geminiClient');
+    const { isCloudinaryConfigured } = require('../config/cloudinary');
+    const { isSmtpConfigured } = require('../utils/emailService');
+    const shippingConfig = require('../services/shipping/shippingConfig');
+
+    // 1. Supabase
+    const supaDiag = getSupabaseDiagnostics();
+    const supaConn = await checkSupabaseConnectivity();
+    const supabaseStatus = {
+      provider: 'Supabase (PostgreSQL & Storage)',
+      configured: supaDiag.configured,
+      state: supaConn.ok ? 'connected' : (supaDiag.configured ? supaConn.category : 'missing_config'),
+      host: supaDiag.host,
+      projectRef: supaDiag.projectRef,
+      keyType: supaDiag.keyType,
+      envVarUsed: supaDiag.envVarUsed,
+      latencyMs: supaConn.latencyMs,
+      message: supaConn.message,
+    };
+
+    // 2. Gemini AI
+    const geminiConfigured = geminiClient.isConfigured();
+    let geminiState = geminiConfigured ? 'configured' : 'missing_config';
+    let geminiModel = geminiClient.getModel();
+    if (geminiConfigured && req.query.probe === 'true') {
+      try {
+        const testRes = await geminiClient.testConnection();
+        geminiState = testRes.status === 'online' ? 'connected' : 'degraded';
+      } catch (_) {
+        geminiState = 'degraded';
+      }
+    }
+    const geminiStatus = {
+      provider: 'Google Gemini AI',
+      configured: geminiConfigured,
+      state: geminiState,
+      model: geminiModel,
+    };
+
+    // 3. Cloudinary
+    const cloudConfigured = isCloudinaryConfigured();
+    const cloudinaryStatus = {
+      provider: 'Cloudinary Media CDN',
+      configured: cloudConfigured,
+      state: cloudConfigured ? 'configured' : 'missing_config',
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME || null,
+    };
+
+    // 4. Razorpay
+    const rzpKeyId = (process.env.RAZORPAY_KEY_ID || '').trim();
+    const rzpSecret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+    const rzpConfigured = Boolean(rzpKeyId && rzpSecret && !rzpKeyId.startsWith('your_'));
+    const razorpayStatus = {
+      provider: 'Razorpay Payment Gateway',
+      configured: rzpConfigured,
+      state: rzpConfigured ? 'configured' : 'missing_config',
+      mode: rzpKeyId.startsWith('rzp_live') ? 'live' : 'test',
+      keyIdPreview: rzpKeyId ? `${rzpKeyId.slice(0, 8)}...` : null,
+    };
+
+    // 5. Shiprocket
+    const srEmail = shippingConfig.getEmail();
+    const srConfigured = Boolean(srEmail && !srEmail.startsWith('your_'));
+    const activeProvider = shippingConfig.getActiveProviderType();
+    const shiprocketStatus = {
+      provider: 'Shiprocket Logistics',
+      configured: srConfigured,
+      state: srConfigured ? 'configured' : 'missing_config',
+      activeProvider,
+      isMockMode: activeProvider === 'mock',
+      defaultPickupLocation: shippingConfig.getDefaultPickupLocation(),
+    };
+
+    // 6. SMTP Email
+    const smtpConfigured = isSmtpConfigured();
+    const smtpStatus = {
+      provider: 'SMTP / Nodemailer OTP Email',
+      configured: smtpConfigured,
+      state: smtpConfigured ? 'configured' : 'missing_config',
+      host: process.env.SMTP_HOST || (process.env.GMAIL_USER ? 'gmail' : null),
+    };
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      integrations: {
+        supabase: supabaseStatus,
+        gemini: geminiStatus,
+        cloudinary: cloudinaryStatus,
+        razorpay: razorpayStatus,
+        shiprocket: shiprocketStatus,
+        smtp: smtpStatus,
+      },
+    });
+  } catch (err) {
+    console.error('getIntegrationsStatus error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve integrations status' });
   }
 };
 
