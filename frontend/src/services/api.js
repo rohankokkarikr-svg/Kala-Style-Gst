@@ -111,42 +111,32 @@ export const authAPI = {
   getLeaderboard:  ()     => api.get('/auth/leaderboard'),
 };
 
-// Ultra-fast cached GET with instant SWR revalidation (0ms load)
-export const cachedGet = async (url, config = {}, ttl) => {
+// Dynamic cached GET with database synchronization
+export const cachedGet = async (url, config = {}, ttl = 30000) => {
   const cacheKey = `${url}?${JSON.stringify(config.params || {})}`;
   const cached = apiCache.get(cacheKey);
-  const isCachedArrayEmpty = cached && (
-    (Array.isArray(cached.data?.data) && cached.data.data.length === 0) ||
-    (Array.isArray(cached.data) && cached.data.length === 0)
-  );
 
-  // Return cached data immediately if available (0ms paint) and refresh in background
-  if (cached && cached.data && !isCachedArrayEmpty) {
-    api.get(url, config).then((res) => {
-      const isResArrayEmpty = res && (
-        (Array.isArray(res.data) && res.data.length === 0) ||
-        (Array.isArray(res) && res.length === 0)
-      );
-      if (!isResArrayEmpty) {
-        apiCache.set(cacheKey, res, ttl);
-      }
-    }).catch(() => {});
+  // Return fresh, unexpired cache immediately (0ms paint)
+  if (cached && cached.data !== undefined && !cached.isExpired) {
     return cached.data;
   }
 
-  // Network fetch if not in cache
-  const promise = api.get(url, config).then((res) => {
-    const isResArrayEmpty = res && (
-      (Array.isArray(res.data) && res.data.length === 0) ||
-      (Array.isArray(res) && res.length === 0)
-    );
-    if (!isResArrayEmpty) {
+  // Network fetch if not in cache or if expired
+  try {
+    const res = await api.get(url, config);
+    // Cache authoritative server response, including empty arrays (0 products in database)
+    if (res !== undefined && res !== null) {
       apiCache.set(cacheKey, res, ttl);
     }
     return res;
-  });
-
-  return promise;
+  } catch (err) {
+    // Graceful offline fallback if network fails
+    if (cached && cached.data !== undefined) {
+      console.warn(`[cachedGet] Network request failed for ${url}, returning cached fallback:`, err.message);
+      return cached.data;
+    }
+    throw err;
+  }
 };
 
 // ─── Products ────────────────────────────────────
@@ -179,9 +169,6 @@ export const orderAPI = {
   // ── NEW: Checkout Phone OTP (SEPARATE from authAPI sendOtp/verifyOtp - login email OTP) ──
   phoneOtpSend:       (data)     => api.post('/orders/phone-otp/send', data),
   phoneOtpVerify:     (data)     => api.post('/orders/phone-otp/verify', data),
-  // Legacy order-level OTP kept for backward compat (no longer used by Checkout.js)
-  sendOtp:            (data)     => api.post('/orders/send-otp', data),
-  verifyOtp:          (data)     => api.post('/orders/verify-otp', data),
   calculateTotal:     (data)     => api.post('/orders/calculate-total', data),
   getMyOrders:        ()         => api.get('/orders/my'),
   getAll:             (params)   => api.get('/orders', { params }),

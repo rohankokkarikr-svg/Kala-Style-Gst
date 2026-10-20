@@ -115,7 +115,7 @@ exports.getProducts = async (req, res) => {
     
     // Check cache for basic requests (no search/filter)
     const isBasicRequest = (!category || category === 'all') && (!subcategory || subcategory === 'all') && !search && !material && !is_handmade && !artisan_id && !min_price && !max_price && (!sort || sort === 'popular' || sort === 'newest');
-    if (isBasicRequest && productCache.all.data && productCache.all.data.length > 0 && (Date.now() - productCache.all.timestamp < CACHE_TTL)) {
+    if (isBasicRequest && productCache.all.data !== null && (Date.now() - productCache.all.timestamp < CACHE_TTL)) {
       return res.json(productCache.all.data);
     }
 
@@ -211,7 +211,7 @@ exports.getProducts = async (req, res) => {
       return !isDemo;
     });
 
-    if (isBasicRequest && filteredData.length > 0) {
+    if (isBasicRequest) {
       productCache.all = { data: filteredData, timestamp: Date.now() };
     }
 

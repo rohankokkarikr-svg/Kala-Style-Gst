@@ -18,8 +18,6 @@ const { protect, admin, artisan, artisanOnly, artisanOrAdmin } = require('../mid
 const { checkoutOtpSendLimiter, checkoutOtpVerifyLimiter } = require('../middleware/rateLimiter');
 const {
   createOrder,
-  sendOrderOtp,
-  verifyOrderOtp,
   getMyOrders,
   cancelOrder,
   switchToCOD,
@@ -45,9 +43,6 @@ router.post('/phone-otp/send',   protect, checkoutOtpSendLimiter,   sendCheckout
 router.post('/phone-otp/verify', protect, checkoutOtpVerifyLimiter, verifyCheckoutPhoneOtpHandler);
 
 // ── Customer Routes ──────────────────────────────────────────────────────────
-// Legacy order-OTP routes kept for backward compat (no longer used by Checkout.js)
-router.post('/send-otp', protect, sendOrderOtp);
-router.post('/verify-otp', protect, verifyOrderOtp);
 router.post('/', protect, createOrder);
 router.post('/create', protect, createOrder);              // explicit alias
 router.post('/calculate-total', protect, calculateTotal); // price preview

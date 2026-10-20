@@ -8,7 +8,7 @@ class APICache {
     this.cache = new Map();
     this.defaultTTL = 10 * 60 * 1000; // 10 minutes fresh
     this.storagePrefix = 'kala_swr_';
-    this.cacheVersion = 'v3_real_catalog_live';
+    this.cacheVersion = 'v4_realtime_db_sync';
 
     // Auto-purge stale cached data on startup if cache version bumped
     try {
