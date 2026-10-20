@@ -54,40 +54,59 @@ const resolveServiceRoleKey = () => {
     ['SUPABASE_KEY', process.env.SUPABASE_KEY],
   ];
 
+  // Pass 1: Prioritize verified service role credentials
   for (const [varName, rawValue] of candidateEntries) {
     if (!rawValue) continue;
     const key = String(rawValue).trim();
     if (!key || key.startsWith('your_') || key.startsWith('placeholder')) continue;
 
-    // 1. Modern opaque Supabase secret keys (sb_secret_... or non-JWT strings)
-    if (key.startsWith('sb_secret_') || (!key.includes('.') && key.length > 20)) {
+    // 1a. Canonical modern secret key prefix
+    if (key.startsWith('sb_secret_')) {
       resolvedEnvVarName = varName;
       resolvedKeyType = 'opaque_secret';
       return key;
     }
 
-    // 2. Legacy JWT candidate
+    // 1b. Legacy 3-part JWT with explicit service_role payload
     const parts = key.split('.');
     if (parts.length === 3) {
       try {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        // Reject anon keys for backend privileged access
+        if (payload.role === 'service_role') {
+          resolvedEnvVarName = varName;
+          resolvedKeyType = 'jwt_service_role';
+          return key;
+        }
         if (payload.role === 'anon') {
           console.error(`[supabase.js] Warning: ${varName} contains an anon/publishable key, which cannot be used as a backend secret.`);
-          continue;
         }
+      } catch (_) {
+        // non-critical parsing error
+      }
+    }
+  }
+
+  // Pass 2: Fallback for generic or non-JWT opaque keys
+  for (const [varName, rawValue] of candidateEntries) {
+    if (!rawValue) continue;
+    const key = String(rawValue).trim();
+    if (!key || key.startsWith('your_') || key.startsWith('placeholder')) continue;
+
+    const parts = key.split('.');
+    if (parts.length === 3) {
+      try {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        if (payload.role === 'anon') continue; // Reject anon keys
         resolvedEnvVarName = varName;
-        resolvedKeyType = 'jwt_service_role';
+        resolvedKeyType = 'opaque_jwt';
         return key;
       } catch (_) {
-        // If JWT decoding fails but string is substantial, accept as opaque key
         resolvedEnvVarName = varName;
         resolvedKeyType = 'opaque_key';
         return key;
       }
     }
 
-    // 3. Fallback generic non-empty key (e.g. self-hosted / proxy)
     if (key.length >= 20) {
       resolvedEnvVarName = varName;
       resolvedKeyType = 'generic_key';
