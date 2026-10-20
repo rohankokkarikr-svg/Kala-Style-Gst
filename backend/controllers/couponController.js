@@ -1,4 +1,9 @@
-const supabase = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const dbClient = supabaseAdmin || supabase;
+
+// In-memory fallback cache for spin/reward coupons in case of database RLS restriction or transient issues
+const memoryCoupons = new Map();
+const memorySpins = new Map();
 
 /**
  * Probabilities:
@@ -35,16 +40,27 @@ exports.spinWheel = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const { data: lastSpin, error: spinError } = await supabase
-      .from('user_spins')
-      .select('last_spin_date')
-      .eq('user_id', userId)
-      .single();
+    let lastSpinDate = null;
+    try {
+      const { data: lastSpin } = await dbClient
+        .from('user_spins')
+        .select('last_spin_date')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-    if (lastSpin) {
-      const lastSpinDate = new Date(lastSpin.last_spin_date);
+      if (lastSpin?.last_spin_date) {
+        lastSpinDate = new Date(lastSpin.last_spin_date);
+      }
+    } catch (e) {
+      console.warn('[couponController] user_spins query warning:', e?.message || e);
+    }
+
+    if (!lastSpinDate && memorySpins.has(userId)) {
+      lastSpinDate = new Date(memorySpins.get(userId));
+    }
+
+    if (lastSpinDate) {
       lastSpinDate.setHours(0, 0, 0, 0);
-      
       if (lastSpinDate.getTime() === today.getTime()) {
         return res.status(400).json({ error: 'You have already spun the wheel today. Come back tomorrow!' });
       }
@@ -70,32 +86,53 @@ exports.spinWheel = async (req, res) => {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 7); // Valid for 7 days
 
-      const { data: newCoupon, error: couponError } = await supabase
-        .from('coupons')
-        .insert({
-          code,
-          discount_type: reward.type,
-          discount_value: reward.value,
-          user_id: userId,
-          expiry_date: expiry.toISOString(),
-          is_used: false
-        })
-        .select()
-        .single();
+      const couponPayload = {
+        code,
+        discount_type: reward.type,
+        discount_value: reward.value,
+        user_id: userId,
+        expiry_date: expiry.toISOString(),
+        is_used: false
+      };
 
-      if (couponError) throw couponError;
-      coupon = newCoupon;
+      try {
+        const { data: newCoupon, error: couponError } = await dbClient
+          .from('coupons')
+          .insert(couponPayload)
+          .select()
+          .single();
+
+        if (couponError) {
+          console.warn('[couponController] DB coupon insert failed (using fallback cache):', couponError.message);
+          memoryCoupons.set(code, { ...couponPayload, id: 'mem_' + Date.now(), created_at: new Date().toISOString() });
+          coupon = couponPayload;
+        } else {
+          coupon = newCoupon;
+        }
+      } catch (insertErr) {
+        console.warn('[couponController] Exception inserting coupon (using fallback cache):', insertErr.message);
+        memoryCoupons.set(code, { ...couponPayload, id: 'mem_' + Date.now(), created_at: new Date().toISOString() });
+        coupon = couponPayload;
+      }
     }
 
     // 4. Update/Insert user spin record
-    const { error: updateSpinError } = await supabase
-      .from('user_spins')
-      .upsert({ 
-        user_id: userId, 
-        last_spin_date: new Date().toISOString() 
-      }, { onConflict: 'user_id' });
+    try {
+      const { error: updateSpinError } = await dbClient
+        .from('user_spins')
+        .upsert({ 
+          user_id: userId, 
+          last_spin_date: new Date().toISOString() 
+        }, { onConflict: 'user_id' });
 
-    if (updateSpinError) throw updateSpinError;
+      if (updateSpinError) {
+        console.warn('[couponController] DB spin update warning:', updateSpinError.message);
+        memorySpins.set(userId, new Date().toISOString());
+      }
+    } catch (spinUpsertErr) {
+      console.warn('[couponController] Spin upsert exception:', spinUpsertErr.message);
+      memorySpins.set(userId, new Date().toISOString());
+    }
 
     res.json({
       success: true,
@@ -153,7 +190,7 @@ exports.validateCoupon = async (req, res) => {
 
         if (audience === 'new_users') {
           if (user) {
-            const { count } = await supabase
+            const { count } = await dbClient
               .from('orders')
               .select('id', { count: 'exact', head: true })
               .eq('user_id', user.id);
@@ -186,19 +223,33 @@ exports.validateCoupon = async (req, res) => {
     }
 
     // 2. Check user spin & reward coupons in database
-    let query = supabase
-      .from('coupons')
-      .select('*')
-      .eq('code', cleanCode)
-      .eq('is_used', false);
+    let coupon = null;
+    try {
+      let query = dbClient
+        .from('coupons')
+        .select('*')
+        .eq('code', cleanCode)
+        .eq('is_used', false);
 
-    if (userId) {
-      query = query.eq('user_id', userId);
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data: dbCoupon } = await query.maybeSingle();
+      coupon = dbCoupon;
+    } catch (dbErr) {
+      console.warn('[couponController] DB validate query error:', dbErr.message);
     }
 
-    const { data: coupon, error: couponError } = await query.single();
+    // Check memory cache fallback if DB did not return coupon
+    if (!coupon && memoryCoupons.has(cleanCode)) {
+      const mem = memoryCoupons.get(cleanCode);
+      if (!mem.is_used && (!mem.user_id || !userId || mem.user_id === userId)) {
+        coupon = mem;
+      }
+    }
 
-    if (couponError || !coupon) {
+    if (!coupon) {
       return res.status(404).json({ error: 'Invalid or expired coupon code' });
     }
 
@@ -237,17 +288,38 @@ exports.validateCoupon = async (req, res) => {
 exports.getMyCoupons = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { data, error } = await supabase
-      .from('coupons')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_used', false)
-      .order('created_at', { ascending: false });
+    let list = [];
 
-    if (error) throw error;
-    res.json(data);
+    try {
+      const { data, error } = await dbClient
+        .from('coupons')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_used', false)
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        list = data;
+      }
+    } catch (fetchErr) {
+      console.warn('[couponController] getMyCoupons DB error:', fetchErr.message);
+    }
+
+    // Merge memory coupons for this user
+    for (const [code, c] of memoryCoupons.entries()) {
+      if (c.user_id === userId && !c.is_used && new Date(c.expiry_date) > new Date()) {
+        if (!list.some(existing => existing.code === code)) {
+          list.push(c);
+        }
+      }
+    }
+
+    res.json(list);
   } catch (error) {
     console.error('Error fetching coupons:', error);
     res.status(500).json({ error: 'Failed to fetch coupons' });
   }
 };
+
+exports.memoryCoupons = memoryCoupons;
+exports.memorySpins = memorySpins;

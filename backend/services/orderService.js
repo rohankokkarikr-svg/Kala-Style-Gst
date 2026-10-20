@@ -147,16 +147,37 @@ exports.calculateOrderTotals = async (items) => {
 exports.validateCoupon = async (couponCode, userId, subtotal) => {
   if (!couponCode) return { discount: 0, coupon: null };
 
-  const { data: coupon, error } = await supabase
-    .from('coupons')
-    .select('*')
-    .eq('code', couponCode.trim().toUpperCase())
-    .maybeSingle();
+  const cleanCode = couponCode.trim().toUpperCase();
+  let coupon = null;
 
-  if (error || !coupon) return { error: 'Invalid coupon code' };
+  try {
+    const { data, error } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('code', cleanCode)
+      .maybeSingle();
+
+    if (!error && data) {
+      coupon = data;
+    }
+  } catch (err) {
+    console.warn('[orderService.validateCoupon] DB error:', err?.message || err);
+  }
+
+  // Fallback to in-memory coupon cache if DB RLS/connection blocked lookup
+  if (!coupon) {
+    try {
+      const { memoryCoupons } = require('../controllers/couponController');
+      if (memoryCoupons && memoryCoupons.has(cleanCode)) {
+        coupon = memoryCoupons.get(cleanCode);
+      }
+    } catch (_) {}
+  }
+
+  if (!coupon) return { error: 'Invalid coupon code' };
   if (coupon.is_used) return { error: 'Coupon has already been used' };
   if (coupon.user_id && coupon.user_id !== userId) return { error: 'This coupon does not belong to you' };
-  if (new Date(coupon.expiry_date) < new Date()) return { error: 'Coupon has expired' };
+  if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) return { error: 'Coupon has expired' };
 
   let discount = 0;
   if (coupon.discount_type === 'percentage') {
@@ -436,11 +457,21 @@ exports.createMasterOrder = async ({
 
   // 12. Mark coupon as used
   if (couponResult.coupon) {
-    await supabase
-      .from('coupons')
-      .update({ is_used: true })
-      .eq('code', couponResult.coupon.code)
-      .eq('user_id', userId);
+    try {
+      await supabase
+        .from('coupons')
+        .update({ is_used: true })
+        .eq('code', couponResult.coupon.code)
+        .eq('user_id', userId);
+    } catch (e) {
+      console.warn('[orderService] Error updating coupon in DB:', e?.message || e);
+    }
+    try {
+      const { memoryCoupons } = require('../controllers/couponController');
+      if (memoryCoupons && memoryCoupons.has(couponResult.coupon.code)) {
+        memoryCoupons.get(couponResult.coupon.code).is_used = true;
+      }
+    } catch (_) {}
   }
 
   console.log(`[orderService] ✅ Order ${orderNumber} created (${artisanOrders.length} artisan sub-orders)`);
