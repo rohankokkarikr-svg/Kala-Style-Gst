@@ -56,13 +56,34 @@ export default function Navbar() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const searchInputRef = useRef(null);
+  const userMenuRef = useRef(null);
 
   useEffect(() => {
     if (searchOpen && searchInputRef.current) {
       searchInputRef.current.focus();
     }
   }, [searchOpen]);
+
+  // Close user dropdown menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+    if (userMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userMenuOpen]);
+
+  // Close all open menus when route changes
+  useEffect(() => {
+    setUserMenuOpen(false);
+    setMobileDrawerOpen(false);
+  }, [location.pathname, location.search]);
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
@@ -102,11 +123,11 @@ export default function Navbar() {
         bleed through or cause overlapping "text over text"
       */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-dark-900 border-b border-dark-700/90 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 md:h-20 gap-4">
+        <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 md:h-20 gap-2 sm:gap-4">
             
             {/* 1. Left: Brand Logo & Title */}
-            <Link to="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0">
               <img
                 src="/images/kalastyle_logo.png"
                 alt="KalaStyle AI"
@@ -116,15 +137,16 @@ export default function Navbar() {
                 <span className="font-serif text-base sm:text-xl font-bold gold-text whitespace-nowrap">
                   KalaStyle AI
                 </span>
-                <span className="text-[8px] sm:text-[9px] text-gray-400 tracking-widest uppercase font-semibold whitespace-nowrap">
+                <span className="text-[8px] sm:text-[9px] text-gray-400 tracking-widest uppercase font-semibold whitespace-nowrap hidden xs:block">
                   Artisan Marketplace
                 </span>
               </div>
             </Link>
 
             {/* 2. Center: Clean Category Navigation Links (NO symbols/emojis, perfectly aligned) */}
-            <nav className="hidden xl:flex items-center gap-6">
-              {NAV_CATEGORIES.map((item) => (
+            <nav className="hidden xl:flex items-center gap-3.5 2xl:gap-5 min-w-0">
+              {/* Primary 5 categories displayed on xl and up */}
+              {NAV_CATEGORIES.slice(0, 5).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
@@ -137,10 +159,55 @@ export default function Navbar() {
                   {item.label}
                 </Link>
               ))}
+
+              {/* Remaining categories shown inline on 2xl+ */}
+              {NAV_CATEGORIES.slice(5).map((item) => (
+                <Link
+                  key={item.label}
+                  to={item.href}
+                  className={`hidden 2xl:inline-block text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                    isCurrentCategory(item.href)
+                      ? 'text-gold-400 border-b-2 border-gold-500 pb-1'
+                      : 'text-gray-300 hover:text-gold-400'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+
+              {/* Clean "More" dropdown for xl screens (hidden on 2xl where all 8 are visible inline) */}
+              <div className="relative group/more 2xl:hidden">
+                <button
+                  type="button"
+                  className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap py-1 ${
+                    NAV_CATEGORIES.slice(5).some((c) => isCurrentCategory(c.href))
+                      ? 'text-gold-400 border-b-2 border-gold-500 pb-1'
+                      : 'text-gray-300 hover:text-gold-400'
+                  }`}
+                >
+                  <span>More</span>
+                  <HiChevronDown className="w-3.5 h-3.5 transition-transform group-hover/more:rotate-180" />
+                </button>
+                <div className="absolute left-0 top-full mt-2 w-48 bg-dark-900 border border-dark-600 rounded-xl shadow-2xl p-1.5 opacity-0 invisible group-hover/more:opacity-100 group-hover/more:visible transition-all duration-200 z-50">
+                  {NAV_CATEGORIES.slice(5).map((item) => (
+                    <Link
+                      key={item.label}
+                      to={item.href}
+                      className={`block px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                        isCurrentCategory(item.href)
+                          ? 'bg-gold-500/20 text-gold-400 font-semibold'
+                          : 'text-gray-300 hover:bg-dark-800 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             </nav>
 
             {/* 3. Right: Search, Wishlist, Cart & Account */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 lg:gap-3 shrink-0">
 
               {/* Search Toggle Button */}
               <button
@@ -185,6 +252,7 @@ export default function Navbar() {
                   </span>
                 )}
               </Link>
+
               {/* Notification Center */}
               <NotificationCenter />
 
@@ -192,72 +260,123 @@ export default function Navbar() {
               {isAdmin && (
                 <Link
                   to="/admin"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs font-bold transition-all shadow-gold"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs font-bold transition-all shadow-gold whitespace-nowrap shrink-0"
                   title="Open Admin Control Center"
                 >
-                  <HiChartBar className="w-4 h-4 text-gold-400" />
-                  <span>Admin Center</span>
+                  <HiChartBar className="w-4 h-4 text-gold-400 shrink-0" />
+                  <span className="hidden md:inline">Admin Center</span>
+                  <span className="inline md:hidden">Admin</span>
                 </Link>
               )}
 
               {/* User Avatar / Sign In */}
               {user ? (
-                <div className="relative group">
-                  <button className="flex items-center gap-1.5 p-1 pl-2 pr-2.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-full transition-all">
+                <div className="relative group" ref={userMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setUserMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-1.5 p-1 pl-1.5 pr-2 sm:pr-2.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 hover:border-gold-500/50 rounded-full transition-all shrink-0 cursor-pointer focus:outline-none"
+                    aria-expanded={userMenuOpen}
+                    aria-label="User account menu"
+                  >
                     <UserAvatar name={user.name} size={28} ring />
-                    <span className="hidden lg:block text-xs font-semibold text-gray-200">
+                    <span className="hidden lg:block text-xs font-semibold text-gray-200 max-w-[85px] xl:max-w-[110px] truncate">
                       {user.name?.split(' ')[0]}
                     </span>
                     {isAdmin && (
-                      <span className="hidden xl:inline-block px-1.5 py-0.2 bg-gold-500/20 text-gold-400 border border-gold-500/40 rounded text-[9px] font-bold">
+                      <span className="hidden 2xl:inline-block px-1.5 py-0.5 bg-gold-500/20 text-gold-400 border border-gold-500/40 rounded text-[9px] font-bold">
                         ADMIN
                       </span>
                     )}
-                    <HiChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gold-400 transition-transform group-hover:rotate-180" />
+                    <HiChevronDown className={`w-3.5 h-3.5 text-gray-400 group-hover:text-gold-400 transition-transform ${userMenuOpen ? 'rotate-180 text-gold-400' : ''}`} />
                   </button>
 
-                  {/* Dropdown Menu */}
-                  <div className="absolute right-0 top-full mt-2 w-52 bg-dark-900 border border-dark-600 rounded-2xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 p-2 z-50">
+                  {/* Dropdown Menu - aligned to right edge of button, never overflows */}
+                  <div
+                    className={`absolute right-0 top-full mt-2 w-56 bg-dark-900 border border-dark-600 rounded-2xl shadow-2xl transition-all duration-200 p-2 z-50 ${
+                      userMenuOpen
+                        ? 'opacity-100 visible translate-y-0 pointer-events-auto'
+                        : 'opacity-0 invisible -translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:pointer-events-auto'
+                    }`}
+                  >
                     <div className="px-3 py-2 border-b border-dark-700 mb-1">
                       <p className="text-xs font-bold text-white truncate">{user.name}</p>
-                      <p className="text-[10px] text-gold-400 uppercase tracking-wider font-semibold">
+                      <p className="text-[10px] text-gold-400 uppercase tracking-wider font-semibold mt-0.5">
                         {isAdmin ? '👑 Administrator' : isArtisan ? '🎨 Master Artisan' : 'Member'}
                       </p>
                     </div>
 
                     {isAdmin && (
-                      <Link to="/admin" className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gold-500/15 hover:bg-gold-500/25 text-xs text-gold-300 font-bold border border-gold-500/30 mb-1">
-                        <HiChartBar className="w-4 h-4 text-gold-400" /> Admin Control Center
+                      <Link
+                        to="/admin"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gold-500/15 hover:bg-gold-500/25 text-xs text-gold-300 font-bold border border-gold-500/30 mb-1 transition-colors"
+                      >
+                        <HiChartBar className="w-4 h-4 text-gold-400 shrink-0" />
+                        <span>Admin Control Center</span>
                       </Link>
                     )}
 
-                    <Link to="/profile" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white">
-                      <HiUser className="w-3.5 h-3.5 text-gold-400" /> My Profile
+                    <Link
+                      to="/profile"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white transition-colors"
+                    >
+                      <HiUser className="w-3.5 h-3.5 text-gold-400 shrink-0" />
+                      <span>My Profile</span>
                     </Link>
-                    <Link to="/leaderboard" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white">
-                      <FaTrophy className="w-3.5 h-3.5 text-gold-400" /> Leaderboard
+                    <Link
+                      to="/leaderboard"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white transition-colors"
+                    >
+                      <FaTrophy className="w-3.5 h-3.5 text-gold-400 shrink-0" />
+                      <span>Leaderboard</span>
                     </Link>
-                    <Link to="/wishlist" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white">
-                      <HiHeart className="w-3.5 h-3.5 text-red-400" /> My Wishlist
+                    <Link
+                      to="/wishlist"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white transition-colors"
+                    >
+                      <HiHeart className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      <span>My Wishlist</span>
                     </Link>
-                    <Link to="/orders" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white">
-                      <HiShoppingCart className="w-3.5 h-3.5 text-gray-400" /> My Orders
+                    <Link
+                      to="/orders"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gray-300 hover:text-white transition-colors"
+                    >
+                      <HiShoppingCart className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span>My Orders</span>
                     </Link>
-                    <Link to="/rewards" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gold-400 hover:text-gold-300">
-                      <HiStar className="w-3.5 h-3.5 text-gold-400" /> Rewards
+                    <Link
+                      to="/rewards"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-dark-800 text-xs text-gold-400 hover:text-gold-300 transition-colors"
+                    >
+                      <HiStar className="w-3.5 h-3.5 text-gold-400 shrink-0" />
+                      <span>Rewards</span>
                     </Link>
 
                     {isArtisan && (
-                      <Link to="/artisan" className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gold-500/20 text-xs text-gold-400 font-semibold border-t border-dark-700 mt-1 pt-2">
+                      <Link
+                        to="/artisan"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gold-500/20 text-xs text-gold-400 font-semibold border-t border-dark-700 mt-1 pt-2 transition-colors"
+                      >
                         Artisan Studio
                       </Link>
                     )}
 
                     <button
-                      onClick={logout}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl hover:bg-red-500/20 text-xs text-red-400 hover:text-red-300 border-t border-dark-700 mt-1"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        logout();
+                      }}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl hover:bg-red-500/20 text-xs text-red-400 hover:text-red-300 border-t border-dark-700 mt-1 cursor-pointer transition-colors"
                     >
-                      <HiLogout className="w-3.5 h-3.5" /> Sign Out
+                      <HiLogout className="w-3.5 h-3.5 shrink-0" />
+                      <span>Sign Out</span>
                     </button>
                   </div>
                 </div>
@@ -273,7 +392,7 @@ export default function Navbar() {
               {/* Mobile Drawer Button */}
               <button
                 onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
-                className="xl:hidden p-2 text-gray-300 hover:text-white hover:bg-dark-800 rounded-full transition-colors"
+                className="xl:hidden p-2 text-gray-300 hover:text-white hover:bg-dark-800 rounded-full transition-colors shrink-0"
                 aria-label="Toggle navigation menu"
               >
                 {mobileDrawerOpen ? <HiX className="w-6 h-6 text-gold-400" /> : <HiMenu className="w-6 h-6" />}
