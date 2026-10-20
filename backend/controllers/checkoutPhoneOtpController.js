@@ -95,7 +95,10 @@ exports.verifyCheckoutPhoneOtpHandler = async (req, res) => {
     const userId      = req.user?.id;
     const rawPhone    = req.body?.phone;
     const code        = req.body?.code;
-    const challengeId = req.body?.challengeId;
+    let challengeId   = req.body?.challengeId;
+    if (challengeId === 'null' || challengeId === 'undefined' || challengeId === '') {
+      challengeId = null;
+    }
 
     if (!rawPhone || !code) {
       return res.status(400).json({ error: 'Phone number and verification code are required.' });

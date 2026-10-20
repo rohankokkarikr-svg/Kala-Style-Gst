@@ -22,6 +22,10 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 const crypto = require('crypto');
 const supabase = require('../config/supabase');
+const { safeQuery } = require('../config/supabase');
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isValidUuid = (val) => Boolean(val && typeof val === 'string' && UUID_REGEX.test(val.trim()));
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CHECKOUT_OTP_LENGTH          = 6;          // Twilio Verify uses 6 digits by default
@@ -133,19 +137,26 @@ const isProviderConfigured = () => {
  * for a given userId + phoneE164 combination.
  */
 const getActiveChallenge = async (userId, phoneE164) => {
-  const { data, error } = await supabase
-    .from('checkout_otp_challenges')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('phone_e164', phoneE164)
-    .eq('purpose', CHECKOUT_OTP_PURPOSE)
-    .eq('consumed', false)
-    .gt('expires_at', new Date().toISOString())
-    .order('issued_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (!isValidUuid(userId) || !phoneE164) return null;
 
-  if (error) throw error;
+  const { data, error } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('phone_e164', phoneE164)
+      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .eq('consumed', false)
+      .gt('expires_at', new Date().toISOString())
+      .order('issued_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  );
+
+  if (error) {
+    console.warn('[checkoutPhoneOtpService] getActiveChallenge error:', error.message);
+    throw error;
+  }
   return data;
 };
 
@@ -154,13 +165,17 @@ const getActiveChallenge = async (userId, phoneE164) => {
  * (before issuing a resend to invalidate prior code).
  */
 const invalidateExistingChallenges = async (userId, phoneE164) => {
-  const { error } = await supabase
-    .from('checkout_otp_challenges')
-    .update({ consumed: true, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
-    .eq('phone_e164', phoneE164)
-    .eq('purpose', CHECKOUT_OTP_PURPOSE)
-    .eq('consumed', false);
+  if (!isValidUuid(userId) || !phoneE164) return;
+
+  const { error } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .update({ consumed: true, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('phone_e164', phoneE164)
+      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .eq('consumed', false)
+  );
 
   if (error) console.warn('[checkoutPhoneOtpService] invalidateExistingChallenges warning:', error.message);
 };
@@ -169,16 +184,23 @@ const invalidateExistingChallenges = async (userId, phoneE164) => {
  * Counts sends in the rolling time window (rate-limit guard).
  */
 const countRecentSends = async (userId, phoneE164) => {
-  const windowStart = new Date(Date.now() - SENDS_WINDOW_MS).toISOString();
-  const { count, error } = await supabase
-    .from('checkout_otp_challenges')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('phone_e164', phoneE164)
-    .eq('purpose', CHECKOUT_OTP_PURPOSE)
-    .gte('issued_at', windowStart);
+  if (!isValidUuid(userId) || !phoneE164) return 0;
 
-  if (error) throw error;
+  const windowStart = new Date(Date.now() - SENDS_WINDOW_MS).toISOString();
+  const { count, error } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('phone_e164', phoneE164)
+      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .gte('issued_at', windowStart)
+  );
+
+  if (error) {
+    console.warn('[checkoutPhoneOtpService] countRecentSends error:', error.message);
+    throw error;
+  }
   return count || 0;
 };
 
@@ -186,25 +208,31 @@ const countRecentSends = async (userId, phoneE164) => {
  * Creates a new challenge row. Returns the inserted record.
  */
 const createChallenge = async (userId, phoneE164) => {
+  if (!isValidUuid(userId)) {
+    throw new Error('Valid user ID is required to create a verification challenge');
+  }
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + CHALLENGE_EXPIRY_MS);
 
-  const { data, error } = await supabase
-    .from('checkout_otp_challenges')
-    .insert({
-      user_id:    userId,
-      phone_e164: phoneE164,
-      purpose:    CHECKOUT_OTP_PURPOSE,
-      issued_at:  now.toISOString(),
-      expires_at: expiresAt.toISOString(),
-      consumed:   false,
-      verify_token: null,   // populated after successful verification
-      send_count:  1,
-      last_send_at: now.toISOString(),
-      attempt_count: 0,
-    })
-    .select()
-    .single();
+  const { data, error } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .insert({
+        user_id:    userId,
+        phone_e164: phoneE164,
+        purpose:    CHECKOUT_OTP_PURPOSE,
+        issued_at:  now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        consumed:   false,
+        verify_token: null,   // populated after successful verification
+        send_count:  1,
+        last_send_at: now.toISOString(),
+        attempt_count: 0,
+      })
+      .select()
+      .single()
+  );
 
   if (error) throw error;
   return data;
@@ -223,6 +251,9 @@ const createChallenge = async (userId, phoneE164) => {
 const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
   if (!userId) {
     return { success: false, error: 'Authentication required to send verification code.' };
+  }
+  if (!isValidUuid(userId)) {
+    return { success: false, error: 'Invalid user session. Please log in again.' };
   }
 
   // 1. Normalize phone to E.164
@@ -383,6 +414,10 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: `Please enter the ${CHECKOUT_OTP_LENGTH}-digit SMS verification code.` };
   }
 
+  if (!isValidUuid(userId)) {
+    return { success: false, error: 'Authentication required. Please log in again.' };
+  }
+
   const phoneE164 = normalizeToE164(rawPhone);
   if (!phoneE164) {
     return { success: false, error: 'Invalid phone number.' };
@@ -392,23 +427,29 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: 'SMS verification is not configured.' };
   }
 
+  const cleanChallengeId = isValidUuid(challengeId) ? challengeId.trim() : null;
+
   // 1. Fetch the active challenge from DB
-  let challenge;
+  let challenge = null;
   try {
-    // If challengeId provided, fetch by ID; otherwise, fetch latest active
-    if (challengeId) {
-      const { data, error } = await supabase
-        .from('checkout_otp_challenges')
-        .select('*')
-        .eq('id', challengeId)
-        .eq('user_id', userId)
-        .eq('phone_e164', phoneE164)
-        .eq('purpose', CHECKOUT_OTP_PURPOSE)
-        .eq('consumed', false)
-        .maybeSingle();
-      if (error) throw error;
-      challenge = data;
-    } else {
+    if (cleanChallengeId) {
+      const { data, error } = await safeQuery(() =>
+        supabase
+          .from('checkout_otp_challenges')
+          .select('*')
+          .eq('id', cleanChallengeId)
+          .eq('user_id', userId)
+          .eq('phone_e164', phoneE164)
+          .eq('purpose', CHECKOUT_OTP_PURPOSE)
+          .eq('consumed', false)
+          .maybeSingle()
+      );
+      if (!error && data) {
+        challenge = data;
+      }
+    }
+
+    if (!challenge) {
       challenge = await getActiveChallenge(userId, phoneE164);
     }
   } catch (dbErr) {
@@ -422,22 +463,28 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
 
   // 2. Expiry check
   if (new Date(challenge.expires_at).getTime() < Date.now()) {
-    await supabase.from('checkout_otp_challenges')
-      .update({ consumed: true })
-      .eq('id', challenge.id);
+    await safeQuery(() =>
+      supabase.from('checkout_otp_challenges')
+        .update({ consumed: true })
+        .eq('id', challenge.id)
+    );
     return { success: false, error: 'Verification code has expired. Please request a new code.' };
   }
 
   // 3. Attempt limit
   const attempts = (challenge.attempt_count || 0) + 1;
-  await supabase.from('checkout_otp_challenges')
-    .update({ attempt_count: attempts })
-    .eq('id', challenge.id);
+  await safeQuery(() =>
+    supabase.from('checkout_otp_challenges')
+      .update({ attempt_count: attempts })
+      .eq('id', challenge.id)
+  );
 
   if (attempts > MAX_VERIFY_ATTEMPTS) {
-    await supabase.from('checkout_otp_challenges')
-      .update({ consumed: true })
-      .eq('id', challenge.id);
+    await safeQuery(() =>
+      supabase.from('checkout_otp_challenges')
+        .update({ consumed: true })
+        .eq('id', challenge.id)
+    );
     return { success: false, error: 'Too many incorrect attempts. Please request a new verification code.' };
   }
 
@@ -492,15 +539,17 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
   const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes to complete order
 
   try {
-    const { error: updateErr } = await supabase.from('checkout_otp_challenges')
-      .update({
-        verify_token:       verificationToken,
-        token_expires_at:   tokenExpiresAt.toISOString(),
-        verified_at:        new Date().toISOString(),
-        attempt_count:      attempts,
-        // NOT consumed yet — consumed atomically when order is created
-      })
-      .eq('id', challenge.id);
+    const { error: updateErr } = await safeQuery(() =>
+      supabase.from('checkout_otp_challenges')
+        .update({
+          verify_token:       verificationToken,
+          token_expires_at:   tokenExpiresAt.toISOString(),
+          verified_at:        new Date().toISOString(),
+          attempt_count:      attempts,
+          // NOT consumed yet — consumed atomically when order is created
+        })
+        .eq('id', challenge.id)
+    );
 
     if (updateErr) {
       console.error('[checkoutPhoneOtpService] Token persist error:', updateErr.message);
@@ -532,25 +581,31 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
     return { success: false, error: 'Phone verification is required to place an order.' };
   }
 
-  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!UUID_REGEX.test(userId)) {
+  if (!isValidUuid(userId)) {
     return {
       success: false,
       error: 'Phone verification token is invalid, already used, or belongs to a different session. Please verify your phone again.',
     };
   }
 
+  const cleanToken = String(verificationToken || '').trim();
+  if (!cleanToken) {
+    return { success: false, error: 'Phone verification is required to place an order.' };
+  }
+
   const phoneE164 = rawPhone ? normalizeToE164(rawPhone) : null;
 
-  // 1. Look up the token
-  const { data: challenge, error: fetchErr } = await supabase
-    .from('checkout_otp_challenges')
-    .select('*')
-    .eq('verify_token', verificationToken)
-    .eq('user_id', userId)
-    .eq('purpose', CHECKOUT_OTP_PURPOSE)
-    .eq('consumed', false)
-    .maybeSingle();
+  // 1. Look up the token with safeQuery
+  const { data: challenge, error: fetchErr } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .select('*')
+      .eq('verify_token', cleanToken)
+      .eq('user_id', userId)
+      .eq('purpose', CHECKOUT_OTP_PURPOSE)
+      .eq('consumed', false)
+      .maybeSingle()
+  );
 
   if (fetchErr) {
     console.error('[checkoutPhoneOtpService] consumeVerificationToken DB error:', fetchErr.message);
@@ -570,9 +625,11 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
     : new Date(challenge.expires_at).getTime();
 
   if (Date.now() > tokenExpiry) {
-    await supabase.from('checkout_otp_challenges')
-      .update({ consumed: true })
-      .eq('id', challenge.id);
+    await safeQuery(() =>
+      supabase.from('checkout_otp_challenges')
+        .update({ consumed: true })
+        .eq('id', challenge.id)
+    );
     return { success: false, error: 'Phone verification has expired. Please verify your phone number again.' };
   }
 
@@ -584,12 +641,14 @@ const consumeVerificationToken = async ({ userId, verificationToken, rawPhone })
     };
   }
 
-  // 4. Atomically consume the token
-  const { error: consumeErr } = await supabase
-    .from('checkout_otp_challenges')
-    .update({ consumed: true, consumed_at: new Date().toISOString() })
-    .eq('id', challenge.id)
-    .eq('consumed', false); // Guard: prevent double-consume race condition
+  // 4. Atomically consume the token with safeQuery
+  const { error: consumeErr } = await safeQuery(() =>
+    supabase
+      .from('checkout_otp_challenges')
+      .update({ consumed: true, consumed_at: new Date().toISOString() })
+      .eq('id', challenge.id)
+      .eq('consumed', false) // Guard: prevent double-consume race condition
+  );
 
   if (consumeErr) {
     console.error('[checkoutPhoneOtpService] consumeVerificationToken consume error:', consumeErr.message);

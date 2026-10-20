@@ -713,10 +713,14 @@ export default function Checkout() {
 
     let token = null;
     try {
+      const cleanChallengeId = (otpChallengeId && typeof otpChallengeId === 'string' && otpChallengeId !== 'null' && otpChallengeId !== 'undefined' && otpChallengeId.trim() !== '')
+        ? otpChallengeId.trim()
+        : undefined;
+
       const verifyRes = await orderAPI.phoneOtpVerify({
         phone: cleanPhone,
         code,
-        challengeId: otpChallengeId,
+        challengeId: cleanChallengeId,
       });
 
       if (!verifyRes.data?.verificationToken) {
@@ -942,6 +946,17 @@ export default function Checkout() {
         });
         setShowOtpModal(false);
         setStep(1);
+        return;
+      }
+
+      // Check if phone verification token is required/expired/invalid
+      if (err.response?.data?.requiresPhoneVerification) {
+        setVerificationToken(null);
+        setOtpChallengeId(null);
+        setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+        setOtpError(errMsg);
+        setShowOtpModal(true);
+        toast.error(errMsg);
         return;
       }
 
