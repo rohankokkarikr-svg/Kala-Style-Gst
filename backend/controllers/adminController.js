@@ -1250,7 +1250,18 @@ exports.getNotifications = async (req, res) => {
         .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
         .order('created_at', { ascending: false })
     );
-    if (error) throw error;
+
+    if (error) {
+      // Fallback query without joins
+      const { data: fallbackData } = await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .select('*')
+          .order('created_at', { ascending: false })
+      );
+      return res.json(fallbackData || []);
+    }
+
     return res.json(data || []);
   } catch (err) {
     console.error('getNotifications error:', err.message);
@@ -1265,49 +1276,98 @@ exports.sendNotification = async (req, res) => {
       return res.status(400).json({ error: 'Title and message are required' });
     }
 
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isValidUuid = (val) => typeof val === 'string' && UUID_REGEX.test(val.trim());
+
     // If target_user_id is an artisan_profile id, resolve to user_id
-    if (target_user_id) {
+    if (target_user_id && isValidUuid(target_user_id)) {
       try {
         const { data: artProfile } = await supabase
           .from('artisan_profiles')
           .select('user_id')
           .eq('id', target_user_id)
           .maybeSingle();
-        if (artProfile && artProfile.user_id) {
+        if (artProfile && isValidUuid(artProfile.user_id)) {
           target_user_id = artProfile.user_id;
         }
       } catch {}
+
+      // Verify target_user_id exists in users table
+      try {
+        const { data: targetUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', target_user_id)
+          .maybeSingle();
+        if (!targetUser) target_user_id = null;
+      } catch {
+        target_user_id = null;
+      }
+    } else {
+      target_user_id = null;
     }
 
+    const audience = target_audience || (target_user_id ? 'specific' : 'all');
+
     const notif = {
-      title,
-      message,
-      target_audience: target_audience || (target_user_id ? 'specific' : 'all'),
+      title: title.trim(),
+      message: message.trim(),
+      target_audience: audience,
       target_user_id: target_user_id || null,
       sender_id: req.user?.id || null,
       is_read: false,
       created_at: new Date().toISOString()
     };
 
+    let savedData = null;
+
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .insert([notif])
-        .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
-        .single();
-      if (error) throw error;
-      await logActivity(req, `Sent Notification: "${title}" to ${target_audience}`, 'Notification', data?.id);
-      return res.status(201).json(data);
-    } catch {
-      const newNotif = { 
+      const { data, error } = await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .insert([notif])
+          .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
+          .single()
+      );
+
+      if (error) {
+        console.warn('[adminController.sendNotification] Joined insert warning, retrying plain insert:', error.message);
+        const { data: plainData, error: plainErr } = await safeQuery(() =>
+          supabase
+            .from('notifications')
+            .insert([notif])
+            .select()
+            .single()
+        );
+        if (plainErr) throw plainErr;
+        savedData = {
+          ...plainData,
+          sender: { id: req.user?.id, name: req.user?.name || 'Admin', role: 'admin' }
+        };
+      } else if (data) {
+        savedData = data;
+      }
+    } catch (insertErr) {
+      console.warn('[adminController.sendNotification] Database insert error:', insertErr.message);
+      savedData = { 
         ...notif, 
-        id: String(Date.now()),
+        id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         sender: { id: req.user?.id, name: req.user?.name || 'Admin', role: 'admin' }
       };
-      inMemoryNotifications.unshift(newNotif);
-      await logActivity(req, `Sent Notification: "${title}" to ${target_audience}`, 'Notification', newNotif.id);
-      return res.status(201).json(newNotif);
+      inMemoryNotifications.unshift(savedData);
     }
+
+    await logActivity(req, `Sent Notification: "${title}" to ${audience}`, 'Notification', savedData?.id);
+
+    try {
+      broadcastSync('NOTIFICATION_RECEIVED', {
+        notification: savedData,
+        target_user_id,
+        target_audience: audience
+      });
+    } catch (_) {}
+
+    return res.status(201).json(savedData);
   } catch (err) {
     console.error('sendNotification error:', err);
     res.status(500).json({ error: 'Failed to send notification' });

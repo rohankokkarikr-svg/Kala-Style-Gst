@@ -1,7 +1,12 @@
 const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
+const { broadcastSync } = require('../utils/realtime');
 
-// In-memory fallback in case of transient database connection issues
+// UUID v4 format verification regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUuid = (val) => typeof val === 'string' && UUID_REGEX.test(val.trim());
+
+// In-memory fallback buffer in case of transient database connection issues
 let inMemoryNotifications = [];
 
 /**
@@ -47,7 +52,19 @@ exports.getMyNotifications = async (req, res) => {
       );
 
       if (error) {
-        console.warn('[notificationController] Supabase query error:', error.message);
+        console.warn('[notificationController] Supabase query warning:', error.message);
+        // Fallback without joins if schema cache or relations hiccup
+        const { data: fallbackData } = await safeQuery(() =>
+          supabase
+            .from('notifications')
+            .select('*')
+            .or(orFilter)
+            .order('created_at', { ascending: false })
+            .limit(50)
+        );
+        if (fallbackData) {
+          notifications = fallbackData;
+        }
       } else if (data) {
         notifications = data;
       }
@@ -76,18 +93,17 @@ exports.getMyNotifications = async (req, res) => {
     // Sort descending by created_at
     combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    // STRICT USER SIDE FILTERING:
-    // In user side show ONLY:
-    // 1. Admin messages (broadcast or direct to this particular user)
-    // 2. Artisan messages if sent specifically to the particular user
+    // STRICT USER / CUSTOMER SIDE FILTERING:
+    // In user side show:
+    // 1. Direct messages specifically addressed to this user (target_user_id === userId) - always shown
+    // 2. Broadcasts from admin intended for 'all' or 'customers'
     if (userRole === 'user' || userRole === 'customer') {
       combined = combined.filter(n => {
+        if (n.target_user_id === userId) return true;
+        const isCustomerBroadcast = n.target_audience === 'all' || n.target_audience === 'customers';
         const senderRole = (n.sender?.role || '').toLowerCase();
         const isFromAdmin = senderRole === 'admin' || !n.sender_id;
-        const isDirectFromArtisan = senderRole === 'artisan' && n.target_user_id === userId;
-        const isDirectFromAdmin = senderRole === 'admin' && n.target_user_id === userId;
-        const isBroadcastFromAdmin = isFromAdmin && (n.target_audience === 'all' || n.target_audience === 'customers');
-        return isBroadcastFromAdmin || isDirectFromAdmin || isDirectFromArtisan;
+        return isCustomerBroadcast && isFromAdmin;
       });
     }
 
@@ -125,59 +141,89 @@ exports.sendMessage = async (req, res) => {
     }
 
     message = message.trim();
-    let targetUserId = recipient_id || null;
-    let targetAudience = target_audience || 'specific';
+    let targetUserId = recipient_id ? String(recipient_id).trim() : null;
+    let targetAudience = target_audience ? String(target_audience).trim() : null;
 
     // Broadcast authorization: Only admin can broadcast to all, artisans, or customers
-    if (['all', 'artisans', 'customers'].includes(targetAudience) && (sender.role || '').toLowerCase() !== 'admin') {
+    if (targetAudience && ['all', 'artisans', 'customers'].includes(targetAudience) && (sender.role || '').toLowerCase() !== 'admin') {
       return res.status(403).json({ error: 'Unauthorized: Only platform administrators are permitted to send broadcast notifications.' });
     }
 
-    // 1. If recipient is 'admin' or recipient_role is 'admin'
-    if (recipient_id === 'admin' || recipient_role === 'admin') {
+    // 1. Handle messages targeted to admin
+    if (targetUserId === 'admin' || recipient_role === 'admin' || targetAudience === 'admins') {
       targetAudience = 'admins';
+      targetUserId = null; // Reset string 'admin' so it doesn't fail UUID validation
+
       try {
-        const { data: adminUsers } = await supabase
-          .from('users')
-          .select('id, name')
-          .eq('role', 'admin')
-          .limit(1);
-        if (adminUsers && adminUsers.length > 0) {
+        const { data: adminUsers } = await safeQuery(() =>
+          supabase
+            .from('users')
+            .select('id, name')
+            .eq('role', 'admin')
+            .limit(1)
+        );
+        if (adminUsers && adminUsers.length > 0 && isValidUuid(adminUsers[0].id)) {
           targetUserId = adminUsers[0].id;
         }
       } catch (err) {
         console.warn('[sendMessage] Could not resolve admin user id:', err.message);
       }
-      if (!title) {
+
+      if (!title || !title.trim()) {
         title = `Inquiry from ${sender.name || 'User'} (${sender.role || 'customer'})`;
       }
     }
 
-    // 2. If recipient_id might be an artisan_profile id, resolve to user_id
-    if (targetUserId && targetUserId !== 'admin') {
-      try {
-        const { data: artProfile } = await supabase
-          .from('artisan_profiles')
-          .select('user_id, store_name')
-          .eq('id', targetUserId)
-          .maybeSingle();
+    // 2. If targetUserId is provided, validate & resolve if it's an artisan_profile id
+    if (targetUserId) {
+      if (!isValidUuid(targetUserId)) {
+        console.warn(`[sendMessage] Non-UUID recipient_id "${targetUserId}" provided; resetting to null`);
+        targetUserId = null;
+      } else {
+        // Check if targetUserId is an artisan_profile.id and needs resolution to user_id
+        try {
+          const { data: artProfile } = await supabase
+            .from('artisan_profiles')
+            .select('user_id, store_name')
+            .eq('id', targetUserId)
+            .maybeSingle();
 
-        if (artProfile && artProfile.user_id) {
-          targetUserId = artProfile.user_id;
+          if (artProfile && isValidUuid(artProfile.user_id)) {
+            targetUserId = artProfile.user_id;
+          }
+        } catch (_) {}
+
+        // Verify targetUserId exists in users table to prevent FK constraint failure
+        try {
+          const { data: targetUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', targetUserId)
+            .maybeSingle();
+
+          if (!targetUser) {
+            console.warn(`[sendMessage] Target user ${targetUserId} not found in users table, clearing target_user_id`);
+            targetUserId = null;
+          }
+        } catch (_) {
+          targetUserId = null;
         }
-      } catch (err) {
-        // Not an artisan_profile ID, assume it is already a users.id
       }
+    }
+
+    // Ensure targetAudience is valid and never null (schema constraint: VARCHAR(50) NOT NULL)
+    if (!targetAudience) {
+      targetAudience = targetUserId ? 'specific' : 'all';
     }
 
     // Default title if not provided
     if (!title || !title.trim()) {
       if (sender.role === 'admin') {
-        title = `Message from Platform Support`;
+        title = 'Message from Platform Support';
       } else if (sender.role === 'artisan') {
-        title = `Message from Artisan ${sender.name || ''}`;
+        title = `Message from Artisan ${sender.name || ''}`.trim();
       } else {
-        title = `Message from Customer ${sender.name || ''}`;
+        title = `Message from Customer ${sender.name || ''}`.trim();
       }
     }
 
@@ -194,22 +240,49 @@ exports.sendMessage = async (req, res) => {
     let savedNotif = null;
 
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .insert([notifRecord])
-        .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
-        .single();
+      // First attempt: insert with joins
+      const { data, error } = await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .insert([notifRecord])
+          .select('*, sender:sender_id(id, name, email, role), target_user:target_user_id(id, name, email, role)')
+          .single()
+      );
 
       if (error) {
-        console.warn('[sendMessage] Supabase insert warning:', error.message);
+        console.warn('[sendMessage] Supabase joined insert error:', error.message || error);
+        // Fallback attempt: plain insert without joins
+        const { data: plainData, error: plainErr } = await safeQuery(() =>
+          supabase
+            .from('notifications')
+            .insert([notifRecord])
+            .select()
+            .single()
+        );
+
+        if (plainErr) {
+          console.error('[sendMessage] Plain insert error:', plainErr.message || plainErr);
+        } else if (plainData) {
+          savedNotif = {
+            ...plainData,
+            sender: {
+              id: sender.id,
+              name: sender.name,
+              role: sender.role,
+              email: sender.email
+            }
+          };
+        }
       } else if (data) {
         savedNotif = data;
       }
     } catch (dbErr) {
-      console.warn('[sendMessage] DB insert failed:', dbErr.message);
+      console.error('[sendMessage] DB insert exception:', dbErr.message);
     }
 
+    // Fallback to in-memory only if database insertion completely failed
     if (!savedNotif) {
+      console.warn('[sendMessage] Saving notification to in-memory buffer as DB fallback');
       savedNotif = {
         ...notifRecord,
         id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -223,13 +296,25 @@ exports.sendMessage = async (req, res) => {
       inMemoryNotifications.unshift(savedNotif);
     }
 
+    // Broadcast multi-device real-time sync event so recipient's browser updates immediately
+    try {
+      broadcastSync('NOTIFICATION_RECEIVED', {
+        notification: savedNotif,
+        target_user_id: targetUserId,
+        target_audience: targetAudience,
+        sender_id: sender.id
+      });
+    } catch (syncErr) {
+      console.warn('[sendMessage] Realtime broadcast warning:', syncErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Message sent successfully! 🚀',
       notification: savedNotif
     });
   } catch (err) {
-    console.error('[sendMessage] Error:', err);
+    console.error('[sendMessage] Fatal error:', err);
     res.status(500).json({ error: 'Failed to send message: ' + (err.message || 'Unknown error') });
   }
 };
@@ -243,10 +328,12 @@ exports.markAsRead = async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Notification ID required' });
 
     try {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', id);
+      await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('id', id)
+      );
     } catch (dbErr) {
       console.warn('[markAsRead] DB update error:', dbErr.message);
     }
@@ -254,6 +341,10 @@ exports.markAsRead = async (req, res) => {
     // Update in-memory if present
     const memItem = inMemoryNotifications.find(n => n.id === id);
     if (memItem) memItem.is_read = true;
+
+    try {
+      broadcastSync('NOTIFICATION_READ', { id, userId: req.user?.id });
+    } catch (_) {}
 
     res.json({ success: true, id });
   } catch (err) {
@@ -273,10 +364,12 @@ exports.markAllAsRead = async (req, res) => {
 
     // 1. Mark all direct notifications for this user
     try {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('target_user_id', userId);
+      await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('target_user_id', userId)
+      );
     } catch (dbErr) {
       console.warn('[markAllAsRead] DB update error:', dbErr.message);
     }
@@ -288,10 +381,12 @@ exports.markAllAsRead = async (req, res) => {
     else audiences.push('customers');
 
     try {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .in('target_audience', audiences);
+      await safeQuery(() =>
+        supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .in('target_audience', audiences)
+      );
     } catch (dbErr) {
       console.warn('[markAllAsRead] Broadcast DB update error:', dbErr.message);
     }
@@ -302,6 +397,10 @@ exports.markAllAsRead = async (req, res) => {
         n.is_read = true;
       }
     });
+
+    try {
+      broadcastSync('NOTIFICATION_READ_ALL', { userId });
+    } catch (_) {}
 
     res.json({ success: true, message: 'All notifications marked as read' });
   } catch (err) {
@@ -365,34 +464,49 @@ exports.getRecipients = async (req, res) => {
  * 6. Internal System Notification Helper (called by orderController, reviewController, etc.)
  */
 exports.createSystemNotification = async ({ title, message, target_audience = 'all', target_user_id = null, sender_id = null }) => {
-  try {
-    const record = {
-      title,
-      message,
-      target_audience,
-      target_user_id,
-      sender_id,
-      is_read: false,
-      created_at: new Date().toISOString()
-    };
+  let validTargetUserId = isValidUuid(target_user_id) ? target_user_id : null;
+  let validSenderId = isValidUuid(sender_id) ? sender_id : null;
+  let audience = target_audience || (validTargetUserId ? 'specific' : 'all');
 
-    const { data } = await supabase.from('notifications').insert([record]).select().single();
-    if (data) return data;
+  const record = {
+    title: (title || 'System Notification').trim(),
+    message: (message || '').trim(),
+    target_audience: audience,
+    target_user_id: validTargetUserId,
+    sender_id: validSenderId,
+    is_read: false,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    const { data } = await safeQuery(() =>
+      supabase.from('notifications').insert([record]).select().single()
+    );
+    if (data) {
+      try {
+        broadcastSync('NOTIFICATION_RECEIVED', {
+          notification: data,
+          target_user_id: validTargetUserId,
+          target_audience: audience
+        });
+      } catch (_) {}
+      return data;
+    }
   } catch (err) {
     console.warn('[createSystemNotification] DB insert warning:', err.message);
   }
 
   const mem = {
     id: `sys-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-    title,
-    message,
-    target_audience,
-    target_user_id,
-    sender_id,
-    is_read: false,
-    created_at: new Date().toISOString()
+    ...record
   };
   inMemoryNotifications.unshift(mem);
+  try {
+    broadcastSync('NOTIFICATION_RECEIVED', {
+      notification: mem,
+      target_user_id: validTargetUserId,
+      target_audience: audience
+    });
+  } catch (_) {}
   return mem;
 };
-

@@ -52,17 +52,17 @@ export default function NotificationCenter({ className = '', buttonClassName = '
         }));
 
         // Strict role filtering for customer/user side:
-        // Show ONLY admin messages (broadcast or direct) AND artisan messages sent to this particular user
+        // Always show direct messages targeted specifically to this user (target_user_id === user.id)
+        // For broadcasts: show only admin broadcasts targeting 'all' or 'customers'
         const currentRole = (user?.role || 'user').toLowerCase();
         let roleFiltered = syncedNotifs;
         if (currentRole === 'user' || currentRole === 'customer') {
           roleFiltered = syncedNotifs.filter(n => {
+            if (n.target_user_id && n.target_user_id === user?.id) return true;
             const senderRole = (n.sender?.role || '').toLowerCase();
             const isFromAdmin = senderRole === 'admin' || !n.sender_id;
-            const isDirectFromArtisan = senderRole === 'artisan' && n.target_user_id === user?.id;
-            const isDirectFromAdmin = senderRole === 'admin' && n.target_user_id === user?.id;
-            const isBroadcastFromAdmin = isFromAdmin && (n.target_audience === 'all' || n.target_audience === 'customers');
-            return isBroadcastFromAdmin || isDirectFromAdmin || isDirectFromArtisan;
+            const isCustomerBroadcast = n.target_audience === 'all' || n.target_audience === 'customers';
+            return isCustomerBroadcast && isFromAdmin;
           });
         }
 
@@ -87,11 +87,15 @@ export default function NotificationCenter({ className = '', buttonClassName = '
     // Listen for custom sync events
     const handleRefresh = () => fetchNotifications(true);
     window.addEventListener('kala:notification:refresh', handleRefresh);
+    window.addEventListener('kala:sync:notification_received', handleRefresh);
+    window.addEventListener('kala:sync:notification_read', handleRefresh);
     window.addEventListener('kala:sync:orders_updated', handleRefresh);
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('kala:notification:refresh', handleRefresh);
+      window.removeEventListener('kala:sync:notification_received', handleRefresh);
+      window.removeEventListener('kala:sync:notification_read', handleRefresh);
       window.removeEventListener('kala:sync:orders_updated', handleRefresh);
     };
   }, [isAuthenticated, user?.id]);

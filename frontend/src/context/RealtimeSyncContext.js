@@ -29,6 +29,14 @@ export const RealtimeSyncProvider = ({ children }) => {
       case 'SETTINGS_UPDATED':
         apiCache.invalidateSettings();
         break;
+      case 'NOTIFICATION_RECEIVED':
+      case 'NOTIFICATION_CREATED':
+      case 'NOTIFICATION_READ':
+      case 'NOTIFICATION_READ_ALL':
+        try {
+          window.dispatchEvent(new CustomEvent('kala:notification:refresh'));
+        } catch (_) {}
+        break;
       default:
         break;
     }
@@ -122,6 +130,13 @@ export const RealtimeSyncProvider = ({ children }) => {
             { event: '*', schema: 'public', table: 'payments' },
             (change) => {
               handleIncomingSync('PAYMENTS_UPDATED', change.new || change.old || {});
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'notifications' },
+            (change) => {
+              handleIncomingSync('NOTIFICATION_RECEIVED', change.new || change.old || {});
             }
           )
           .subscribe();
