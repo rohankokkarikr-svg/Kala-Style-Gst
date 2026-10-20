@@ -89,7 +89,13 @@ function optimizeImageFile(file) {
   });
 }
 
-export default function ProductImageManager({ product, onClose, onSaved }) {
+export default function ProductImageManager({
+  product,
+  onClose,
+  onSaved,
+  onImagesUpdated,
+  isOpen = true
+}) {
   const fileInputRef = useRef();
   const [images, setImages] = useState(() => extractImages(product));
   const [primaryIdx, setPrimaryIdx] = useState(0);
@@ -101,8 +107,39 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
   const [showCamera, setShowCamera] = useState(false);
 
   useEffect(() => {
+    if (product) {
+      const extracted = extractImages(product);
+      setImages(extracted);
+      setPrimaryIdx(0);
+      setPreview(extracted[0] || "");
+    }
+  }, [product?.id, product?.images, product?.image_url]);
+
+  useEffect(() => {
     setPreview(images[primaryIdx] || images[0] || "");
   }, [primaryIdx, images]);
+
+  const handleClose = useCallback((e) => {
+    if (e && typeof e.stopPropagation === "function") {
+      e.stopPropagation();
+    }
+    if (typeof onClose === "function") {
+      onClose();
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" || e.key === "Esc") {
+        handleClose(e);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, handleClose]);
 
   const uploadFile = async (rawFile) => {
     if (!rawFile) return null;
@@ -258,6 +295,7 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
       }));
       toast.success("Photo deleted permanently from product! 🗑️");
       if (onSaved) onSaved(ordered);
+      if (onImagesUpdated) onImagesUpdated({ ...product, image_url: ordered[0] || null, images: ordered });
     } catch (err) {
       console.error("Delete photo error:", err);
       toast.error("Removed locally. Click 'Save Images' to persist: " + (err?.response?.data?.error || err.message));
@@ -282,7 +320,7 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
       ? [images[primaryIdx] || images[0], ...images.filter((_, i) => i !== primaryIdx)]
       : [];
     try {
-      await productAPI.update(product.id, {
+      const res = await productAPI.update(product.id, {
         image_url: ordered[0] || null,
         images: ordered,
       });
@@ -290,7 +328,8 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
       window.dispatchEvent(new CustomEvent("kala:sync:products_updated", { detail: { payload: { action: "update", id: product.id } } }));
       toast.success("Product images saved successfully! 🎉");
       if (onSaved) onSaved(ordered);
-      onClose();
+      if (onImagesUpdated) onImagesUpdated(res?.data?.product || res?.data || { ...product, image_url: ordered[0] || null, images: ordered });
+      handleClose();
     } catch (err) {
       console.error("Save images error:", err);
       const errMsg = err?.response?.data?.error || err?.message || "Failed to save images. Please try again.";
@@ -300,9 +339,23 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
     }
   };
 
+  if (isOpen === false || !product) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)" }}>
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-dark-600/80 shadow-2xl" style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)" }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleClose(e);
+        }
+      }}
+    >
+      <div
+        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-dark-600/80 shadow-2xl"
+        style={{ background: "linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
 
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-dark-700/60" style={{ background: "rgba(26,26,46,0.95)", backdropFilter: "blur(8px)" }}>
@@ -312,8 +365,13 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
             </h2>
             <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{product?.name || "Product"}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-dark-700 hover:bg-dark-600 flex items-center justify-center transition-colors">
-            <HiX className="w-4 h-4 text-gray-300" />
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close dialog"
+            className="w-8 h-8 rounded-full bg-dark-700 hover:bg-dark-600 flex items-center justify-center transition-colors cursor-pointer text-gray-300 hover:text-white"
+          >
+            <HiX className="w-4 h-4 pointer-events-none" />
           </button>
         </div>
 
@@ -547,8 +605,8 @@ export default function ProductImageManager({ product, onClose, onSaved }) {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-gray-300 hover:text-white bg-dark-700 hover:bg-dark-600 rounded-lg border border-dark-600 transition-colors"
+              onClick={handleClose}
+              className="px-4 py-2 text-xs font-semibold text-gray-300 hover:text-white bg-dark-700 hover:bg-dark-600 rounded-lg border border-dark-600 transition-colors cursor-pointer"
             >
               Cancel
             </button>

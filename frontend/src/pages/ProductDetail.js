@@ -988,7 +988,7 @@ export default function ProductDetail() {
       />
 
       {/* ═══ ARTISAN / ADMIN PRODUCT IMAGE STUDIO MODAL ═══ */}
-      {canManageImages && (
+      {canManageImages && imageManagerOpen && (
         <ProductImageManager
           isOpen={imageManagerOpen}
           onClose={() => setImageManagerOpen(false)}
