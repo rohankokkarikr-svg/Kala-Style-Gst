@@ -469,29 +469,12 @@ exports.getMyArtisanOrders = async (req, res) => {
 
     let orderList = artOrders || [];
 
-    // Fallback: If this artisan has 0 orders of their own, but there are orders in the platform (e.g. testing in dev),
-    // show platform orders so the artisan portal is functional and never stuck
-    if (orderList.length === 0) {
-      const { data: allAo } = await supabase
-        .from('artisan_orders')
-        .select(`
-          *,
-          order:orders (
-            id, order_number, total_amount, total_price, payment_method, payment_status,
-            shipping_address, shipping_name, shipping_city, shipping_state, shipping_pincode,
-            phone, created_at, order_status, status, coupon_code,
-            shipping_status, shipment_id, awb_code, courier_name, tracking_url,
-            live_location_url, transaction_id, razorpay_payment_id,
-            user:users (id, name, email, phone)
-          )
-        `)
-        .order('created_at', { ascending: false });
-      if (allAo && allAo.length > 0) {
-        orderList = allAo;
-      }
-    }
+    // SECURITY: Do NOT fall back to loading all platform orders.
+    // If this artisan has no assigned orders, return an empty list.
+    // The previous fallback was leaking other artisans' customer data.
 
     const orderIds = [...new Set(orderList.map(ao => ao.order_id).filter(Boolean))];
+
 
     // 2. Fetch order_items for all these orders
     let itemsByOrderId = {};
@@ -635,7 +618,14 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .maybeSingle();
 
     if (byArtOrderId) {
-      artOrder = byArtOrderId;
+      // SECURITY: Verify ownership immediately — artisan must own or be assigned to this sub-order
+      const isOwnedByArtisan = isAdmin
+        || String(byArtOrderId.artisan_id) === String(profile.id)
+        || byArtOrderId.artisan_id === null;
+      if (isOwnedByArtisan) {
+        artOrder = byArtOrderId;
+      }
+      // If not owned, do NOT assign — fall through to other strategies
     }
 
     // Strategy 2: Match by master order_id (from URL parameter)

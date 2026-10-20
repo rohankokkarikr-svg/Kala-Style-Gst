@@ -14,12 +14,17 @@ const { broadcastSync } = require('../utils/realtime');
 // Dedicated service_role admin client — bypasses RLS for all write operations
 const { createClient } = require('@supabase/supabase-js');
 const _ADMIN_URL = (process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co').trim();
-const _ADMIN_KEY = [
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  process.env.SUPABASE_SERVICE_KEY,
-  process.env.SERVICE_ROLE_KEY,
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg'
-].find(k => k && String(k).trim().length > 10);
+const _ADMIN_KEY = (
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.SERVICE_ROLE_KEY ||
+  ''
+).trim();
+
+if (!_ADMIN_KEY) {
+  console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY env var is not set. Admin write operations will fail.');
+}
+
 const supabaseAdmin = createClient(_ADMIN_URL, _ADMIN_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
   global: { headers: { 'x-application-name': 'kala-style-gst-admin' } },

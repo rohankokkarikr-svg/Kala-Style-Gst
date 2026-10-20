@@ -361,8 +361,27 @@ exports.getOrderById = async (req, res) => {
 
     if (error || !order) return res.status(404).json({ error: 'Order not found' });
 
-    if (order.user_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized access to this order' });
+    const isOwner = String(order.user_id) === String(req.user.id);
+    const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
+    let isAssignedArtisan = false;
+
+    if (!isOwner && !isAdmin && (req.user?.role || '').toLowerCase() === 'artisan') {
+      // Check if this artisan is assigned to any artisan_order within this master order
+      const { data: prof } = await supabase
+        .from('artisan_profiles')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      if (prof?.id) {
+        isAssignedArtisan = (order.artisan_orders || []).some(
+          ao => String(ao.artisan_id) === String(prof.id) || String(ao.artisan_id) === String(req.user.id)
+        );
+      }
+    }
+
+    if (!isOwner && !isAdmin && !isAssignedArtisan) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to access this data.' });
     }
 
     res.json(order);
@@ -1046,6 +1065,12 @@ exports.payOrder = async (req, res) => {
       .eq('id', id).single();
 
     if (fetchError || !order) return res.status(404).json({ error: 'Order not found' });
+
+    // ── OWNERSHIP CHECK: Only the order owner (or admin) may submit payment ──
+    const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
+    if (!isAdmin && String(order.user_id) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to access this data.' });
+    }
 
     const artisanIds = [...new Set((order.items || []).map(i => i.product?.artisan_id).filter(Boolean))];
     let primaryArtisanPhone = null;
