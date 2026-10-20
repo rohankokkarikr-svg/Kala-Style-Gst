@@ -188,6 +188,10 @@ const invalidateExistingChallenges = async (userId, phoneE164) => {
 const countRecentSends = async (userId, phoneE164) => {
   if (!isValidUuid(userId) || !phoneE164) return 0;
 
+  if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PHONE_OTP === 'true') {
+    return 0;
+  }
+
   const windowStart = new Date(Date.now() - SENDS_WINDOW_MS).toISOString();
   const { count, error } = await safeQuery(() =>
     supabase
@@ -197,6 +201,7 @@ const countRecentSends = async (userId, phoneE164) => {
       .eq('phone_e164', phoneE164)
       .like('purpose', `${CHECKOUT_OTP_PURPOSE}%`)
       .gte('issued_at', windowStart)
+      .eq('consumed', false)
   );
 
   if (error) {
@@ -278,16 +283,18 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
 
   // 3. Resend cooldown: check the most recent challenge
   try {
-    const activeChallenge = await getActiveChallenge(userId, phoneE164);
-    if (activeChallenge) {
-      const lastSend = new Date(activeChallenge.last_send_at).getTime();
-      const cooldownRemaining = RESEND_COOLDOWN_MS - (Date.now() - lastSend);
-      if (cooldownRemaining > 0) {
-        return {
-          success: false,
-          error: `Please wait ${Math.ceil(cooldownRemaining / 1000)} seconds before requesting a new code.`,
-          cooldownSeconds: Math.ceil(cooldownRemaining / 1000),
-        };
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_PHONE_OTP !== 'true') {
+      const activeChallenge = await getActiveChallenge(userId, phoneE164);
+      if (activeChallenge) {
+        const lastSend = new Date(activeChallenge.last_send_at).getTime();
+        const cooldownRemaining = RESEND_COOLDOWN_MS - (Date.now() - lastSend);
+        if (cooldownRemaining > 0) {
+          return {
+            success: false,
+            error: `Please wait ${Math.ceil(cooldownRemaining / 1000)} seconds before requesting a new code.`,
+            cooldownSeconds: Math.ceil(cooldownRemaining / 1000),
+          };
+        }
       }
     }
 
