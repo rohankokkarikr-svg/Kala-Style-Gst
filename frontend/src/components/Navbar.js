@@ -119,81 +119,106 @@ export default function Navbar() {
   return (
     <>
       {/* 
-        Solid opaque background (bg-dark-900) ensures no page text/breadcrumbs 
-        bleed through or cause overlapping "text over text"
+        Solid, elegant background (bg-dark-900/98 backdrop-blur-md) perfectly aligned with page layout (max-w-7xl)
       */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-dark-900 border-b border-dark-700/90 shadow-lg">
-        <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-dark-900/98 backdrop-blur-md border-b border-dark-700/80 shadow-lg shadow-black/40">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 md:h-20 gap-2 sm:gap-4">
             
-            {/* 1. Left: Brand Logo & Title */}
-            <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0">
-              <img
-                src="/images/kalastyle_logo.png"
-                alt="KalaStyle AI"
-                className="h-9 w-9 sm:h-11 sm:w-11 object-cover rounded-full ring-2 ring-gold-500/80 shadow-gold"
-              />
-              <div className="flex flex-col leading-tight">
-                <span className="font-serif text-base sm:text-xl font-bold gold-text whitespace-nowrap">
-                  KalaStyle AI
-                </span>
-                <span className="text-[8px] sm:text-[9px] text-gray-400 tracking-widest uppercase font-semibold whitespace-nowrap hidden xs:block">
-                  Artisan Marketplace
-                </span>
-              </div>
-            </Link>
+            {/* 1. Left: Brand Logo & Title (Aligned with container margin) */}
+            <div className="flex items-center justify-start flex-1 min-w-0">
+              <Link to="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0 group py-1">
+                <div className="relative shrink-0">
+                  <img
+                    src="/images/kalastyle_logo.png"
+                    alt="KalaStyle AI"
+                    className="h-9 w-9 sm:h-11 sm:w-11 object-cover rounded-full ring-2 ring-gold-500/70 shadow-gold group-hover:ring-gold-400 group-hover:scale-105 transition-all duration-300"
+                  />
+                  <div className="absolute inset-0 rounded-full bg-gold-400/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-serif text-base sm:text-xl font-bold gold-text whitespace-nowrap tracking-tight group-hover:brightness-110 transition-all">
+                    KalaStyle AI
+                  </span>
+                  <span className="text-[8px] sm:text-[9.5px] text-gray-400 tracking-wider uppercase font-semibold whitespace-nowrap hidden xs:block">
+                    Artisan Marketplace
+                  </span>
+                </div>
+              </Link>
+            </div>
 
-            {/* 2. Center: Clean Category Navigation Links (NO symbols/emojis, perfectly aligned) */}
-            <nav className="hidden xl:flex items-center gap-3.5 2xl:gap-5 min-w-0">
-              {/* Primary 5 categories displayed on xl and up */}
-              {NAV_CATEGORIES.slice(0, 5).map((item) => (
+            {/* 2. Center: Clean Category Navigation Links (Perfect mathematical centering on desktop) */}
+            <nav className="hidden lg:flex items-center justify-center shrink-0 gap-3.5 xl:gap-5 min-w-0">
+              {/* Primary 4 categories displayed on lg, xl, and 2xl */}
+              {NAV_CATEGORIES.slice(0, 4).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className={`text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                  className={`text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
                     isCurrentCategory(item.href)
-                      ? 'text-gold-400 border-b-2 border-gold-500 pb-1'
-                      : 'text-gray-300 hover:text-gold-400'
+                      ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
+                      : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
                   }`}
                 >
                   {item.label}
                 </Link>
               ))}
 
-              {/* Remaining categories shown inline on 2xl+ */}
-              {NAV_CATEGORIES.slice(5).map((item) => (
+              {/* Categories 5 and 6 shown inline on xl+ */}
+              {NAV_CATEGORIES.slice(4, 6).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className={`hidden 2xl:inline-block text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                  className={`hidden xl:inline-block text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
                     isCurrentCategory(item.href)
-                      ? 'text-gold-400 border-b-2 border-gold-500 pb-1'
-                      : 'text-gray-300 hover:text-gold-400'
+                      ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
+                      : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
                   }`}
                 >
                   {item.label}
                 </Link>
               ))}
 
-              {/* Clean "More" dropdown for xl screens (hidden on 2xl where all 8 are visible inline) */}
+              {/* Categories 7 and 8 shown inline on 2xl+ */}
+              {NAV_CATEGORIES.slice(6).map((item) => (
+                <Link
+                  key={item.label}
+                  to={item.href}
+                  className={`hidden 2xl:inline-block text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
+                    isCurrentCategory(item.href)
+                      ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
+                      : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+
+              {/* Elegant 'More' dropdown for lg and xl screens (hidden on 2xl where all 8 are visible inline) */}
               <div className="relative group/more 2xl:hidden">
                 <button
                   type="button"
                   className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap py-1 ${
-                    NAV_CATEGORIES.slice(5).some((c) => isCurrentCategory(c.href))
-                      ? 'text-gold-400 border-b-2 border-gold-500 pb-1'
+                    NAV_CATEGORIES.slice(4).some((c) => isCurrentCategory(c.href))
+                      ? 'text-gold-400 font-bold'
                       : 'text-gray-300 hover:text-gold-400'
                   }`}
                 >
                   <span>More</span>
-                  <HiChevronDown className="w-3.5 h-3.5 transition-transform group-hover/more:rotate-180" />
+                  <HiChevronDown className="w-3.5 h-3.5 transition-transform group-hover/more:rotate-180 text-gold-400/80" />
                 </button>
-                <div className="absolute left-0 top-full mt-2 w-48 bg-dark-900 border border-dark-600 rounded-xl shadow-2xl p-1.5 opacity-0 invisible group-hover/more:opacity-100 group-hover/more:visible transition-all duration-200 z-50">
-                  {NAV_CATEGORIES.slice(5).map((item) => (
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-52 bg-dark-900/98 backdrop-blur-md border border-dark-600 rounded-2xl shadow-2xl p-2 opacity-0 invisible group-hover/more:opacity-100 group-hover/more:visible transition-all duration-200 z-50">
+                  <div className="text-[10px] font-bold text-gold-400/80 uppercase tracking-widest px-3 py-1 mb-1 border-b border-dark-750">
+                    More Categories
+                  </div>
+                  {/* On lg: items 4..8. On xl: items 6..8 */}
+                  {NAV_CATEGORIES.slice(4).map((item, idx) => (
                     <Link
                       key={item.label}
                       to={item.href}
-                      className={`block px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      className={`block px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+                        idx < 2 ? 'xl:hidden ' : ''
+                      }${
                         isCurrentCategory(item.href)
                           ? 'bg-gold-500/20 text-gold-400 font-semibold'
                           : 'text-gray-300 hover:bg-dark-800 hover:text-white'
@@ -207,7 +232,7 @@ export default function Navbar() {
             </nav>
 
             {/* 3. Right: Search, Wishlist, Cart & Account */}
-            <div className="flex items-center gap-1.5 sm:gap-2.5 lg:gap-3 shrink-0">
+            <div className="flex items-center justify-end flex-1 min-w-0 gap-1.5 sm:gap-2.5 lg:gap-3 shrink-0">
 
               {/* Search Toggle Button */}
               <button
@@ -392,7 +417,7 @@ export default function Navbar() {
               {/* Mobile Drawer Button */}
               <button
                 onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
-                className="xl:hidden p-2 text-gray-300 hover:text-white hover:bg-dark-800 rounded-full transition-colors shrink-0"
+                className="lg:hidden p-2 text-gray-300 hover:text-white hover:bg-dark-800 rounded-full transition-colors shrink-0"
                 aria-label="Toggle navigation menu"
               >
                 {mobileDrawerOpen ? <HiX className="w-6 h-6 text-gold-400" /> : <HiMenu className="w-6 h-6" />}
@@ -454,14 +479,14 @@ export default function Navbar() {
 
         {/* Mobile Slide-out Drawer */}
         <div
-          className={`fixed inset-0 z-50 bg-black/75 backdrop-blur-sm transition-opacity duration-300 xl:hidden ${
+          className={`fixed inset-0 z-50 bg-black/75 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
             mobileDrawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           onClick={() => setMobileDrawerOpen(false)}
         />
 
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] h-screen bg-dark-950 border-r border-dark-700 flex flex-col transform transition-transform duration-300 ease-in-out xl:hidden ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] h-screen bg-dark-950 border-r border-dark-700 flex flex-col transform transition-transform duration-300 ease-in-out lg:hidden ${
             mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
