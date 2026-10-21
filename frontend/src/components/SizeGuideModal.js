@@ -246,16 +246,16 @@ export default function SizeGuideModal({ isOpen, onClose, productCategory }) {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-hidden">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="bg-dark-800 border border-dark-600 rounded-2xl shadow-gold-lg w-full max-w-4xl overflow-hidden my-8"
+          className="bg-dark-800 border border-dark-600 rounded-2xl shadow-gold-lg w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/50">
+          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/50 shrink-0">
             <div>
               <h2 className="text-2xl font-serif font-bold text-white tracking-wide">
                 Size Guide & <span className="text-gold-400">Fit Finder</span>
@@ -274,7 +274,7 @@ export default function SizeGuideModal({ isOpen, onClose, productCategory }) {
           </div>
 
           {/* Tabs Navigation */}
-          <div className="flex overflow-x-auto border-b border-dark-600 bg-dark-900/30 hide-scrollbar scroll-smooth">
+          <div className="flex overflow-x-auto border-b border-dark-600 bg-dark-900/30 hide-scrollbar scroll-smooth shrink-0">
             {Object.keys(SIZING_DATA).map((tab) => (
               <button
                 key={tab}
@@ -291,7 +291,7 @@ export default function SizeGuideModal({ isOpen, onClose, productCategory }) {
           </div>
 
           {/* Main Content Area */}
-          <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 max-h-[70vh] overflow-y-auto">
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             
             {/* Left Column: Sizing Table & Unit Selector */}
             <div className="lg:col-span-7 space-y-6">
@@ -521,7 +521,7 @@ export default function SizeGuideModal({ isOpen, onClose, productCategory }) {
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 p-6 border-t border-dark-600 bg-dark-900/50">
+          <div className="flex justify-end gap-3 p-6 border-t border-dark-600 bg-dark-900/50 shrink-0">
             <button
               onClick={onClose}
               className="btn-outline px-6 py-2.5 text-sm"

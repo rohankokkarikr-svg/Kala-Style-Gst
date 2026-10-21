@@ -166,7 +166,7 @@ export default function SendMessageModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1 min-h-0 custom-scrollbar">
           {/* Recipient Selection */}
           {!initialRecipientId && (
             <div className="space-y-1.5">

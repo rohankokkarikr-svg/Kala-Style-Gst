@@ -506,9 +506,9 @@ export default function Categories() {
 
       {/* 🎬 MODAL 1: Default Storefront Hero Banner Video (All Categories) */}
       {allBannerModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <form onSubmit={handleSaveAllBanner} className="card max-w-xl w-full p-6 space-y-5 border border-gold-500/40 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-dark-600 pb-3">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden">
+          <form onSubmit={handleSaveAllBanner} className="card max-w-xl w-full max-h-[90vh] flex flex-col p-0 border border-gold-500/40 shadow-2xl overflow-hidden">
+            <div className="flex justify-between items-center border-b border-dark-600 p-6 pb-4 shrink-0">
               <div className="flex items-center gap-2">
                 <HiFilm className="w-5 h-5 text-gold-400" />
                 <h3 className="font-serif font-bold text-white text-lg">
@@ -524,7 +524,7 @@ export default function Categories() {
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="space-y-4 text-xs flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar">
               {/* Video Player Preview in Modal */}
               {allBannerData.videoUrl && (
                 <div className="space-y-1.5">
@@ -636,7 +636,7 @@ export default function Categories() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-dark-600">
+            <div className="flex justify-end gap-2 p-4 sm:px-6 border-t border-dark-600 bg-dark-900/40 shrink-0">
               <button
                 type="button"
                 onClick={() => setAllBannerModalOpen(false)}
@@ -658,9 +658,9 @@ export default function Categories() {
 
       {/* 🛠️ MODAL 2: Add / Edit Specific Category Modal (with Video & Image Upload) */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <form onSubmit={handleSaveCategory} className="card max-w-lg w-full p-6 space-y-4 border border-dark-500 shadow-2xl my-8">
-            <div className="flex justify-between items-center border-b border-dark-600 pb-3">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden">
+          <form onSubmit={handleSaveCategory} className="card max-w-lg w-full max-h-[90vh] flex flex-col p-0 border border-dark-500 shadow-2xl overflow-hidden">
+            <div className="flex justify-between items-center border-b border-dark-600 p-6 pb-4 shrink-0">
               <div className="flex items-center gap-2">
                 <HiFolder className="w-5 h-5 text-gold-400" />
                 <h3 className="font-serif font-bold text-white text-base">
@@ -672,7 +672,7 @@ export default function Categories() {
               </button>
             </div>
 
-            <div className="space-y-3.5 text-xs max-h-[70vh] overflow-y-auto pr-1">
+            <div className="space-y-3.5 text-xs flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar">
               <div>
                 <label className="block text-gray-300 font-semibold mb-1">Category Name *</label>
                 <input
@@ -852,7 +852,7 @@ export default function Categories() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-dark-600">
+            <div className="flex justify-end gap-2 p-4 sm:px-6 border-t border-dark-600 bg-dark-900/40 shrink-0">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}

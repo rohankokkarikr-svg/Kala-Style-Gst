@@ -477,11 +477,11 @@ export default function Navbar() {
         />
 
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] h-screen bg-dark-950 border-r border-dark-700 flex flex-col transform transition-transform duration-300 ease-in-out lg:hidden ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] h-full bg-dark-950 border-r border-dark-700 flex flex-col shrink-0 overflow-hidden transform transition-transform duration-300 ease-in-out lg:hidden ${
             mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="flex items-center justify-between p-4 border-b border-dark-700 bg-dark-900">
+          <div className="flex items-center justify-between p-4 border-b border-dark-700 bg-dark-900 shrink-0">
             <Link to="/" onClick={() => setMobileDrawerOpen(false)} className="flex items-center gap-2.5">
               <img
                 src="/images/kalastyle_logo.png"
@@ -499,7 +499,7 @@ export default function Navbar() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1 custom-scrollbar">
             <div className="text-[10px] font-bold text-gold-400 uppercase tracking-widest px-3 py-1 mb-1">
               Handicrafts Categories
             </div>
@@ -571,7 +571,7 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="p-4 border-t border-dark-700 bg-dark-900">
+          <div className="p-4 border-t border-dark-700 bg-dark-900 shrink-0">
             {user ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2.5 px-1">

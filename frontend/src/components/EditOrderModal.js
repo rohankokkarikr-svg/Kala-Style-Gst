@@ -316,15 +316,15 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-hidden">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-dark-800 rounded-3xl border border-dark-600 shadow-2xl w-full max-w-xl overflow-hidden my-6 text-white"
+          className="bg-dark-800 rounded-3xl border border-dark-600 shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden text-white"
         >
           {/* Header */}
-          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/80">
+          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/80 shrink-0">
             <div>
               <div className="flex items-center gap-2">
                 <HiPencilAlt className="w-5 h-5 text-gold-400" />
@@ -352,7 +352,7 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
 
           {/* Real-time Non-Editable Alert if order is in progress */}
           {!isEditable && (
-            <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-3 flex items-center gap-2 text-xs text-red-300">
+            <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-3 flex items-center gap-2 text-xs text-red-300 shrink-0">
               <HiExclamation className="w-4 h-4 shrink-0 text-red-400" />
               <span>
                 {isExpired
@@ -363,7 +363,8 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
           )}
 
           {/* Form Body */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="p-6 space-y-5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             
             {/* 1. Item Size Modifications */}
             {currentOrder.items && currentOrder.items.length > 0 && (
@@ -512,8 +513,10 @@ export default function EditOrderModal({ isOpen, onClose, order, onOrderUpdated 
               )}
             </div>
 
+            </div>
+
             {/* Footer Buttons */}
-            <div className="pt-4 border-t border-dark-600 flex items-center justify-between gap-3">
+            <div className="p-4 sm:px-6 border-t border-dark-600 bg-dark-900/80 flex items-center justify-between gap-3 shrink-0">
               <div className="text-left">
                 <span className="text-[10px] uppercase font-bold text-gray-400 block">Total Amount</span>
                 <span className="text-lg font-bold text-gold-400 font-mono">₹{orderTotal.toLocaleString()}</span>

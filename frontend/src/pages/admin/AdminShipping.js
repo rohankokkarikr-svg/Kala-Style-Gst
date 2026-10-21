@@ -571,9 +571,9 @@ export default function AdminShipping() {
 
       {/* ── MODAL: Live Tracking Timeline ── */}
       {trackingModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-dark-700 pb-3">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col p-0 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-dark-700 p-6 pb-4 shrink-0">
               <div className="flex items-center gap-2">
                 <HiTruck className="w-6 h-6 text-gold-400" />
                 <h3 className="text-base font-serif font-bold text-white">Live Courier Tracking</h3>
@@ -586,80 +586,82 @@ export default function AdminShipping() {
               </button>
             </div>
 
-            {trackingLoading ? (
-              <div className="py-12 flex flex-col items-center justify-center gap-3">
-                <div className="w-8 h-8 border-2 border-gold-500/20 border-t-gold-500 rounded-full animate-spin" />
-                <span className="text-xs text-gray-400">Querying courier partner scans...</span>
-              </div>
-            ) : activeTracking ? (
-              <div className="space-y-4">
-                <div className="bg-dark-900/70 border border-dark-700 p-3.5 rounded-xl space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Courier Partner</span>
-                    <span className="font-semibold text-white">{activeTracking.courier_name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">AWB Tracking Code</span>
-                    <span className="font-mono text-xs text-gold-400 font-bold">{activeTracking.awb_code}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Current Milestone</span>
-                    <span className="text-xs font-semibold text-emerald-400">
-                      {activeTracking.normalized_status?.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  {activeTracking.estimated_delivery_date && (
+            <div className="p-6 flex-1 min-h-0 overflow-y-auto space-y-4 custom-scrollbar">
+              {trackingLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3">
+                  <div className="w-8 h-8 border-2 border-gold-500/20 border-t-gold-500 rounded-full animate-spin" />
+                  <span className="text-xs text-gray-400">Querying courier partner scans...</span>
+                </div>
+              ) : activeTracking ? (
+                <div className="space-y-4">
+                  <div className="bg-dark-900/70 border border-dark-700 p-3.5 rounded-xl space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-400">Estimated Delivery</span>
-                      <span className="text-xs text-gray-200">{activeTracking.estimated_delivery_date}</span>
+                      <span className="text-xs text-gray-400">Courier Partner</span>
+                      <span className="font-semibold text-white">{activeTracking.courier_name}</span>
                     </div>
-                  )}
-                </div>
-
-                {/* Scans Timeline */}
-                <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
-                  <span className="text-xs font-semibold text-gray-300 block">Milestones & Scans</span>
-                  {activeTracking.scans && activeTracking.scans.length > 0 ? (
-                    activeTracking.scans.map((scan, sIdx) => (
-                      <div key={sIdx} className="flex items-start gap-3 text-xs">
-                        <div className="w-2.5 h-2.5 rounded-full bg-gold-500 mt-1.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-white font-medium">{scan.activity}</p>
-                          <p className="text-gray-400 text-[11px] mt-0.5">
-                            {scan.location} • {new Date(scan.date).toLocaleString()}
-                          </p>
-                        </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">AWB Tracking Code</span>
+                      <span className="font-mono text-xs text-gold-400 font-bold">{activeTracking.awb_code}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Current Milestone</span>
+                      <span className="text-xs font-semibold text-emerald-400">
+                        {activeTracking.normalized_status?.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {activeTracking.estimated_delivery_date && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Estimated Delivery</span>
+                        <span className="text-xs text-gray-200">{activeTracking.estimated_delivery_date}</span>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-gray-500 italic py-2">
-                      Package is prepared and waiting for the courier partner scan.
-                    </p>
+                    )}
+                  </div>
+
+                  {/* Scans Timeline */}
+                  <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+                    <span className="text-xs font-semibold text-gray-300 block">Milestones & Scans</span>
+                    {activeTracking.scans && activeTracking.scans.length > 0 ? (
+                      activeTracking.scans.map((scan, sIdx) => (
+                        <div key={sIdx} className="flex items-start gap-3 text-xs">
+                          <div className="w-2.5 h-2.5 rounded-full bg-gold-500 mt-1.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-white font-medium">{scan.activity}</p>
+                            <p className="text-gray-400 text-[11px] mt-0.5">
+                              {scan.location} • {new Date(scan.date).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-500 italic py-2">
+                        Package is prepared and waiting for the courier partner scan.
+                      </p>
+                    )}
+                  </div>
+
+                  {activeTracking.tracking_url && (
+                    <a
+                      href={activeTracking.tracking_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 bg-gold-500 hover:bg-gold-400 text-dark-900 font-semibold rounded-xl flex items-center justify-center gap-2 text-xs transition-colors shadow-md"
+                    >
+                      <span>Track on Official Courier Portal</span>
+                      <HiExternalLink className="w-4 h-4" />
+                    </a>
                   )}
                 </div>
-
-                {activeTracking.tracking_url && (
-                  <a
-                    href={activeTracking.tracking_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 bg-gold-500 hover:bg-gold-400 text-dark-900 font-semibold rounded-xl flex items-center justify-center gap-2 text-xs transition-colors shadow-md"
-                  >
-                    <span>Track on Official Courier Portal</span>
-                    <HiExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
       )}
 
       {/* ── MODAL: Create Shipment ── */}
       {createModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-dark-700 pb-3">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col p-0 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-dark-700 p-6 pb-4 shrink-0">
               <div className="flex items-center gap-2">
                 <HiPlusCircle className="w-6 h-6 text-gold-400" />
                 <h3 className="text-base font-serif font-bold text-white">Dispatch Order via Shiprocket</h3>
@@ -672,37 +674,39 @@ export default function AdminShipping() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateShipmentSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-                  Select Confirmed Customer Order
-                </label>
-                {eligibleOrders.length === 0 ? (
-                  <p className="text-xs text-amber-400/90 py-2">
-                    No pending orders requiring new shipments found.
-                  </p>
-                ) : (
-                  <select
-                    value={selectedOrderId}
-                    onChange={(e) => setSelectedOrderId(e.target.value)}
-                    className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-gold-500"
-                  >
-                    {eligibleOrders.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.order_number || o.id.slice(0, 8)} — {o.shipping_name || o.shipping_full_name || 'Customer'} (₹{o.total_amount}, {o.payment_method?.toUpperCase()})
-                      </option>
-                    ))}
-                  </select>
-                )}
+            <form onSubmit={handleCreateShipmentSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-6 space-y-4 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                    Select Confirmed Customer Order
+                  </label>
+                  {eligibleOrders.length === 0 ? (
+                    <p className="text-xs text-amber-400/90 py-2">
+                      No pending orders requiring new shipments found.
+                    </p>
+                  ) : (
+                    <select
+                      value={selectedOrderId}
+                      onChange={(e) => setSelectedOrderId(e.target.value)}
+                      className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-gold-500"
+                    >
+                      {eligibleOrders.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.order_number || o.id.slice(0, 8)} — {o.shipping_name || o.shipping_full_name || 'Customer'} (₹{o.total_amount}, {o.payment_method?.toUpperCase()})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700 text-xs text-gray-400 space-y-1">
+                  <p>📦 <strong>Package Defaults:</strong> 0.5 kg • 20x20x10 cm</p>
+                  <p>📍 <strong>Pickup:</strong> Artisan workshop or platform default</p>
+                  <p>🛡️ <strong>Safety:</strong> Prepaid orders require confirmed payment</p>
+                </div>
               </div>
 
-              <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700 text-xs text-gray-400 space-y-1">
-                <p>📦 <strong>Package Defaults:</strong> 0.5 kg • 20x20x10 cm</p>
-                <p>📍 <strong>Pickup:</strong> Artisan workshop or platform default</p>
-                <p>🛡️ <strong>Safety:</strong> Prepaid orders require confirmed payment</p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 p-4 sm:px-6 border-t border-dark-700 bg-dark-900/60 shrink-0">
                 <button
                   type="button"
                   onClick={() => setCreateModalOpen(false)}
@@ -725,9 +729,9 @@ export default function AdminShipping() {
 
       {/* ── DRAWER / MODAL: Serviceability & Rates Calculator ── */}
       {calcDrawerOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-dark-700 pb-3">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div className="bg-dark-800 border border-dark-600 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col p-0 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-dark-700 p-6 pb-4 shrink-0">
               <div className="flex items-center gap-2">
                 <HiSearch className="w-6 h-6 text-gold-400" />
                 <h3 className="text-base font-serif font-bold text-white">Courier Rate & PIN Checker</h3>
@@ -740,94 +744,96 @@ export default function AdminShipping() {
               </button>
             </div>
 
-            <form onSubmit={handleCalculateServiceability} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Pickup PIN</label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={calcPickupPin}
-                    onChange={(e) => setCalcPickupPin(e.target.value)}
-                    className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Delivery PIN *</label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={calcDeliveryPin}
-                    onChange={(e) => setCalcDeliveryPin(e.target.value)}
-                    placeholder="e.g. 110001"
-                    className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Weight (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={calcWeight}
-                    onChange={(e) => setCalcWeight(e.target.value)}
-                    className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
-                  />
-                </div>
-                <div className="flex items-center pt-5">
-                  <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+            <div className="p-6 flex-1 min-h-0 overflow-y-auto space-y-4 custom-scrollbar">
+              <form onSubmit={handleCalculateServiceability} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Pickup PIN</label>
                     <input
-                      type="checkbox"
-                      checked={calcCod}
-                      onChange={(e) => setCalcCod(e.target.checked)}
-                      className="rounded bg-dark-900 border-dark-600 text-gold-500"
+                      type="text"
+                      maxLength={6}
+                      value={calcPickupPin}
+                      onChange={(e) => setCalcPickupPin(e.target.value)}
+                      className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
                     />
-                    <span>Cash on Delivery (COD)</span>
-                  </label>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={calcLoading}
-                className="w-full py-2.5 bg-gold-500 hover:bg-gold-400 text-dark-900 font-bold rounded-xl text-xs transition-colors shadow-md"
-              >
-                {calcLoading ? 'Calculating Rates...' : 'Calculate Courier Rates'}
-              </button>
-            </form>
-
-            {calcResult && (
-              <div className="mt-4 pt-3 border-t border-dark-700 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">Serviceable Couriers:</span>
-                  <span className="font-semibold text-emerald-400">
-                    {calcResult.serviceable ? `✓ ${calcResult.available_couriers_count} Couriers Available` : '✗ Not Serviceable'}
-                  </span>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Delivery PIN *</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={calcDeliveryPin}
+                      onChange={(e) => setCalcDeliveryPin(e.target.value)}
+                      placeholder="e.g. 110001"
+                      className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
+                    />
+                  </div>
                 </div>
 
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                  {calcResult.couriers?.map((c, cIdx) => (
-                    <div
-                      key={cIdx}
-                      className="bg-dark-900/80 border border-dark-700 rounded-xl p-2.5 flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <p className="font-semibold text-white">{c.courier_name}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">
-                          Est: {c.estimated_delivery_days} • Rating: ★ {c.rating}
-                        </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={calcWeight}
+                      onChange={(e) => setCalcWeight(e.target.value)}
+                      className="w-full bg-dark-900 border border-dark-600 rounded-xl px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={calcCod}
+                        onChange={(e) => setCalcCod(e.target.checked)}
+                        className="rounded bg-dark-900 border-dark-600 text-gold-500"
+                      />
+                      <span>Cash on Delivery (COD)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={calcLoading}
+                  className="w-full py-2.5 bg-gold-500 hover:bg-gold-400 text-dark-900 font-bold rounded-xl text-xs transition-colors shadow-md"
+                >
+                  {calcLoading ? 'Calculating Rates...' : 'Calculate Courier Rates'}
+                </button>
+              </form>
+
+              {calcResult && (
+                <div className="mt-4 pt-3 border-t border-dark-700 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Serviceable Couriers:</span>
+                    <span className="font-semibold text-emerald-400">
+                      {calcResult.serviceable ? `✓ ${calcResult.available_couriers_count} Couriers Available` : '✗ Not Serviceable'}
+                    </span>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                    {calcResult.couriers?.map((c, cIdx) => (
+                      <div
+                        key={cIdx}
+                        className="bg-dark-900/80 border border-dark-700 rounded-xl p-2.5 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <p className="font-semibold text-white">{c.courier_name}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            Est: {c.estimated_delivery_days} • Rating: ★ {c.rating}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-gold-400 text-sm">₹{c.rate}</span>
+                          <p className="text-[10px] text-gray-500">{c.cod_available ? 'COD Available' : 'Prepaid Only'}</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="font-bold text-gold-400 text-sm">₹{c.rate}</span>
-                        <p className="text-[10px] text-gray-500">{c.cod_available ? 'COD Available' : 'Prepaid Only'}</p>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}

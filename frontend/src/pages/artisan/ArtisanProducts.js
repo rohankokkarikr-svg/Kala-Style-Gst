@@ -503,8 +503,8 @@ export default function ArtisanProducts() {
       {/* Artisan Product & Stock Edit Modal */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)" }}>
-          <div className="relative w-full max-w-lg bg-dark-800 border border-dark-600 rounded-2xl shadow-2xl p-6 text-white max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-dark-700">
+          <div className="relative w-full max-w-lg bg-dark-800 border border-dark-600 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden text-white">
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-dark-700 shrink-0">
               <div>
                 <h3 className="text-lg font-serif font-bold text-gold-400">Edit Product & Stock</h3>
                 <p className="text-xs text-gray-400 mt-0.5">Manage inventory quantity and product details</p>
@@ -518,7 +518,8 @@ export default function ArtisanProducts() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4 mt-4">
+            <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="space-y-4 p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">Product Name</label>
                 <input
@@ -632,8 +633,9 @@ export default function ArtisanProducts() {
                   )}
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-700">
+            <div className="flex items-center justify-end gap-3 p-4 sm:px-6 border-t border-dark-700 bg-dark-900/60 shrink-0">
                 <button
                   type="button"
                   onClick={() => setEditingProduct(null)}

@@ -66,15 +66,15 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-hidden">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-dark-800 rounded-2xl border border-dark-600 shadow-2xl w-full max-w-lg overflow-hidden"
+          className="bg-dark-800 rounded-2xl border border-dark-600 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/60">
+          <div className="flex justify-between items-center p-6 border-b border-dark-600 bg-dark-900/60 shrink-0">
             <div>
               <h2 className="text-xl font-serif font-bold text-white">Write a Review</h2>
               <p className="text-xs text-gold-400 mt-1 truncate max-w-sm">{targetProductName}</p>
@@ -85,7 +85,8 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
           </div>
 
           {/* Body */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="p-6 space-y-5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             {/* Rating Stars */}
             <div className="flex flex-col items-center py-2">
               <p className="text-xs text-gray-400 uppercase tracking-wider mb-2 font-semibold">Your Overall Rating</p>
@@ -148,8 +149,10 @@ export default function ReviewModal({ isOpen, onClose, product, productName, onR
               />
             </div>
 
+            </div>
+
             {/* Footer Buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-3 p-4 sm:px-6 border-t border-dark-600 bg-dark-900/60 shrink-0">
               <button 
                 type="button" 
                 onClick={onClose} 

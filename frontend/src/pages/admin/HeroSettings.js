@@ -353,9 +353,9 @@ export default function HeroSettings() {
 
       {/* Edit / Create Slide Modal */}
       {editingSlide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-          <div className="bg-dark-800 rounded-2xl shadow-2xl border border-dark-600 w-full max-w-2xl my-auto overflow-hidden">
-            <div className="p-6 border-b border-dark-600 flex justify-between items-center bg-dark-750">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-hidden">
+          <div className="bg-dark-800 rounded-2xl shadow-2xl border border-dark-600 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-6 border-b border-dark-600 flex justify-between items-center bg-dark-750 shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-white font-serif">
                   {editingSlide.isNew ? '✨ Create New Hero Slide' : '✏️ Edit Hero Slide & Banner'}
@@ -373,7 +373,8 @@ export default function HeroSettings() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-5">
+            <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-6 space-y-5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 
                 {/* ── Slide Banner Image Uploader ── */}
@@ -589,8 +590,10 @@ export default function HeroSettings() {
                 </div>
               </div>
 
+              </div>
+
               {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-6 border-t border-dark-600">
+              <div className="flex justify-end gap-3 p-4 sm:px-6 border-t border-dark-600 bg-dark-750 shrink-0">
                 <button
                   type="button"
                   onClick={() => setEditingSlide(null)}

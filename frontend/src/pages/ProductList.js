@@ -631,13 +631,13 @@ export default function ProductList() {
           {/* Filter Sidebar (Desktop Sticky + Mobile Drawer) */}
           <aside
             className={`
-              fixed inset-0 z-50 bg-dark-950/95 backdrop-blur-md p-6 overflow-y-auto transform transition-transform duration-300
-              lg:sticky lg:top-24 lg:z-10 lg:translate-x-0 lg:bg-dark-800 lg:p-6 lg:rounded-2xl lg:border lg:border-dark-700 lg:w-72 lg:block
+              fixed inset-0 z-50 bg-dark-950/95 backdrop-blur-md p-6 flex flex-col overflow-hidden transform transition-transform duration-300
+              lg:sticky lg:top-24 lg:z-10 lg:translate-x-0 lg:bg-dark-800 lg:p-6 lg:rounded-2xl lg:border lg:border-dark-700 lg:w-72 lg:max-h-[calc(100vh-7rem)] lg:flex lg:flex-col
               ${filterOpen ? 'translate-x-0' : '-translate-x-full'}
             `}
           >
             {/* Mobile Header */}
-            <div className="flex justify-between items-center lg:hidden pb-4 mb-6 border-b border-dark-700">
+            <div className="flex justify-between items-center lg:hidden pb-4 mb-4 border-b border-dark-700 shrink-0">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <HiFilter className="text-gold-400" /> Filter & Refine
               </h2>
@@ -649,7 +649,7 @@ export default function ProductList() {
               </button>
             </div>
 
-            <div className="space-y-6 text-sm">
+            <div className="space-y-6 text-sm flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
               {/* 1. Category Filter */}
               <div>
                 <h3 className="font-serif font-bold text-white uppercase text-xs tracking-wider mb-3 text-gold-400">
