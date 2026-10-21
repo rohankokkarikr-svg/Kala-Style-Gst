@@ -66,11 +66,11 @@ export default function ArtisanLayout() {
   const isActive = (path) => path === '/artisan' ? location.pathname === '/artisan' : location.pathname.startsWith(path);
 
   return (
-    <div className="min-h-screen bg-dark-900 flex">
+    <div className="h-screen w-full overflow-hidden bg-dark-900 flex text-gray-100">
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
-      <aside className={'fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 transform transition-transform duration-300 ease-in-out ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0')}>
-        <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-dark-600 flex justify-between items-center">
+      <aside className={'fixed md:static inset-y-0 left-0 z-50 h-full w-64 bg-dark-800 border-r border-dark-600 transform transition-transform duration-300 ease-in-out shrink-0 overflow-hidden ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0')}>
+        <div className="flex flex-col h-full overflow-hidden">
+          <div className="p-6 border-b border-dark-600 flex justify-between items-center shrink-0">
             <Link to="/" className="flex items-center gap-3">
               <img
                 src="/images/kalastyle_logo.png"
@@ -85,7 +85,7 @@ export default function ArtisanLayout() {
             <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400"><HiX className="w-6 h-6" /></button>
           </div>
           {user && (
-            <div className="px-4 py-3 border-b border-dark-600 bg-dark-700/50">
+            <div className="px-4 py-3 border-b border-dark-600 bg-dark-700/50 shrink-0">
               <p className="text-white font-semibold text-sm truncate">{user.name}</p>
               <p className="text-gold-400 text-xs">{profile?.store_name || user.artisan_profile?.store_name || 'Artisan'}</p>
               <div className="flex items-center gap-1.5 flex-wrap mt-1">
@@ -108,7 +108,7 @@ export default function ArtisanLayout() {
               )}
             </div>
           )}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 min-h-0 p-4 space-y-1 overflow-y-auto">
             {links.map((l) => {
               const active = isActive(l.path);
               return (
@@ -121,15 +121,15 @@ export default function ArtisanLayout() {
               );
             })}
           </nav>
-          <div className="p-4 border-t border-dark-600 space-y-2">
+          <div className="p-4 border-t border-dark-600 space-y-2 shrink-0">
             <Link to="/products" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 transition-colors">← Back to Shop</Link>
-            <button onClick={logout} className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-red-400 hover:bg-red-400/10 transition-colors">
+            <button onClick={logout} className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer">
               <HiLogout className="w-5 h-5 shrink-0" /> Logout
             </button>
           </div>
         </div>
       </aside>
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <header className="h-16 border-b border-dark-600 bg-dark-800/90 backdrop-blur-md flex items-center justify-between px-4 md:px-8 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-400 p-2"><HiMenu className="w-6 h-6" /></button>
@@ -152,7 +152,7 @@ export default function ArtisanLayout() {
             </Link>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-4 md:p-8"><Outlet /></div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8"><Outlet /></div>
       </main>
     </div>
   );
