@@ -68,6 +68,7 @@ export default function Login() {
   const [otpNotFound, setOtpNotFound] = useState(false);
 
   const otpInputsRef = useRef([]);
+  const hasRedirectedRef = useRef(false);
 
   // Check if OAuth callback is actively in-flight or in URL
   const hasOAuthParams = typeof window !== 'undefined' && (
@@ -81,7 +82,7 @@ export default function Login() {
 
   // Auto-redirect when user session is active
   useEffect(() => {
-    if (user) {
+    if (user && !hasRedirectedRef.current) {
       handleRedirectAfterAuth(user);
     }
   }, [user]);
@@ -96,9 +97,9 @@ export default function Login() {
       if (errorDesc) {
         sessionStorage.removeItem('oauth_in_flight');
         if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
-          toast.error('Google sign-in was cancelled.');
+          toast.error('Google sign-in was cancelled.', { id: 'oauth-cancelled' });
         } else {
-          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')), { id: 'oauth-error' });
         }
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -139,6 +140,9 @@ export default function Login() {
 
   // Safe redirect helper after authentication
   const handleRedirectAfterAuth = (authenticatedUser) => {
+    if (hasRedirectedRef.current) return;
+    hasRedirectedRef.current = true;
+
     const role = normalizeRole(authenticatedUser?.role);
     const storedReturnUrl = sessionStorage.getItem('auth_return_url');
     const authIntent = sessionStorage.getItem('auth_intent');
@@ -151,7 +155,7 @@ export default function Login() {
 
     // If account has admin role in Supabase database, grant admin dashboard access automatically
     if (role === 'admin') {
-      toast.success('Authenticated as Administrator 🛡️');
+      toast.success('Authenticated as Administrator 🛡️', { id: 'admin-auth-toast' });
       // For Admin: ensure destination is /admin unless they explicitly came for an /admin subroute (e.g. /admin/orders)
       // An admin logging in should NEVER be bounced into /artisan!
       let adminTarget = '/admin';

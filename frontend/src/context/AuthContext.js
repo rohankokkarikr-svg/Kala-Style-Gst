@@ -473,7 +473,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`);
+      toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`, { id: 'auth-welcome-toast' });
       return normalizedUser;
     } catch (err) {
       const errorData = err.response?.data;
@@ -509,7 +509,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      toast.success('Account created! Welcome to KalaStyle AI ✨');
+      toast.success('Account created! Welcome to KalaStyle AI ✨', { id: 'signup-welcome-toast' });
       return normalizedUser;
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message || 'Failed to create account';

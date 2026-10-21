@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, toast, useToasterStore, resolveValue } from 'react-hot-toast';
 import { useSettings } from './context/SettingsContext';
 import { useAuth } from './context/AuthContext';
 import Maintenance from './pages/Maintenance';
@@ -19,6 +19,28 @@ import Navbar from './components/Navbar';
 import { PrivateRoute, AdminRoute, ArtisanRoute } from './components/ProtectedRoute';
 import SpinWheelPopup from './components/SpinWheelPopup';
 import Home from './pages/Home';
+
+// Global toast deduplicator to guarantee no duplicate notifications appear on any page
+function ToastDeduplicator() {
+  const { toasts } = useToasterStore();
+
+  React.useEffect(() => {
+    const seen = new Set();
+    toasts
+      .filter((t) => t.visible)
+      .forEach((t) => {
+        const text = typeof t.message === 'function' ? resolveValue(t.message, t) : t.message;
+        const key = typeof text === 'string' ? text.trim() : (t.id || '');
+        if (key && seen.has(key)) {
+          toast.dismiss(t.id);
+        } else if (key) {
+          seen.add(key);
+        }
+      });
+  }, [toasts]);
+
+  return null;
+}
 
 // Lazy-loaded Public Pages for ultra-fast bundle & instant loading
 const Login = lazy(() => import('./pages/Login'));
@@ -127,6 +149,7 @@ function App() {
                     success: { iconTheme: { primary: '#D4AF37', secondary: '#1a1a1a' } }
                   }}
                 />
+                <ToastDeduplicator />
                 
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
