@@ -284,8 +284,8 @@ export default function Navbar() {
               {/* Notification Center */}
               <NotificationCenter />
 
-              {/* Dedicated Admin Center Button in Navbar Header */}
-              {isAdmin && (
+              {/* Dedicated Admin Center Button — hidden on admin pages since user is already there */}
+              {isAdmin && !location.pathname.startsWith('/admin') && (
                 <Link
                   to="/admin"
                   className="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs font-bold transition-all shadow-gold whitespace-nowrap shrink-0"
