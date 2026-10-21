@@ -123,38 +123,41 @@ export default function Navbar() {
       */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-dark-900/98 backdrop-blur-md border-b border-dark-700/80 shadow-lg shadow-black/40">
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 md:h-20 gap-2 sm:gap-4">
+          <div className="flex items-center h-16 md:h-20 gap-2 sm:gap-3">
             
-            {/* 1. Left: Brand Logo & Title (Aligned with container margin) */}
-            <div className="flex items-center justify-start flex-1 min-w-0">
-              <Link to="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0 group py-1">
+            {/* 1. Left: Brand Logo & Title — fixed width so it never squishes the center */}
+            <div className="flex items-center shrink-0">
+              <Link to="/" className="flex items-center gap-2 sm:gap-2.5 group py-1">
                 <div className="relative shrink-0">
                   <img
                     src="/images/kalastyle_logo.png"
                     alt="KalaStyle AI"
-                    className="h-9 w-9 sm:h-11 sm:w-11 object-cover rounded-full ring-2 ring-gold-500/70 shadow-gold group-hover:ring-gold-400 group-hover:scale-105 transition-all duration-300"
+                    className="h-9 w-9 sm:h-10 sm:w-10 object-cover rounded-full ring-2 ring-gold-500/70 shadow-gold group-hover:ring-gold-400 group-hover:scale-105 transition-all duration-300"
                   />
                   <div className="absolute inset-0 rounded-full bg-gold-400/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 <div className="flex flex-col leading-tight">
-                  <span className="font-serif text-base sm:text-xl font-bold gold-text whitespace-nowrap tracking-tight group-hover:brightness-110 transition-all">
+                  <span className="font-serif text-sm sm:text-base lg:text-lg font-bold gold-text whitespace-nowrap tracking-tight group-hover:brightness-110 transition-all">
                     KalaStyle AI
                   </span>
-                  <span className="text-[8px] sm:text-[9.5px] text-gray-400 tracking-wider uppercase font-semibold whitespace-nowrap hidden xs:block">
+                  <span className="text-[8px] text-gray-400 tracking-wider uppercase font-semibold whitespace-nowrap hidden sm:block">
                     Artisan Marketplace
                   </span>
                 </div>
               </Link>
             </div>
 
-            {/* 2. Center: Clean Category Navigation Links (Perfect mathematical centering on desktop) */}
-            <nav className="hidden lg:flex items-center justify-center shrink-0 gap-3.5 xl:gap-5 min-w-0">
-              {/* Primary 4 categories displayed on lg, xl, and 2xl */}
-              {NAV_CATEGORIES.slice(0, 4).map((item) => (
+            {/* 2. Center: Category Navigation — flex-1 takes remaining space, overflow hidden prevents spill */}
+            <nav className="hidden lg:flex items-center justify-center flex-1 min-w-0 overflow-hidden gap-3 xl:gap-4">
+              {/* lg (1024-1279px): show 3 categories + More */}
+              {/* xl (1280-1535px): show 5 categories + More */}
+              {/* 2xl (1536px+): show all 8 categories inline */}
+
+              {NAV_CATEGORIES.slice(0, 3).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className={`text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
+                  className={`text-[11px] font-semibold uppercase tracking-wide transition-all whitespace-nowrap py-1 relative shrink-0 ${
                     isCurrentCategory(item.href)
                       ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
                       : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
@@ -164,12 +167,12 @@ export default function Navbar() {
                 </Link>
               ))}
 
-              {/* Categories 5 and 6 shown inline on xl+ */}
-              {NAV_CATEGORIES.slice(4, 6).map((item) => (
+              {/* Categories 4 and 5 — shown on xl+ */}
+              {NAV_CATEGORIES.slice(3, 5).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className={`hidden xl:inline-block text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
+                  className={`hidden xl:inline-block text-[11px] font-semibold uppercase tracking-wide transition-all whitespace-nowrap py-1 relative shrink-0 ${
                     isCurrentCategory(item.href)
                       ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
                       : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
@@ -179,12 +182,12 @@ export default function Navbar() {
                 </Link>
               ))}
 
-              {/* Categories 7 and 8 shown inline on 2xl+ */}
-              {NAV_CATEGORIES.slice(6).map((item) => (
+              {/* Categories 6-8 — shown on 2xl+ only */}
+              {NAV_CATEGORIES.slice(5).map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className={`hidden 2xl:inline-block text-xs font-semibold uppercase tracking-wider transition-all whitespace-nowrap py-1 relative ${
+                  className={`hidden 2xl:inline-block text-[11px] font-semibold uppercase tracking-wide transition-all whitespace-nowrap py-1 relative shrink-0 ${
                     isCurrentCategory(item.href)
                       ? 'text-gold-400 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-gold-500 after:rounded-full'
                       : 'text-gray-300 hover:text-gold-400 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gold-500/60 after:transition-all after:duration-300 hover:after:w-full'
@@ -194,25 +197,25 @@ export default function Navbar() {
                 </Link>
               ))}
 
-              {/* Elegant 'More' dropdown for lg and xl screens (hidden on 2xl where all 8 are visible inline) */}
-              <div className="relative group/more 2xl:hidden">
+              {/* More dropdown — shown on lg+xl (hidden on 2xl where all are inline) */}
+              <div className="relative group/more 2xl:hidden shrink-0">
                 <button
                   type="button"
-                  className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap py-1 ${
-                    NAV_CATEGORIES.slice(4).some((c) => isCurrentCategory(c.href))
+                  className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap py-1 ${
+                    NAV_CATEGORIES.slice(3).some((c) => isCurrentCategory(c.href))
                       ? 'text-gold-400 font-bold'
                       : 'text-gray-300 hover:text-gold-400'
                   }`}
                 >
                   <span>More</span>
-                  <HiChevronDown className="w-3.5 h-3.5 transition-transform group-hover/more:rotate-180 text-gold-400/80" />
+                  <HiChevronDown className="w-3 h-3 transition-transform group-hover/more:rotate-180 text-gold-400/80" />
                 </button>
                 <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-52 bg-dark-900/98 backdrop-blur-md border border-dark-600 rounded-2xl shadow-2xl p-2 opacity-0 invisible group-hover/more:opacity-100 group-hover/more:visible transition-all duration-200 z-50">
-                  <div className="text-[10px] font-bold text-gold-400/80 uppercase tracking-widest px-3 py-1 mb-1 border-b border-dark-750">
+                  <div className="text-[10px] font-bold text-gold-400/80 uppercase tracking-widest px-3 py-1.5 mb-1 border-b border-dark-700">
                     More Categories
                   </div>
-                  {/* On lg: items 4..8. On xl: items 6..8 */}
-                  {NAV_CATEGORIES.slice(4).map((item, idx) => (
+                  {/* lg: shows items 3..8. xl: shows items 5..8. 2xl: whole dropdown hidden */}
+                  {NAV_CATEGORIES.slice(3).map((item, idx) => (
                     <Link
                       key={item.label}
                       to={item.href}
@@ -231,8 +234,8 @@ export default function Navbar() {
               </div>
             </nav>
 
-            {/* 3. Right: Search, Wishlist, Cart & Account */}
-            <div className="flex items-center justify-end flex-1 min-w-0 gap-1.5 sm:gap-2.5 lg:gap-3 shrink-0">
+            {/* 3. Right: Icons + User Profile — shrink-0 so it NEVER gets squeezed */}
+            <div className="flex items-center justify-end shrink-0 gap-1 sm:gap-1.5 lg:gap-2">
 
               {/* Search Toggle Button */}
               <button
@@ -300,20 +303,21 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-1.5 p-1 pl-1.5 pr-2 sm:pr-2.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 hover:border-gold-500/50 rounded-full transition-all shrink-0 cursor-pointer focus:outline-none"
+                    className="flex items-center gap-1.5 p-1 pl-1.5 pr-2 bg-dark-800 hover:bg-dark-700 border border-dark-600 hover:border-gold-500/50 rounded-full transition-all shrink-0 cursor-pointer focus:outline-none"
                     aria-expanded={userMenuOpen}
                     aria-label="User account menu"
                   >
-                    <UserAvatar name={user.name} size={28} ring />
-                    <span className="hidden lg:block text-xs font-semibold text-gray-200 max-w-[85px] xl:max-w-[110px] truncate">
+                    <UserAvatar name={user.name} size={26} ring />
+                    {/* Always show first name on lg+ — guaranteed space since right section is shrink-0 */}
+                    <span className="hidden lg:block text-xs font-semibold text-gray-200 max-w-[72px] xl:max-w-[90px] truncate">
                       {user.name?.split(' ')[0]}
                     </span>
                     {isAdmin && (
-                      <span className="hidden 2xl:inline-block px-1.5 py-0.5 bg-gold-500/20 text-gold-400 border border-gold-500/40 rounded text-[9px] font-bold">
+                      <span className="hidden xl:inline-block px-1.5 py-0.5 bg-gold-500/20 text-gold-400 border border-gold-500/40 rounded text-[9px] font-bold">
                         ADMIN
                       </span>
                     )}
-                    <HiChevronDown className={`w-3.5 h-3.5 text-gray-400 group-hover:text-gold-400 transition-transform ${userMenuOpen ? 'rotate-180 text-gold-400' : ''}`} />
+                    <HiChevronDown className={`w-3 h-3 text-gray-400 group-hover:text-gold-400 transition-transform ${userMenuOpen ? 'rotate-180 text-gold-400' : ''}`} />
                   </button>
 
                   {/* Dropdown Menu - aligned to right edge of button, never overflows */}
