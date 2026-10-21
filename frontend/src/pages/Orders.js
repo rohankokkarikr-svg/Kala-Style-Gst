@@ -66,28 +66,45 @@ export default function Orders() {
   // 1. Real-time listener: auto-update order status when Admin or Artisan updates status
   useEffect(() => {
     const handleSync = (e) => {
-      const payload = e.detail?.payload || e.detail;
-      const targetId = payload?.id || payload?.orderId || payload?.order_id;
-      if (targetId && (payload?.status || payload?.order_status)) {
-        const nextStatus = payload.order_status || payload.status;
-        setOrders(prev => prev.map(o => (o.id === targetId || o.order_number === targetId) ? {
-          ...o,
-          status: nextStatus,
-          order_status: nextStatus,
-          ...(payload.shipping_status ? { shipping_status: payload.shipping_status } : {}),
-          ...(payload.payment_status ? { payment_status: payload.payment_status } : {})
-        } : o));
-      } else {
-        fetchOrders(true);
+      const payload = e.detail?.payload || e.detail || {};
+      const targetIds = [
+        payload.orderId,
+        payload.order_id,
+        payload.orderNumber,
+        payload.order_number,
+        payload.id,
+        payload.artisanOrderId,
+        payload.artisan_order_id,
+      ].filter(Boolean).map(String);
+
+      const nextStatus = payload.order_status || payload.status;
+      if (targetIds.length > 0 && nextStatus) {
+        setOrders(prev => prev.map(o => {
+          const isMatch = targetIds.includes(String(o.id)) ||
+            targetIds.includes(String(o.order_number)) ||
+            (Array.isArray(o.artisan_orders) && o.artisan_orders.some(ao => targetIds.includes(String(ao.id))));
+          if (!isMatch) return o;
+          return {
+            ...o,
+            status: nextStatus,
+            order_status: nextStatus,
+            ...(payload.shipping_status ? { shipping_status: payload.shipping_status } : {}),
+            ...(payload.payment_status ? { payment_status: payload.payment_status } : {})
+          };
+        }));
       }
+      // Always refresh to sync relation fields
+      fetchOrders(true);
     };
     window.addEventListener('kala:sync:orders_updated', handleSync);
     window.addEventListener('kala:sync:artisan_orders_updated', handleSync);
     window.addEventListener('kala:sync:payments_updated', handleSync);
+    window.addEventListener('kala:sync:shipment_updated', handleSync);
     return () => {
       window.removeEventListener('kala:sync:orders_updated', handleSync);
       window.removeEventListener('kala:sync:artisan_orders_updated', handleSync);
       window.removeEventListener('kala:sync:payments_updated', handleSync);
+      window.removeEventListener('kala:sync:shipment_updated', handleSync);
     };
   }, []);
 

@@ -47,6 +47,19 @@ function getStepIndex(status) {
   return idx === -1 ? 0 : idx;
 }
 
+function getEffectiveStatus(subStatus, mainStatus) {
+  const normSub = normalizeStatus(subStatus);
+  const normMain = normalizeStatus(mainStatus);
+  if (normSub === 'rejected' || normMain === 'rejected') return 'rejected';
+  if (normSub === 'cancelled' || normMain === 'cancelled') return 'cancelled';
+  const subIdx = STATUS_ORDER.indexOf(normSub);
+  const mainIdx = STATUS_ORDER.indexOf(normMain);
+  if (subIdx >= 0 && mainIdx >= 0) {
+    return subIdx >= mainIdx ? (subStatus || normSub) : (mainStatus || normMain);
+  }
+  return subStatus || mainStatus || 'pending';
+}
+
 function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, shipmentStatus }) {
   const norm = normalizeStatus(status);
   const shippingDelivered = isDelivered ||
@@ -145,17 +158,19 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
 
 function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
   const rawStatus = (order.order_status || order.status || 'pending').toLowerCase();
-  const firstAo = artisanOrders[0] || {};
-  const artisanStatus = (firstAo.status || rawStatus).toLowerCase();
-  const rejectionReason = firstAo.rejection_reason || order.rejection_reason || null;
+  const allAo = artisanOrders.length > 0 ? artisanOrders : [{ status: rawStatus }];
+  const aoStatuses = allAo.map(ao => (ao.status || rawStatus || 'pending').toLowerCase());
+  const rejectionReason = artisanOrders.find(ao => ao.rejection_reason)?.rejection_reason || order.rejection_reason || null;
 
-  const isRejected = artisanStatus === 'rejected' || rawStatus === 'rejected';
-  const isCancelled = artisanStatus === 'cancelled' || rawStatus === 'cancelled';
-  const isDelivered = artisanStatus === 'delivered' || rawStatus === 'delivered';
-  const isDispatched = ['dispatched', 'shipped', 'out_for_delivery', 'on_the_way'].includes(artisanStatus) || ['dispatched', 'shipped', 'out_for_delivery'].includes(rawStatus);
-  const isPreparing = ['preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed'].includes(artisanStatus) || ['preparing', 'processing'].includes(rawStatus);
-  const isAccepted = artisanStatus === 'accepted' || rawStatus === 'accepted';
-  const isAwaitingArtisan = (artisanStatus === 'pending' || rawStatus === 'pending' || rawStatus === 'confirmed') && !isAccepted && !isPreparing && !isDispatched && !isDelivered && !isRejected && !isCancelled;
+  const isRejected = aoStatuses.some(s => s === 'rejected') || rawStatus === 'rejected';
+  const isCancelled = aoStatuses.some(s => s === 'cancelled') || rawStatus === 'cancelled';
+  const isDelivered = aoStatuses.length > 0 && (aoStatuses.every(s => s === 'delivered') || rawStatus === 'delivered');
+  const isDispatched = aoStatuses.some(s => ['dispatched', 'shipped', 'out_for_delivery', 'on_the_way'].includes(s)) ||
+    ['dispatched', 'shipped', 'out_for_delivery'].includes(rawStatus);
+  const isPreparing = aoStatuses.some(s => ['preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed'].includes(s)) ||
+    ['preparing', 'processing'].includes(rawStatus);
+  const isAccepted = aoStatuses.some(s => s === 'accepted') || rawStatus === 'accepted';
+  const isAwaitingArtisan = !isAccepted && !isPreparing && !isDispatched && !isDelivered && !isRejected && !isCancelled;
 
   // Compute active milestone (0: Placed, 1: Artisan Confirmed, 2: Crafting, 3: Dispatched, 4: Delivered)
   let activeStage = 0;
@@ -163,7 +178,7 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
   else if (isDispatched) activeStage = 3;
   else if (isPreparing) activeStage = 2;
   else if (isAccepted) activeStage = 1;
-  else if (isAwaitingArtisan) activeStage = 0;
+  else activeStage = 0;
 
   const STAGES = [
     { title: 'Order Placed', desc: order.payment_method === 'cod' ? 'COD Confirmed' : 'Payment Verified', icon: '🛒' },
@@ -192,14 +207,14 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
                 </span>
                 Awaiting Artisan Confirmation
               </span>
-            ) : isAccepted && !isPreparing ? (
-              <span className="text-emerald-400 flex items-center gap-1.5"><HiCheckCircle className="w-5 h-5" /> Accepted & Confirmed by Artisan 🎉</span>
-            ) : isPreparing ? (
-              <span className="text-purple-400 flex items-center gap-1.5">🎨 Artisan Crafting in Progress</span>
-            ) : isDispatched ? (
-              <span className="text-blue-400 flex items-center gap-1.5"><HiTruck className="w-5 h-5" /> Out for Delivery</span>
             ) : isDelivered ? (
               <span className="text-green-400 flex items-center gap-1.5"><HiCheckCircle className="w-5 h-5" /> Order Delivered Successfully ✓</span>
+            ) : isDispatched ? (
+              <span className="text-blue-400 flex items-center gap-1.5"><HiTruck className="w-5 h-5" /> Out for Delivery / In Transit</span>
+            ) : isPreparing ? (
+              <span className="text-purple-400 flex items-center gap-1.5">🎨 Artisan Crafting in Progress</span>
+            ) : isAccepted ? (
+              <span className="text-emerald-400 flex items-center gap-1.5"><HiCheckCircle className="w-5 h-5" /> Accepted & Confirmed by Artisan 🎉</span>
             ) : (
               <span className="text-white">Order in Progress</span>
             )}
@@ -273,7 +288,7 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
         </div>
       )}
 
-      {isAccepted && !isPreparing && (
+      {isAccepted && !isPreparing && !isDispatched && !isDelivered && (
         <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/15 via-dark-900 to-green-500/10 border border-emerald-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
           <div className="flex items-center gap-2 text-emerald-300 font-bold">
             <HiCheckCircle className="w-4 h-4 text-emerald-400" />
@@ -281,6 +296,42 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
           </div>
           <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
             Great news! The artisan has confirmed your order as genuine and is preparing the handcrafted materials. You will be updated as the piece progresses through crafting and shipping!
+          </p>
+        </div>
+      )}
+
+      {isPreparing && !isDispatched && !isDelivered && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/15 via-dark-900 to-purple-500/10 border border-purple-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
+          <div className="flex items-center gap-2 text-purple-300 font-bold">
+            <span>🎨</span>
+            <span>Handcrafting & Preparation in Progress</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            The artisan is actively handcrafting your item. Once finished and packaged with quality care, it will be handed to courier logistics for dispatch.
+          </p>
+        </div>
+      )}
+
+      {isDispatched && !isDelivered && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-blue-500/15 via-dark-900 to-blue-500/10 border border-blue-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
+          <div className="flex items-center gap-2 text-blue-300 font-bold">
+            <HiTruck className="w-4 h-4 text-blue-400" />
+            <span>Package Dispatched & In Transit</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            Your package has been dispatched by the artisan and is on its way to your delivery address. Check the courier card below for live tracking.
+          </p>
+        </div>
+      )}
+
+      {isDelivered && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-green-500/15 via-dark-900 to-emerald-500/10 border border-green-500/30 text-xs text-gray-200 space-y-1 animate-in fade-in">
+          <div className="flex items-center gap-2 text-green-300 font-bold">
+            <HiCheckCircle className="w-4 h-4 text-green-400" />
+            <span>Order Successfully Delivered! 🎉</span>
+          </div>
+          <p className="text-gray-300 leading-relaxed text-[11px] sm:text-xs">
+            Your package has been delivered. We hope you love your authentic handcrafted piece!
           </p>
         </div>
       )}
@@ -305,7 +356,7 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
 }
 
 function ArtisanTimeline({ artisanOrder, overallStatus }) {
-  const effectiveStatus = artisanOrder?.status || overallStatus;
+  const effectiveStatus = getEffectiveStatus(artisanOrder?.status, overallStatus);
   const currentIdx = getStepIndex(effectiveStatus);
   const isCancelled = ['cancelled', 'rejected'].includes(normalizeStatus(effectiveStatus));
 
@@ -407,12 +458,44 @@ export default function OrderTracking() {
   useEffect(() => {
     const handler = (e) => {
       const payload = e.detail?.payload || e.detail || {};
-      const targetId = payload.id || payload.orderId || payload.order_id || payload.order_number;
-      if (
-        !targetId ||
-        targetId === id ||
-        (order && (targetId === order.id || targetId === order.order_number))
-      ) {
+      const targetIds = [
+        payload.orderId,
+        payload.order_id,
+        payload.orderNumber,
+        payload.order_number,
+        payload.id,
+        payload.artisanOrderId,
+        payload.artisan_order_id,
+      ].filter(Boolean).map(String);
+
+      const isMatch =
+        targetIds.length === 0 ||
+        targetIds.includes(String(id)) ||
+        (order && (
+          targetIds.includes(String(order.id)) ||
+          targetIds.includes(String(order.order_number)) ||
+          (Array.isArray(order.artisan_orders) && order.artisan_orders.some(ao => targetIds.includes(String(ao.id))))
+        ));
+
+      if (isMatch) {
+        const nextStatus = payload.order_status || payload.status;
+        if (nextStatus) {
+          setOrder(prev => {
+            if (!prev) return prev;
+            const updatedAos = (prev.artisan_orders || []).map(ao => {
+              if (targetIds.includes(String(ao.id))) {
+                return { ...ao, status: nextStatus };
+              }
+              return ao;
+            });
+            return {
+              ...prev,
+              status: nextStatus,
+              order_status: nextStatus,
+              artisan_orders: updatedAos.length > 0 ? updatedAos : prev.artisan_orders,
+            };
+          });
+        }
         fetchOrder(true);
       }
     };
@@ -439,11 +522,11 @@ export default function OrderTracking() {
         { event: '*', schema: 'public', table: 'orders' },
         (change) => {
           const rec = change.new || change.old || {};
-          if (
+          const isMatch =
             rec.id === id ||
             rec.order_number === id ||
-            (order && (rec.id === order.id || rec.order_number === order.order_number))
-          ) {
+            (order && (rec.id === order.id || rec.order_number === order.order_number));
+          if (isMatch) {
             fetchOrder(true);
           }
         }
@@ -453,10 +536,16 @@ export default function OrderTracking() {
         { event: '*', schema: 'public', table: 'artisan_orders' },
         (change) => {
           const rec = change.new || change.old || {};
-          if (
+          const isMatch =
             rec.order_id === id ||
-            (order && rec.order_id === order.id)
-          ) {
+            rec.id === id ||
+            (order && (
+              rec.order_id === order.id ||
+              rec.order_id === order.order_number ||
+              rec.id === order.id ||
+              (Array.isArray(order.artisan_orders) && order.artisan_orders.some(ao => ao.id === rec.id))
+            ));
+          if (isMatch) {
             fetchOrder(true);
           }
         }
@@ -548,7 +637,7 @@ export default function OrderTracking() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatusBadge status={order.order_status || order.status || 'pending'} type="status" />
+              <StatusBadge status={getEffectiveStatus(artisanOrders[0]?.status, order.order_status || order.status)} type="status" />
               <StatusBadge 
                 status={order.payment_status || 'pending'} 
                 type="payment" 
@@ -793,7 +882,7 @@ export default function OrderTracking() {
                       </p>
                     </div>
                   </div>
-                  <StatusBadge status={ao.status || order.order_status || order.status} type="status" />
+                  <StatusBadge status={getEffectiveStatus(ao.status, order.order_status || order.status)} type="status" />
                 </div>
 
                 {/* Timeline */}

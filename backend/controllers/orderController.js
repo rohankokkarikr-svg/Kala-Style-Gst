@@ -480,6 +480,12 @@ exports.getOrderTracking = async (req, res) => {
       }
     } catch (sErr) {}
 
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+
     res.json(order);
   } catch (err) {
     console.error('[getOrderTracking] Error:', err);
@@ -601,12 +607,24 @@ exports.updateOrderStatus = async (req, res) => {
       }
 
       const now = new Date().toISOString();
+      const timestampMap = {
+        accepted: 'accepted_at',
+        preparing: 'prepared_at',
+        ready_for_pickup: 'ready_at',
+        dispatched: 'dispatched_at',
+        out_for_delivery: 'out_for_delivery_at',
+        delivered: 'delivered_at',
+        cancelled: 'cancelled_at',
+        rejected: 'rejected_at',
+      };
       const aoUpdate = {
         status: mappedStatus,
         updated_at: now,
         ...(mappedStatus === 'delivered' ? { delivered_at: now } : {}),
         ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
       };
+      if (timestampMap[mappedStatus]) aoUpdate[timestampMap[mappedStatus]] = now;
+      if (mappedStatus === 'rejected' && req.body.rejection_reason) aoUpdate.rejection_reason = req.body.rejection_reason;
       if (!mySubOrder.artisan_id && callerArtisanId) {
         aoUpdate.artisan_id = callerArtisanId;
       }
@@ -674,13 +692,28 @@ exports.updateOrderStatus = async (req, res) => {
                 ? 'CANCELLED'
                 : (mappedStatus === 'ready_for_pickup' ? 'READY_TO_SHIP' : 'PENDING')));
 
-      broadcastSync('ARTISAN_ORDERS_UPDATED', { orderId: id, artisanOrderId: mySubOrder.id, status: mappedStatus, rejection_reason: req.body.rejection_reason });
+      broadcastSync('ARTISAN_ORDERS_UPDATED', {
+        id: mySubOrder.id,
+        artisanOrderId: mySubOrder.id,
+        artisan_order_id: mySubOrder.id,
+        orderId: id,
+        order_id: id,
+        order_number: orderNum,
+        orderNumber: orderNum,
+        status: mappedStatus,
+        rejection_reason: req.body.rejection_reason,
+      });
       broadcastSync('ORDERS_UPDATED', {
         id,
         orderId: id,
+        order_id: id,
+        order_number: orderNum,
+        orderNumber: orderNum,
         status: newMasterStatus,
         order_status: newMasterStatus,
         shipping_status: shippingStatusVal,
+        artisanOrderId: mySubOrder.id,
+        artisan_order_id: mySubOrder.id,
         rejection_reason: req.body.rejection_reason,
         order: updatedOrder
       });
@@ -1153,11 +1186,12 @@ exports.verifyPayment = async (req, res) => {
     }
 
     const isApprove = action === 'approve';
+    const now = new Date().toISOString();
     const updateData = {
       payment_status: isApprove ? 'paid' : 'failed',
-      status: isApprove ? 'confirmed' : 'cancelled',
-      order_status: isApprove ? 'confirmed' : 'cancelled',
-      updated_at: new Date().toISOString(),
+      status: isApprove ? 'accepted' : 'cancelled',
+      order_status: isApprove ? 'accepted' : 'cancelled',
+      updated_at: now,
     };
 
     const { data: updatedOrder, error: updateError } = await supabase
@@ -1165,10 +1199,20 @@ exports.verifyPayment = async (req, res) => {
     if (updateError) throw updateError;
 
     if (isApprove) {
-      // Update artisan_orders to pending (ready for artisan to start processing)
-      await supabase.from('artisan_orders').update({ status: 'pending', updated_at: new Date().toISOString() }).eq('order_id', id);
+      // Update artisan_orders to accepted (artisan verified payment and confirmed the order)
+      await supabase.from('artisan_orders').update({
+        status: 'accepted',
+        accepted_at: now,
+        updated_at: now,
+      }).eq('order_id', id);
+
+      // Update matching order_items
+      await supabase.from('order_items').update({
+        item_status: 'accepted',
+      }).eq('order_id', id);
+
       // Update payment record
-      await supabase.from('payments').update({ status: 'paid', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('order_id', id);
+      await supabase.from('payments').update({ status: 'paid', paid_at: now, updated_at: now }).eq('order_id', id);
 
       // Auto-create Shiprocket logistics shipment on artisan confirmation (non-blocking)
       try {
@@ -1183,8 +1227,25 @@ exports.verifyPayment = async (req, res) => {
       await restoreInventory(id);
     }
 
-    broadcastSync('PAYMENTS_UPDATED', { id, status: updatedOrder?.payment_status });
-    broadcastSync('ORDERS_UPDATED', { id, status: updatedOrder?.status });
+    const orderNum = order.order_number || String(id).substring(0, 8);
+    broadcastSync('PAYMENTS_UPDATED', { id, orderId: id, order_id: id, order_number: orderNum, orderNumber: orderNum, status: updatedOrder?.payment_status });
+    broadcastSync('ORDERS_UPDATED', {
+      id,
+      orderId: id,
+      order_id: id,
+      order_number: orderNum,
+      orderNumber: orderNum,
+      status: updatedOrder?.status,
+      order_status: updatedOrder?.order_status,
+      order: updatedOrder
+    });
+    broadcastSync('ARTISAN_ORDERS_UPDATED', {
+      orderId: id,
+      order_id: id,
+      order_number: orderNum,
+      orderNumber: orderNum,
+      status: isApprove ? 'accepted' : 'cancelled'
+    });
 
     try {
       const settings = getSiteSettings();

@@ -132,8 +132,17 @@ export default function ArtisanOrders() {
       } else {
         toast.error(`Order #${orderId.substring(0, 8).toUpperCase()} rejected due to invalid UTR.`);
       }
-      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: { orderId } }));
-      window.dispatchEvent(new CustomEvent('kala:sync:payments_updated', { detail: { orderId } }));
+      const syncPayload = {
+        orderId,
+        order_id: orderId,
+        id: orderId,
+        status: isApprove ? 'accepted' : 'rejected',
+        order_status: isApprove ? 'accepted' : 'rejected',
+        payment_status: isApprove ? 'paid' : 'failed'
+      };
+      window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', { detail: syncPayload }));
+      window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', { detail: syncPayload }));
+      window.dispatchEvent(new CustomEvent('kala:sync:payments_updated', { detail: syncPayload }));
     } catch (err) {
       console.error('Failed to verify UTR:', err);
       toast.error(err.response?.data?.error || 'Failed to verify UTR and confirm order');
@@ -168,16 +177,43 @@ export default function ArtisanOrders() {
 
     try {
       if (artisanOrderId) {
-        await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: 'accepted', order_id: orderId });
+        try {
+          await artisanAPI.updateArtisanSubOrderStatus(artisanOrderId, { status: 'accepted', order_id: orderId });
+        } catch (subErr) {
+          console.warn('Sub-order acceptance failed, attempting master order fallback:', subErr);
+          if (orderId && orderId !== artisanOrderId) {
+            await artisanAPI.updateOrderStatus(orderId, { status: 'accepted' });
+          } else {
+            throw subErr;
+          }
+        }
       } else {
         await artisanAPI.updateOrderStatus(orderId, { status: 'accepted' });
       }
+
       toast.success('🎉 Order Confirmed! The customer will see "Accepted by Artisan" on their tracking status bar.');
       window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
-        detail: { id: orderId, orderId, status: 'accepted', order_status: 'accepted', artisanOrderId }
+        detail: {
+          id: orderId,
+          orderId,
+          order_id: orderId,
+          status: 'accepted',
+          order_status: 'accepted',
+          artisanOrderId,
+          artisan_order_id: artisanOrderId,
+          payload: { id: orderId, orderId, order_id: orderId, status: 'accepted', order_status: 'accepted', artisanOrderId }
+        }
       }));
       window.dispatchEvent(new CustomEvent('kala:sync:artisan_orders_updated', {
-        detail: { id: artisanOrderId, artisanOrderId, orderId, status: 'accepted' }
+        detail: {
+          id: artisanOrderId,
+          artisanOrderId,
+          artisan_order_id: artisanOrderId,
+          orderId,
+          order_id: orderId,
+          status: 'accepted',
+          payload: { id: artisanOrderId, artisanOrderId, orderId, order_id: orderId, status: 'accepted' }
+        }
       }));
     } catch (err) {
       toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to accept order');

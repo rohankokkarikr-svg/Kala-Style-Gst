@@ -621,6 +621,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       // SECURITY: Verify ownership immediately — artisan must own or be assigned to this sub-order
       const isOwnedByArtisan = isAdmin
         || String(byArtOrderId.artisan_id) === String(profile.id)
+        || String(byArtOrderId.artisan_id) === String(req.user.id)
         || byArtOrderId.artisan_id === null;
       if (isOwnedByArtisan) {
         artOrder = byArtOrderId;
@@ -638,7 +639,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .limit(1);
 
       if (!isAdmin) {
-        query = query.or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
+        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
       }
 
       const { data: byOrderId } = await query.maybeSingle();
@@ -658,7 +659,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .limit(1);
 
       if (!isAdmin) {
-        query = query.or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
+        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
       }
 
       const { data: byBodyOrderId } = await query.maybeSingle();
@@ -755,12 +756,12 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     }
 
     // Authorization check: Must be assigned to this artisan or own items in the order (admins always authorized)
-    if (!isAdmin && artOrder.artisan_id !== profile.id) {
+    if (!isAdmin && artOrder.artisan_id !== profile.id && artOrder.artisan_id !== req.user.id) {
       const { data: myItem } = await supabase
         .from('order_items')
         .select('id')
         .eq('order_id', artOrder.order_id)
-        .eq('artisan_id', profile.id)
+        .or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`)
         .limit(1);
 
       if (!myItem || myItem.length === 0) {
@@ -821,7 +822,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .from('order_items')
       .update({ item_status: status })
       .eq('order_id', artOrder.order_id)
-      .or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
+      .or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
 
     let newMasterStatus = status;
 
@@ -936,16 +937,24 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     broadcastSync('ORDERS_UPDATED', {
       id: artOrder.order_id,
       orderId: artOrder.order_id,
+      order_id: artOrder.order_id,
+      order_number: orderNum,
+      orderNumber: orderNum,
       status: newMasterStatus,
       order_status: newMasterStatus,
       shipping_status: shippingStatusVal,
       artisanOrderId: artOrder.id,
+      artisan_order_id: artOrder.id,
       rejection_reason: status === 'rejected' ? rejection_reason : undefined,
     });
     broadcastSync('ARTISAN_ORDERS_UPDATED', {
       id: artOrder.id,
       artisanOrderId: artOrder.id,
+      artisan_order_id: artOrder.id,
       orderId: artOrder.order_id,
+      order_id: artOrder.order_id,
+      order_number: orderNum,
+      orderNumber: orderNum,
       status,
       rejection_reason: status === 'rejected' ? rejection_reason : undefined,
     });
