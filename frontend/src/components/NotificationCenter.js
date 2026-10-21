@@ -165,9 +165,9 @@ export default function NotificationCenter({ className = '', buttonClassName = '
     if (notif.sender_id) {
       setReplyTarget({
         recipientId: notif.sender_id,
-        recipientName: notif.sender?.name || 'Sender',
+        recipientName: notif.sender?.name || (notif.sender?.role === 'admin' ? 'Support Admin' : 'Sender'),
         recipientRole: notif.sender?.role || 'artisan',
-        defaultTitle: `Re: ${notif.title || 'Message'}`
+        defaultTitle: notif.title?.startsWith('Re:') ? notif.title : `Re: ${notif.title || 'Message'}`
       });
       setReplyModalOpen(true);
       setIsOpen(false);
