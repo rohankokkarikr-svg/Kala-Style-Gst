@@ -143,11 +143,81 @@ exports.calculateOrderTotals = async (items) => {
 /**
  * Validate a coupon and return discount amount.
  * Returns { discount: number, coupon } or { error: string }
+ *
+ * NOTE: Must mirror couponController.validateCoupon for banner promo codes.
+ * Banner promo codes are NOT stored in the `coupons` table — they are
+ * configured in platform_settings.discount_banner and validated here
+ * so that they continue to work through OTP → order creation.
  */
 exports.validateCoupon = async (couponCode, userId, subtotal) => {
   if (!couponCode) return { discount: 0, coupon: null };
 
   const cleanCode = couponCode.trim().toUpperCase();
+
+  // ── 1. Check Discount Banner Promo Code FIRST (same as couponController) ──
+  // Banner promo codes are never in the `coupons` table — this was the bug.
+  try {
+    let banner = null;
+
+    // Try live DB first
+    try {
+      const { data: supaRow } = await supabase
+        .from('platform_settings')
+        .select('discount_banner')
+        .eq('id', 'main')
+        .maybeSingle();
+      if (supaRow?.discount_banner && typeof supaRow.discount_banner === 'object') {
+        banner = supaRow.discount_banner;
+      }
+    } catch (dbErr) {
+      console.warn('[orderService.validateCoupon] platform_settings query note:', dbErr?.message);
+    }
+
+    // Fall back to local settings file
+    if (!banner) {
+      try {
+        const { readSettings } = require('../controllers/settingsController');
+        const settings = readSettings();
+        banner = settings?.discountBanner;
+      } catch (_) {}
+    }
+
+    if (banner && (banner.code || '').trim().toUpperCase() === cleanCode) {
+      const isBannerActive = banner.isActive !== undefined
+        ? Boolean(banner.isActive)
+        : (banner.is_active !== undefined ? Boolean(banner.is_active) : true);
+
+      if (!isBannerActive) {
+        return { error: 'This promotional discount code is currently inactive.' };
+      }
+
+      const discountPct = Number(
+        banner.discountPercentage !== undefined
+          ? banner.discountPercentage
+          : banner.discount_percentage
+      ) || 30;
+
+      const discount = Math.round(((subtotal * discountPct) / 100) * 100) / 100;
+
+      // Return a synthetic coupon object so the rest of createMasterOrder works
+      return {
+        discount,
+        coupon: {
+          code: banner.code,
+          discount_type: 'percentage',
+          discount_value: discountPct,
+          is_used: false,
+          user_id: null,       // banner codes are not user-specific
+          expiry_date: null,
+          _isBannerPromo: true, // marker so we don't try to mark it as used
+        },
+      };
+    }
+  } catch (bannerErr) {
+    console.warn('[orderService.validateCoupon] Banner promo check note:', bannerErr?.message);
+  }
+
+  // ── 2. Check `coupons` table (spin-wheel, reward, admin coupons) ──
   let coupon = null;
 
   try {
@@ -191,6 +261,7 @@ exports.validateCoupon = async (couponCode, userId, subtotal) => {
 
   return { discount: Math.round(discount * 100) / 100, coupon };
 };
+
 
 // ── Atomic Order Creation ─────────────────────────────────────────────────────
 
@@ -455,8 +526,8 @@ exports.createMasterOrder = async ({
     }
   }
 
-  // 12. Mark coupon as used
-  if (couponResult.coupon) {
+  // 12. Mark coupon as used (skip for banner promo codes — they are not stored in the coupons table)
+  if (couponResult.coupon && !couponResult.coupon._isBannerPromo) {
     try {
       await supabase
         .from('coupons')
