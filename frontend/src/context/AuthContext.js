@@ -53,6 +53,29 @@ export const AuthProvider = ({ children }) => {
     syncPromiseRef.current = (async () => {
       try {
         if (!silent) setOauthError(null);
+
+        // Pre-flight check: If session token is expired or expiring within 10s, attempt proactive refresh
+        let currentSession = session;
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (currentSession?.expires_at && currentSession.expires_at <= nowSec + 10) {
+          try {
+            const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+            if (!refreshErr && refreshData?.session?.access_token) {
+              currentSession = refreshData.session;
+            } else {
+              // Session expired and cannot be refreshed, cleanly clear dead session
+              await supabase.auth.signOut().catch(() => {});
+              localStorage.removeItem('sh_token');
+              localStorage.removeItem('sh_user');
+              setUser(null);
+              return null;
+            }
+          } catch (_) {
+            await supabase.auth.signOut().catch(() => {});
+            return null;
+          }
+        }
+
         // Step 2 & 13: Recover auth_intent from sessionStorage or localStorage (default: 'user')
         const storedIntent = sessionStorage.getItem('auth_intent') || localStorage.getItem('auth_intent');
         const authIntent = storedIntent === 'admin' ? 'admin' : storedIntent === 'artisan' ? 'artisan' : 'user';
@@ -67,9 +90,9 @@ export const AuthProvider = ({ children }) => {
 
         // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
-          accessToken: session.access_token,
-          email: session.user?.email,
-          supabase_uid: session.user?.id,
+          accessToken: currentSession.access_token,
+          email: currentSession.user?.email,
+          supabase_uid: currentSession.user?.id,
           auth_intent: authIntent,
           auth_flow: authFlow,
           is_signup: isSignupFlag
@@ -92,11 +115,17 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (e) {
         const isNotFound = e.response?.status === 404 || e.response?.data?.notFound;
+        const isExpired = e.response?.status === 401 ||
+                          e.response?.data?.expired ||
+                          (typeof e.response?.data?.error === 'string' && (
+                            e.response.data.error.includes('expired') ||
+                            e.response.data.error.includes('Invalid or expired')
+                          ));
         const errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
-        console.error('[syncSupabaseSessionSingleFlight] Sync error:', errMsg);
+        console.warn('[syncSupabaseSessionSingleFlight] Sync notice:', errMsg);
 
-        if (isNotFound) {
-          // Strict: When user has not registered, immediately sign out of Supabase to prevent unlinked session
+        if (isNotFound || isExpired) {
+          // Cleanly clear invalid/expired Supabase session to prevent repeat failures
           try {
             await supabase.auth.signOut();
           } catch (_) {}
@@ -110,7 +139,8 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
 
-        if (!silent) {
+        // Only show toast if user actively initiated an action, never on silent background sync
+        if (!silent && !isExpired) {
           setOauthError(errMsg);
           toast.error(errMsg, { duration: 6000 });
         }
@@ -157,7 +187,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        return await syncSupabaseSessionSingleFlight(session);
+        return await syncSupabaseSessionSingleFlight(session, true /* silent on background refresh */);
       }
     } catch (e) {
       console.warn('[refreshUser] Supabase getSession error:', e?.message || e);

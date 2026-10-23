@@ -36,8 +36,14 @@ const api = axios.create({
 // Attach JWT token from localStorage on every request
 api.interceptors.request.use(
   (config) => {
+    // Avoid attaching stale internal backend JWT to Supabase session sync endpoints
+    const isSupabaseSessionEndpoint = config.url?.includes('/auth/supabase-session') ||
+                                      config.url?.includes('/auth/session') ||
+                                      config.url?.includes('/auth/otp-session');
     const token = localStorage.getItem('sh_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (token && !isSupabaseSessionEndpoint) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }

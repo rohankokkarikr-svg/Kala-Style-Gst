@@ -734,7 +734,18 @@ exports.syncSupabaseSession = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const bodyToken = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : null;
-    const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
+    let headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
+
+    // Reject internal app backend tokens (iss: kalastyle-api) from being mistaken for Supabase tokens
+    if (headerToken) {
+      try {
+        const decoded = jwt.decode(headerToken);
+        if (decoded?.iss === 'kalastyle-api' || decoded?.issuer === 'kalastyle-api') {
+          headerToken = null;
+        }
+      } catch (_) {}
+    }
+
     const token = bodyToken || headerToken;
 
     // Login portal intent: 'user' (customer) vs 'artisan' vs 'admin'
@@ -757,9 +768,14 @@ exports.syncSupabaseSession = async (req, res) => {
     let sbAuthRole = null;
 
     try {
-      const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
+      const { data: { user: sbUser } = {}, error: sbError } = await supabase.auth.getUser(token);
       if (sbError || !sbUser || !sbUser.email) {
-        return res.status(401).json({ error: 'Invalid or expired Supabase authentication token' });
+        console.warn('[syncSupabaseSession] Supabase getUser rejection:', sbError?.message || 'sbUser or sbUser.email missing');
+        return res.status(401).json({
+          error: 'Invalid or expired Supabase authentication token',
+          expired: true,
+          details: sbError?.message
+        });
       }
       verifiedEmail = normalizeEmail(sbUser.email);
       verifiedUid = sbUser.id;
