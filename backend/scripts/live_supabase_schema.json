@@ -1,0 +1,2666 @@
+{
+  "users": {
+    "required": [
+      "id",
+      "name",
+      "email",
+      "password"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "email": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "password": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "role": {
+        "default": "user",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "status": {
+        "default": "active",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "phone": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "avatar_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "supabase_uid": {
+        "format": "text",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "shipping_shipments": {
+    "required": [
+      "id",
+      "order_id",
+      "provider",
+      "status",
+      "shipment_status"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "provider": {
+        "default": "shiprocket",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "provider_order_id": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "provider_shipment_id": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "awb_code": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "courier_company_id": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "courier_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "pickup_location": {
+        "default": "Home",
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "status": {
+        "default": "READY_TO_SHIP",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "shipment_status": {
+        "default": "READY_TO_SHIP",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "tracking_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "label_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "invoice_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "manifest_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "shipping_cost": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "estimated_delivery_date": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "pickup_scheduled_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "delivered_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "last_tracking_update": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "shipping_error": {
+        "format": "text",
+        "type": "string"
+      },
+      "attempt_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "last_attempt_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "package_weight": {
+        "default": 0.5,
+        "format": "numeric",
+        "type": "number"
+      },
+      "package_length": {
+        "default": 20,
+        "format": "numeric",
+        "type": "number"
+      },
+      "package_breadth": {
+        "default": 20,
+        "format": "numeric",
+        "type": "number"
+      },
+      "package_height": {
+        "default": 10,
+        "format": "numeric",
+        "type": "number"
+      },
+      "declared_value": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "payment_method": {
+        "default": "Prepaid",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "metadata": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_daily_reports": {
+    "required": [
+      "id",
+      "report_date",
+      "metrics"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "report_date": {
+        "default": "CURRENT_DATE",
+        "format": "date",
+        "type": "string"
+      },
+      "metrics": {
+        "format": "jsonb"
+      },
+      "insights": {
+        "format": "text",
+        "type": "string"
+      },
+      "recommendations": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_admin_conversations": {
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "admin_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": {
+        "default": "Autonomous Operations Manager Session",
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "messages": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "user_spins": {
+    "required": [
+      "id",
+      "last_spin_date"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "last_spin_date": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_job_queue": {
+    "required": [
+      "id",
+      "job_type",
+      "entity_type",
+      "entity_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "job_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "payload": {
+        "format": "jsonb"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "priority": {
+        "default": 5,
+        "format": "integer",
+        "type": "integer"
+      },
+      "attempts": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "max_attempts": {
+        "default": 3,
+        "format": "integer",
+        "type": "integer"
+      },
+      "last_error": {
+        "format": "text",
+        "type": "string"
+      },
+      "scheduled_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "processed_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "reports": {
+    "required": [
+      "id",
+      "report_type",
+      "target_id",
+      "reason"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "report_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "target_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "reporter_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "reason": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "open",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "admin_notes": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "notifications": {
+    "required": [
+      "id",
+      "title",
+      "message",
+      "target_audience"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "message": {
+        "format": "text",
+        "type": "string"
+      },
+      "target_audience": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "target_user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "sender_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "is_read": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "admin_activity_logs": {
+    "required": [
+      "id",
+      "action",
+      "target_type"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "admin_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "admin_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "action": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "target_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "target_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "details": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_automation_rules": {
+    "required": [
+      "id",
+      "name"
+    ],
+    "properties": {
+      "id": {
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "is_enabled": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "config": {
+        "format": "jsonb"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_agent_sessions": {
+    "required": [
+      "id",
+      "conversation_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "admin_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "conversation_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "title": {
+        "default": "KalaStyle AI Session",
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "message_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "tool_calls_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "last_message_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "orders": {
+    "required": [
+      "id",
+      "total_price",
+      "shipping_address",
+      "phone"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "total_price": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "discount_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "coupon_code": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "shipping_address": {
+        "format": "text",
+        "type": "string"
+      },
+      "phone": {
+        "format": "character varying",
+        "maxLength": 20,
+        "type": "string"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "payment_status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "payment_method": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "razorpay_order_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "razorpay_payment_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "live_location_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "order_number": {
+        "format": "character varying",
+        "maxLength": 30,
+        "type": "string"
+      },
+      "subtotal": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "delivery_fee": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "discount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "total_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "shipping_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "shipping_city": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "shipping_state": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "shipping_pincode": {
+        "format": "character varying",
+        "maxLength": 20,
+        "type": "string"
+      },
+      "order_status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "razorpay_signature": {
+        "format": "character varying",
+        "maxLength": 500,
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "transaction_id": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "risk_status": {
+        "default": "normal",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "risk_score": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "risk_reasons": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "flagged_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "payment_collected_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "payment_collected_by": {
+        "format": "text",
+        "type": "string"
+      },
+      "payment_collection_notes": {
+        "format": "text",
+        "type": "string"
+      },
+      "shipping_status": {
+        "default": "PENDING",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "shipment_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "awb_code": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "courier_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "tracking_url": {
+        "format": "text",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "order_items": {
+    "required": [
+      "id",
+      "quantity",
+      "price_at_time"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "product_id": {
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "quantity": {
+        "default": 1,
+        "format": "integer",
+        "type": "integer"
+      },
+      "price_at_time": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "size": {
+        "format": "character varying",
+        "maxLength": 20,
+        "type": "string"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "product_name_snapshot": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "product_image_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "unit_price_snapshot": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "total_price": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "item_status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "shipping_webhook_events": {
+    "required": [
+      "id",
+      "provider",
+      "event_id",
+      "payload"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "provider": {
+        "default": "shiprocket",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "event_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "event_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "shipment_id": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "awb_code": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "payload": {
+        "format": "jsonb"
+      },
+      "processed": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "processing_error": {
+        "format": "text",
+        "type": "string"
+      },
+      "processed_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "activity_logs": {
+    "required": [
+      "id",
+      "action"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "action": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "actor_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "actor_role": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "entity_id": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "details": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_admin_actions": {
+    "required": [
+      "id",
+      "action_name",
+      "tool_name"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "conversation_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "event_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "action_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "tool_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "input_summary": {
+        "format": "text",
+        "type": "string"
+      },
+      "decision": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "confidence": {
+        "default": 1,
+        "format": "numeric",
+        "type": "number"
+      },
+      "result": {
+        "format": "jsonb"
+      },
+      "status": {
+        "default": "success",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "error": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_agent_approvals": {
+    "required": [
+      "id",
+      "action_type",
+      "description",
+      "risk_level"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "action_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "risk_level": {
+        "default": "HIGH",
+        "format": "character varying",
+        "maxLength": 20,
+        "type": "string"
+      },
+      "requested_by": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "admin_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "conversation_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "tool_name": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "tool_args": {
+        "format": "jsonb"
+      },
+      "status": {
+        "default": "PENDING",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "approved_by": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "rejection_reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "execution_result": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "approved_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "rejected_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "expires_at": {
+        "default": "(now() + '24:00:00'::interval)",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "payments": {
+    "required": [
+      "id",
+      "order_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "method": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "provider": {
+        "default": "razorpay",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "provider_order_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "provider_payment_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "amount": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "paid_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "failed_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "refunded_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "refund_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "refund_amount": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "metadata": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "payment_channel": {
+        "format": "text",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "user_rewards": {
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "completed_orders_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "reward_unlocked": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "reward_claimed": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "reward_coupon_code": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "last_order_date": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "reviews": {
+    "required": [
+      "id",
+      "product_name",
+      "customer_name",
+      "rating",
+      "review_text"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "product_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "customer_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "rating": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "review_text": {
+        "format": "text",
+        "type": "string"
+      },
+      "image_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "is_approved": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "product_id": {
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "status": {
+        "default": "approved",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "is_verified_buyer": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "products": {
+    "required": [
+      "id",
+      "name",
+      "price",
+      "category"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "price": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "original_price": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "category": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "subcategory": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "sizes": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "image_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "barcode": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "stock_quantity": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "is_in_stock": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "is_handmade": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "material": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "style": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "ai_generated": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "ai_suggested_price": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "tags": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "rejection_reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "is_hidden": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "archived": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "ai_description_generated": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "images": {
+        "description": "Array of product image URLs including original photo and AI-generated variants",
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "cutout_image_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "video_url": {
+        "description": "Cloudinary MP4 video URL of seamless 360 turntable created from angle photos",
+        "format": "text",
+        "type": "string"
+      },
+      "video_status": {
+        "default": "none",
+        "description": "Lifecycle status of turntable video: none | processing | ready | failed",
+        "format": "text",
+        "type": "string"
+      },
+      "video_error": {
+        "description": "Error message if video processing fails",
+        "format": "text",
+        "type": "string"
+      },
+      "video_generations": {
+        "default": 0,
+        "description": "Number of video generations/regenerations (capped at 2 max)",
+        "format": "integer",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "artisan_earnings": {
+    "required": [
+      "id",
+      "artisan_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_order_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_orders.id`.<fk table='artisan_orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "gross_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "platform_commission": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "delivery_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "net_earning": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "settlement_status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "settled_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sales": {
+    "required": [
+      "id",
+      "quantity",
+      "date"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "product_id": {
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "quantity": {
+        "default": 1,
+        "format": "integer",
+        "type": "integer"
+      },
+      "date": {
+        "default": "CURRENT_DATE",
+        "format": "date",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "product_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "unit_price": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "total_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "order_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "artisan_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "sale_type": {
+        "default": "offline_scan",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_action_queue": {
+    "required": [
+      "id",
+      "event_type",
+      "entity_type",
+      "entity_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "event_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "entity_id": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "payload": {
+        "format": "jsonb"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "attempts": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "max_attempts": {
+        "default": 3,
+        "format": "integer",
+        "type": "integer"
+      },
+      "last_error": {
+        "format": "text",
+        "type": "string"
+      },
+      "scheduled_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "started_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "completed_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_agent_memory": {
+    "required": [
+      "id",
+      "memory_type",
+      "key",
+      "value"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "memory_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "key": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "value": {
+        "format": "jsonb"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "expires_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "customer_complaints": {
+    "required": [
+      "id",
+      "subject",
+      "description"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "product_id": {
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "subject": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "open",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "resolution_notes": {
+        "format": "text",
+        "type": "string"
+      },
+      "resolved_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "ai_usage_logs": {
+    "required": [
+      "id",
+      "feature"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "feature": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "model": {
+        "default": "gemini-3.6-flash",
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "status": {
+        "default": "success",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "prompt_length": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "response_length": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "metadata": {
+        "format": "jsonb"
+      }
+    },
+    "type": "object"
+  },
+  "coupons": {
+    "required": [
+      "id",
+      "code",
+      "discount_type",
+      "expiry_date"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "code": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "discount_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "discount_value": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "expiry_date": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "is_used": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "artisan_profiles": {
+    "required": [
+      "id",
+      "store_name"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "store_name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "artisan_type": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "specialization": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "location": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "bio": {
+        "format": "text",
+        "type": "string"
+      },
+      "profile_image": {
+        "format": "text",
+        "type": "string"
+      },
+      "verification_status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "preferred_language": {
+        "default": "English",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "earnings_total": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "years_of_experience": {
+        "default": 20,
+        "format": "integer",
+        "type": "integer"
+      },
+      "phone": {
+        "format": "character varying",
+        "maxLength": 30,
+        "type": "string"
+      },
+      "whatsapp_number": {
+        "format": "character varying",
+        "maxLength": 30,
+        "type": "string"
+      },
+      "whatsapp_notifications_enabled": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "pickup_location": {
+        "default": "Home",
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "pickup_pincode": {
+        "default": "591307",
+        "format": "character varying",
+        "maxLength": 20,
+        "type": "string"
+      },
+      "pickup_address": {
+        "format": "text",
+        "type": "string"
+      },
+      "pickup_city": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "pickup_state": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "experience_years": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "ai_reports": {
+    "required": [
+      "id",
+      "title",
+      "report_date",
+      "summary"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "report_date": {
+        "default": "CURRENT_DATE",
+        "format": "date",
+        "type": "string"
+      },
+      "summary": {
+        "format": "text",
+        "type": "string"
+      },
+      "metrics": {
+        "format": "jsonb"
+      },
+      "insights": {
+        "format": "jsonb"
+      },
+      "recommendations": {
+        "format": "jsonb"
+      },
+      "actions_performed": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "categories": {
+    "required": [
+      "id",
+      "name",
+      "slug"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "slug": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "description": {
+        "format": "text",
+        "type": "string"
+      },
+      "image_url": {
+        "format": "text",
+        "type": "string"
+      },
+      "icon": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "subcategories": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "is_active": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "platform_settings": {
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": {
+        "default": "main",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "platform_name": {
+        "default": "KalaStyle AI",
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "contact_email": {
+        "default": "support@kalastyle.ai",
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "contact_phone": {
+        "default": "+91 7676558335",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "currency": {
+        "default": "INR",
+        "format": "character varying",
+        "maxLength": 10,
+        "type": "string"
+      },
+      "currency_symbol": {
+        "default": "₹",
+        "format": "character varying",
+        "maxLength": 10,
+        "type": "string"
+      },
+      "tax_rate": {
+        "default": 5,
+        "format": "numeric",
+        "type": "number"
+      },
+      "platform_commission": {
+        "default": 10,
+        "format": "numeric",
+        "type": "number"
+      },
+      "ai_features_enabled": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "daily_ai_limit_per_artisan": {
+        "default": 50,
+        "format": "integer",
+        "type": "integer"
+      },
+      "auto_approve_products": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "maintenance_mode": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "delivery_fee": {
+        "default": 50,
+        "format": "numeric",
+        "type": "number"
+      },
+      "free_delivery_above": {
+        "default": 500,
+        "format": "numeric",
+        "type": "number"
+      },
+      "cod_enabled": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "cod_max_order_value": {
+        "default": 5000,
+        "format": "numeric",
+        "type": "number"
+      },
+      "cod_min_order_value": {
+        "default": 100,
+        "format": "numeric",
+        "type": "number"
+      },
+      "cancellation_window_hours": {
+        "default": 12,
+        "format": "integer",
+        "type": "integer"
+      },
+      "reward_eligible_count": {
+        "default": 8,
+        "format": "integer",
+        "type": "integer"
+      },
+      "hero_slides": {
+        "format": "jsonb"
+      },
+      "discount_banner": {
+        "format": "jsonb"
+      }
+    },
+    "type": "object"
+  },
+  "artisan_orders": {
+    "required": [
+      "id",
+      "order_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "subtotal": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "delivery_fee": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "total_amount": {
+        "default": 0,
+        "format": "numeric",
+        "type": "number"
+      },
+      "status": {
+        "default": "pending",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "accepted_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "prepared_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "ready_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "dispatched_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "out_for_delivery_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "delivered_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "cancelled_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "rejected_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "rejection_reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "checkout_otp_challenges": {
+    "description": "Persistent phone OTP challenge metadata for checkout verification. No plaintext OTP stored.",
+    "required": [
+      "id",
+      "user_id",
+      "phone_e164",
+      "purpose",
+      "issued_at",
+      "expires_at",
+      "consumed",
+      "send_count",
+      "last_send_at",
+      "attempt_count",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "Note:\nThis is a Foreign Key to `users.id`.<fk table='users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "phone_e164": {
+        "description": "E.164 normalized delivery phone number. Verified by Twilio Verify before token is issued.",
+        "format": "text",
+        "type": "string"
+      },
+      "purpose": {
+        "default": "checkout_order_confirmation",
+        "format": "text",
+        "type": "string"
+      },
+      "issued_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "expires_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "consumed": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "consumed_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "verify_token": {
+        "description": "Opaque one-time token issued by server ONLY after Twilio confirms code is correct. Consumed atomically on order creation.",
+        "format": "text",
+        "type": "string"
+      },
+      "token_expires_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "verified_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "send_count": {
+        "default": 1,
+        "format": "integer",
+        "type": "integer"
+      },
+      "last_send_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "attempt_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "whatsapp_notifications": {
+    "required": [
+      "id",
+      "phone_number",
+      "message_type",
+      "idempotency_key"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "order_id": {
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "artisan_id": {
+        "description": "Note:\nThis is a Foreign Key to `artisan_profiles.id`.<fk table='artisan_profiles' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "phone_number": {
+        "format": "character varying",
+        "maxLength": 30,
+        "type": "string"
+      },
+      "message_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "idempotency_key": {
+        "format": "character varying",
+        "maxLength": 255,
+        "type": "string"
+      },
+      "template_sid": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "twilio_message_sid": {
+        "format": "character varying",
+        "maxLength": 100,
+        "type": "string"
+      },
+      "status": {
+        "default": "queued",
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "error_code": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "error_message": {
+        "format": "text",
+        "type": "string"
+      },
+      "retry_count": {
+        "default": 0,
+        "format": "integer",
+        "type": "integer"
+      },
+      "payload_snapshot": {
+        "format": "jsonb"
+      },
+      "sent_at": {
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+}
