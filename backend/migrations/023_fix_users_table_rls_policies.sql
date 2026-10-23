@@ -167,27 +167,41 @@ CREATE POLICY "users_admin_delete" ON public.users
 -- Synchronizes new Supabase Auth users automatically with conflict safety
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  v_name TEXT;
+  v_role TEXT;
 BEGIN
-  INSERT INTO public.users (id, supabase_uid, email, name, role, status)
-  VALUES (
-    NEW.id,
-    NEW.id::text,
-    NEW.email,
-    COALESCE(
-      NEW.raw_user_meta_data->>'full_name',
-      NEW.raw_user_meta_data->>'name',
-      NEW.raw_user_meta_data->>'display_name',
-      split_part(NEW.email, '@', 1)
-    ),
-    COALESCE(LOWER(NEW.raw_user_meta_data->>'role'), 'user'),
-    'active'
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    supabase_uid = EXCLUDED.supabase_uid,
-    email = COALESCE(public.users.email, EXCLUDED.email),
-    name = COALESCE(public.users.name, EXCLUDED.name)
-  ON CONFLICT (email) DO UPDATE SET
-    supabase_uid = EXCLUDED.supabase_uid;
+  v_name := COALESCE(
+    NEW.raw_user_meta_data->>'full_name',
+    NEW.raw_user_meta_data->>'name',
+    NEW.raw_user_meta_data->>'display_name',
+    split_part(NEW.email, '@', 1)
+  );
+  v_role := COALESCE(LOWER(NEW.raw_user_meta_data->>'role'), 'user');
+
+  -- If user already exists by email, link their supabase_uid
+  UPDATE public.users
+  SET supabase_uid = NEW.id::text,
+      name = COALESCE(public.users.name, v_name),
+      status = 'active'
+  WHERE LOWER(email) = LOWER(NEW.email);
+
+  -- If no user existed with that email, insert new record
+  IF NOT FOUND THEN
+    INSERT INTO public.users (id, supabase_uid, email, name, role, status)
+    VALUES (
+      NEW.id,
+      NEW.id::text,
+      NEW.email,
+      v_name,
+      v_role,
+      'active'
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      supabase_uid = EXCLUDED.supabase_uid,
+      email = COALESCE(public.users.email, EXCLUDED.email),
+      name = COALESCE(public.users.name, EXCLUDED.name);
+  END IF;
 
   RETURN NEW;
 END;
