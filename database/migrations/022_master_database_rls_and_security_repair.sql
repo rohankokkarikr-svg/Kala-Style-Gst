@@ -26,11 +26,11 @@ CREATE INDEX IF NOT EXISTS idx_users_supabase_uid ON public.users(supabase_uid);
 CREATE INDEX IF NOT EXISTS idx_artisan_profiles_user_id ON public.artisan_profiles(user_id);
 
 -- Foreign key covering indexes (resolves performance advisor findings)
-CREATE INDEX IF NOT EXISTS idx_ai_admin_actions_admin_id ON public.ai_admin_actions(admin_id);
-CREATE INDEX IF NOT EXISTS idx_ai_admin_actions_confirmed_by ON public.ai_admin_actions(confirmed_by);
+CREATE INDEX IF NOT EXISTS idx_ai_admin_actions_conversation_id ON public.ai_admin_actions(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_ai_admin_actions_entity_id ON public.ai_admin_actions(entity_id);
 CREATE INDEX IF NOT EXISTS idx_ai_admin_conversations_admin_id ON public.ai_admin_conversations(admin_id);
-CREATE INDEX IF NOT EXISTS idx_ai_agent_approvals_action_id ON public.ai_agent_approvals(action_id);
 CREATE INDEX IF NOT EXISTS idx_ai_agent_approvals_admin_id ON public.ai_agent_approvals(admin_id);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_approvals_approved_by ON public.ai_agent_approvals(approved_by);
 CREATE INDEX IF NOT EXISTS idx_ai_agent_sessions_admin_id ON public.ai_agent_sessions(admin_id);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_user_id ON public.ai_usage_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_artisan_earnings_artisan_id ON public.artisan_earnings(artisan_id);
@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_order_items_artisan_id ON public.order_items(arti
 CREATE INDEX IF NOT EXISTS idx_reports_reporter_id ON public.reports(reporter_id);
 CREATE INDEX IF NOT EXISTS idx_shipping_shipments_order_id ON public.shipping_shipments(order_id);
 CREATE INDEX IF NOT EXISTS idx_shipping_shipments_artisan_id ON public.shipping_shipments(artisan_id);
-CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_user_id ON public.whatsapp_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_artisan_id ON public.whatsapp_notifications(artisan_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_order_id ON public.whatsapp_notifications(order_id);
 
 
@@ -625,10 +625,10 @@ CREATE POLICY "shipping_webhooks_admin_select" ON public.shipping_webhook_events
   FOR SELECT TO authenticated
   USING (public.is_admin());
 
--- WhatsApp Notifications: Recipient user reads own; admin reads all
+-- WhatsApp Notifications: Assigned artisan reads own; admin reads all
 CREATE POLICY "whatsapp_notifications_select" ON public.whatsapp_notifications
   FOR SELECT TO authenticated
-  USING (user_id = public.get_current_user_id() OR public.is_admin());
+  USING (artisan_id = public.get_current_artisan_id() OR public.is_admin());
 
 CREATE POLICY "whatsapp_notifications_admin_write" ON public.whatsapp_notifications
   FOR ALL TO authenticated
@@ -828,14 +828,11 @@ CREATE POLICY "admin_activity_logs_admin_access" ON public.admin_activity_logs
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
--- Activity Logs: User reads own activity; admin reads all
-CREATE POLICY "activity_logs_select" ON public.activity_logs
-  FOR SELECT TO authenticated
-  USING (user_id = public.get_current_user_id() OR public.is_admin());
-
-CREATE POLICY "activity_logs_insert" ON public.activity_logs
-  FOR INSERT TO authenticated
-  WITH CHECK (user_id = public.get_current_user_id() OR user_id IS NULL OR public.is_admin());
+-- Activity Logs: Admin-only audit trail
+CREATE POLICY "activity_logs_admin_access" ON public.activity_logs
+  FOR ALL TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
