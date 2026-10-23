@@ -68,8 +68,7 @@ AS $$
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.is_admin() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.is_admin() FROM anon;
-GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated, service_role;
 
 -- Helper 2: Is the authenticated user an active artisan?
 CREATE OR REPLACE FUNCTION public.is_artisan()
@@ -88,8 +87,7 @@ AS $$
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.is_artisan() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.is_artisan() FROM anon;
-GRANT EXECUTE ON FUNCTION public.is_artisan() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_artisan() TO anon, authenticated, service_role;
 
 -- Helper 3: Get public.users.id for current Supabase auth user
 CREATE OR REPLACE FUNCTION public.get_current_user_id()
@@ -105,8 +103,7 @@ AS $$
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_current_user_id() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_current_user_id() FROM anon;
-GRANT EXECUTE ON FUNCTION public.get_current_user_id() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_current_user_id() TO anon, authenticated, service_role;
 
 -- Helper 4: Get public.artisan_profiles.id for current Supabase auth user
 CREATE OR REPLACE FUNCTION public.get_current_artisan_id()
@@ -123,8 +120,7 @@ AS $$
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_current_artisan_id() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_current_artisan_id() FROM anon;
-GRANT EXECUTE ON FUNCTION public.get_current_artisan_id() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_current_artisan_id() TO anon, authenticated, service_role;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -504,7 +500,7 @@ CREATE POLICY "artisan_earnings_admin_write" ON public.artisan_earnings
 -- Sales: Artisan reads sales for own products; admin reads all
 CREATE POLICY "sales_select" ON public.sales
   FOR SELECT TO authenticated
-  USING (artisan_id = public.get_current_artisan_id() OR public.is_admin());
+  USING (artisan_id::text = public.get_current_artisan_id()::text OR public.is_admin());
 
 -- Sales: Admin only writes
 CREATE POLICY "sales_admin_write" ON public.sales
