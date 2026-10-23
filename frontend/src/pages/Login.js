@@ -77,8 +77,8 @@ export default function Login() {
     Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
   );
 
-  // Synchronized state for Google OAuth verification banner
-  const isVerifyingGoogle = (hasOAuthParams || oauthProcessing) && !user && !oauthError;
+  // Synchronized state for Google OAuth verification banner (strictly require actual OAuth parameters/flag)
+  const isVerifyingGoogle = Boolean(hasOAuthParams && oauthProcessing && !user && !oauthError);
 
   // Auto-redirect when user session is active
   useEffect(() => {

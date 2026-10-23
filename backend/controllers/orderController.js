@@ -351,7 +351,14 @@ exports.getOrderById = async (req, res) => {
 
     if (error || !order) return res.status(404).json({ error: 'Order not found' });
 
-    const isOwner = String(order.user_id) === String(req.user.id);
+    const cleanUserPhone = String(req.user?.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanOrderPhone = String(order.phone || '').replace(/\D/g, '').slice(-10);
+    const phoneMatches = Boolean(cleanUserPhone && cleanOrderPhone && cleanUserPhone === cleanOrderPhone);
+    const emailMatches = Boolean(req.user?.email && (order.email || order.shipping_email) &&
+      (String(req.user.email).trim().toLowerCase() === String(order.email || '').trim().toLowerCase() ||
+       String(req.user.email).trim().toLowerCase() === String(order.shipping_email || '').trim().toLowerCase()));
+
+    const isOwner = String(order.user_id) === String(req.user.id) || phoneMatches || emailMatches;
     const isAdmin = (req.user?.role || '').toLowerCase() === 'admin';
     let isAssignedArtisan = false;
 
@@ -419,7 +426,14 @@ exports.getOrderTracking = async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const isBuyer = String(order.user_id) === String(req.user.id);
+    const cleanUserPhone = String(req.user?.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanOrderPhone = String(order.phone || '').replace(/\D/g, '').slice(-10);
+    const phoneMatches = Boolean(cleanUserPhone && cleanOrderPhone && cleanUserPhone === cleanOrderPhone);
+    const emailMatches = Boolean(req.user?.email && (order.email || order.shipping_email) &&
+      (String(req.user.email).trim().toLowerCase() === String(order.email || '').trim().toLowerCase() ||
+       String(req.user.email).trim().toLowerCase() === String(order.shipping_email || '').trim().toLowerCase()));
+
+    const isBuyer = String(order.user_id) === String(req.user.id) || phoneMatches || emailMatches;
     const isAdmin = (req.user.role || '').toLowerCase() === 'admin';
     let isArtisan = (order.artisan_orders || []).some(
       (ao) => String(ao.artisan_id) === String(req.user.id)

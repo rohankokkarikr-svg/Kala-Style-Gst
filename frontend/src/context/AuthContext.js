@@ -46,13 +46,13 @@ export const AuthProvider = ({ children }) => {
     isSigningUpRef.current = false;
   }, []);
 
-  const syncSupabaseSessionSingleFlight = useCallback(async (session) => {
-    if (!session?.access_token) return null;
+  const syncSupabaseSessionSingleFlight = useCallback(async (session, silent = false) => {
+    if (!session?.access_token || !session?.user?.email) return null;
     if (syncPromiseRef.current) return syncPromiseRef.current;
 
     syncPromiseRef.current = (async () => {
       try {
-        setOauthError(null);
+        if (!silent) setOauthError(null);
         // Step 2 & 13: Recover auth_intent from sessionStorage or localStorage (default: 'user')
         const storedIntent = sessionStorage.getItem('auth_intent') || localStorage.getItem('auth_intent');
         const authIntent = storedIntent === 'admin' ? 'admin' : storedIntent === 'artisan' ? 'artisan' : 'user';
@@ -110,11 +110,15 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
 
-        setOauthError(errMsg);
-        toast.error(errMsg, { duration: 6000 });
+        if (!silent) {
+          setOauthError(errMsg);
+          toast.error(errMsg, { duration: 6000 });
+        }
       } finally {
         syncPromiseRef.current = null;
-        setOauthProcessing(false);
+        if (!silent) {
+          setOauthProcessing(false);
+        }
       }
       return null;
     })();
@@ -216,7 +220,7 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (!session?.access_token) {
+        if (!session?.access_token || !session?.user?.email) {
           return;
         }
 
@@ -233,14 +237,11 @@ export const AuthProvider = ({ children }) => {
           Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
 
-        // Section 6: Verified Supabase session identity must win when OAuth is active or no backend session exists
-        // Sync session if:
-        // 1. No backend token exists yet, OR
-        // 2. Google OAuth returned callback parameters in URL or marked in-flight
-        if (!currentToken || isOAuthInFlight) {
+        // Verified Supabase session identity must win when OAuth is active
+        if (isOAuthInFlight) {
           setOauthProcessing(true);
           try {
-            const syncedUser = await syncSupabaseSessionSingleFlight(session);
+            await syncSupabaseSessionSingleFlight(session, false);
             sessionStorage.removeItem('oauth_in_flight');
 
             // Section 20: Clean URL after session evaluation
@@ -253,6 +254,13 @@ export const AuthProvider = ({ children }) => {
             console.error('[onAuthStateChange] Session sync failed:', err);
           } finally {
             setOauthProcessing(false);
+          }
+        } else if (!currentToken) {
+          // Silent background sync when no token exists and user has verified email session
+          try {
+            await syncSupabaseSessionSingleFlight(session, true /* silent */);
+          } catch (err) {
+            console.warn('[onAuthStateChange] Background session sync note:', err?.message || err);
           }
         }
       }
