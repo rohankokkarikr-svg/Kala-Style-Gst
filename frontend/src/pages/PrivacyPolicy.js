@@ -70,11 +70,11 @@ export default function PrivacyPolicy() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Quick Nav Sidebar (Desktop) */}
-          <aside className="hidden lg:flex lg:flex-col lg:col-span-4 sticky top-24 max-h-[calc(100vh-7rem)] overflow-hidden card p-4 border border-dark-600/80 bg-dark-950/80 backdrop-blur-md">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gold-400 px-3 py-2 shrink-0">
+          <aside className="hidden lg:block lg:col-span-4 sticky top-24 space-y-2 card p-4 border border-dark-600/80 bg-dark-950/80 backdrop-blur-md">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gold-400 px-3 py-2">
               Policy Table of Contents
             </h3>
-            <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 custom-scrollbar pr-1">
+            <nav className="space-y-1">
               {sections.map((sec) => {
                 const Icon = sec.icon;
                 const isActive = activeSection === sec.id;
@@ -95,7 +95,7 @@ export default function PrivacyPolicy() {
               })}
             </nav>
 
-            <div className="mt-4 pt-3 border-t border-dark-700/80 px-3 shrink-0">
+            <div className="mt-6 pt-4 border-t border-dark-700/80 px-3">
               <p className="text-[11px] text-gray-400 leading-normal">
                 Questions about our privacy practices? Contact our Data Privacy Officer at{' '}
                 <a href="mailto:privacy@kalastyle.ai" className="text-gold-400 hover:underline">privacy@kalastyle.ai</a>

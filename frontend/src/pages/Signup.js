@@ -209,8 +209,7 @@ export default function Signup() {
       toast.success(
         role === 'artisan'
           ? '🎨 Artisan account verified and created! Welcome to KalaStyle Studio!'
-          : `✨ Account verified! Welcome to KalaStyle AI, ${name}!`,
-        { id: 'signup-welcome-toast' }
+          : `✨ Account verified! Welcome to KalaStyle AI, ${name}!`
       );
 
       setTimeout(() => {

@@ -68,7 +68,6 @@ export default function Login() {
   const [otpNotFound, setOtpNotFound] = useState(false);
 
   const otpInputsRef = useRef([]);
-  const hasRedirectedRef = useRef(false);
 
   // Check if OAuth callback is actively in-flight or in URL
   const hasOAuthParams = typeof window !== 'undefined' && (
@@ -77,12 +76,12 @@ export default function Login() {
     Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
   );
 
-  // Synchronized state for Google OAuth verification banner (strictly require actual OAuth parameters/flag)
-  const isVerifyingGoogle = Boolean(hasOAuthParams && oauthProcessing && !user && !oauthError);
+  // Synchronized state for Google OAuth verification banner
+  const isVerifyingGoogle = (hasOAuthParams || oauthProcessing) && !user && !oauthError;
 
   // Auto-redirect when user session is active
   useEffect(() => {
-    if (user && !hasRedirectedRef.current) {
+    if (user) {
       handleRedirectAfterAuth(user);
     }
   }, [user]);
@@ -97,9 +96,9 @@ export default function Login() {
       if (errorDesc) {
         sessionStorage.removeItem('oauth_in_flight');
         if (errorDesc.includes('access_denied') || errorDesc.includes('cancelled') || errorDesc.includes('closed')) {
-          toast.error('Google sign-in was cancelled.', { id: 'oauth-cancelled' });
+          toast.error('Google sign-in was cancelled.');
         } else {
-          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')), { id: 'oauth-error' });
+          toast.error(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
         }
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -140,9 +139,6 @@ export default function Login() {
 
   // Safe redirect helper after authentication
   const handleRedirectAfterAuth = (authenticatedUser) => {
-    if (hasRedirectedRef.current) return;
-    hasRedirectedRef.current = true;
-
     const role = normalizeRole(authenticatedUser?.role);
     const storedReturnUrl = sessionStorage.getItem('auth_return_url');
     const authIntent = sessionStorage.getItem('auth_intent');
@@ -155,7 +151,7 @@ export default function Login() {
 
     // If account has admin role in Supabase database, grant admin dashboard access automatically
     if (role === 'admin') {
-      toast.success('Authenticated as Administrator 🛡️', { id: 'admin-auth-toast' });
+      toast.success('Authenticated as Administrator 🛡️');
       // For Admin: ensure destination is /admin unless they explicitly came for an /admin subroute (e.g. /admin/orders)
       // An admin logging in should NEVER be bounced into /artisan!
       let adminTarget = '/admin';

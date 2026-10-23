@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { 
   HiX, 
   HiPaperAirplane, 
@@ -49,28 +48,6 @@ export default function SendMessageModal({
       loadRecipients();
     }
   }, [isOpen, initialRecipientId, defaultTitle, productContext, orderContext]);
-
-  // Lock body scroll while modal is open
-  useEffect(() => {
-    if (isOpen) {
-      const prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = prevOverflow;
-      };
-    }
-  }, [isOpen]);
-
-  // Handle ESC key to close
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
 
   const loadRecipients = async () => {
     setLoadingRecipients(true);
@@ -132,20 +109,16 @@ export default function SendMessageModal({
     }
   };
 
-  const modalContent = (
-    <div 
-      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn"
-      onClick={onClose}
-    >
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
       <div 
         style={{ backgroundColor: '#141414' }}
-        className="bg-[#141414] border border-gold-500/40 rounded-2xl max-w-lg w-full shadow-2xl shadow-black overflow-hidden relative my-auto max-h-[92vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        className="bg-[#141414] border border-gold-500/40 rounded-2xl max-w-lg w-full shadow-2xl shadow-black overflow-hidden relative"
       >
         {/* Header */}
         <div 
           style={{ backgroundColor: '#1c1c1c' }}
-          className="flex items-center justify-between px-6 py-4 border-b border-dark-600 bg-[#1c1c1c] shrink-0"
+          className="flex items-center justify-between px-6 py-4 border-b border-dark-600 bg-[#1c1c1c]"
         >
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gold-500/15 border border-gold-500/30 flex items-center justify-center text-gold-400">
@@ -157,16 +130,15 @@ export default function SendMessageModal({
             </div>
           </div>
           <button
-            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-dark-700 transition-colors cursor-pointer"
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-dark-700 transition-colors"
           >
             <HiX className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1 min-h-0 custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           {/* Recipient Selection */}
           {!initialRecipientId && (
             <div className="space-y-1.5">
@@ -273,7 +245,7 @@ export default function SendMessageModal({
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-dark-600 shrink-0">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-dark-600">
             <button
               type="button"
               onClick={onClose}
@@ -294,9 +266,4 @@ export default function SendMessageModal({
       </div>
     </div>
   );
-
-  if (typeof document !== 'undefined') {
-    return createPortal(modalContent, document.body);
-  }
-  return modalContent;
 }

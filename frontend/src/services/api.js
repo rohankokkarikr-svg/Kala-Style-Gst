@@ -36,14 +36,8 @@ const api = axios.create({
 // Attach JWT token from localStorage on every request
 api.interceptors.request.use(
   (config) => {
-    // Avoid attaching stale internal backend JWT to Supabase session sync endpoints
-    const isSupabaseSessionEndpoint = config.url?.includes('/auth/supabase-session') ||
-                                      config.url?.includes('/auth/session') ||
-                                      config.url?.includes('/auth/otp-session');
     const token = localStorage.getItem('sh_token');
-    if (token && !isSupabaseSessionEndpoint) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
@@ -68,28 +62,27 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401) {
       const reqUrl = error.config?.url || '';
-      const isAuthOrOrderEndpoint =
-        reqUrl.includes('/auth/') ||
-        reqUrl.includes('/orders') ||
-        reqUrl.includes('/payments') ||
-        reqUrl.includes('phone-otp');
+      const isAuthEndpoint = reqUrl.includes('/auth/login') ||
+                             reqUrl.includes('/auth/signup') ||
+                             reqUrl.includes('/auth/register') ||
+                             reqUrl.includes('/auth/otp-session') ||
+                             reqUrl.includes('/auth/supabase-session');
 
-      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-      const isCheckoutPage = currentPath.startsWith('/checkout');
-
-      // Never wipe tokens or redirect to login on checkout page or for auth/order/payment endpoints
-      if (!isAuthOrOrderEndpoint && !isCheckoutPage) {
+      // Do NOT trigger global redirect on login/signup failure so error toast can render cleanly
+      if (!isAuthEndpoint) {
         localStorage.removeItem('sh_token');
         localStorage.removeItem('sh_user');
 
-        // Only redirect to login if currently accessing a protected dashboard
-        const isDashboardRoute =
-          currentPath.startsWith('/admin') ||
-          currentPath.startsWith('/artisan') ||
-          currentPath.startsWith('/my-orders') ||
-          currentPath.startsWith('/account');
+        // Only redirect to login if currently accessing a protected dashboard or action
+        const currentPath = window.location.pathname;
+        const isProtectedRoute = currentPath.startsWith('/admin') ||
+                                 currentPath.startsWith('/artisan') ||
+                                 currentPath.startsWith('/checkout') ||
+                                 currentPath.startsWith('/orders') ||
+                                 currentPath.startsWith('/my-orders') ||
+                                 currentPath.startsWith('/account');
 
-        if (isDashboardRoute && currentPath !== '/login') {
+        if (isProtectedRoute && currentPath !== '/login') {
           window.location.href = '/login';
         }
       }

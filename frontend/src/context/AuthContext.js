@@ -46,36 +46,13 @@ export const AuthProvider = ({ children }) => {
     isSigningUpRef.current = false;
   }, []);
 
-  const syncSupabaseSessionSingleFlight = useCallback(async (session, silent = false) => {
-    if (!session?.access_token || !session?.user?.email) return null;
+  const syncSupabaseSessionSingleFlight = useCallback(async (session) => {
+    if (!session?.access_token) return null;
     if (syncPromiseRef.current) return syncPromiseRef.current;
 
     syncPromiseRef.current = (async () => {
       try {
-        if (!silent) setOauthError(null);
-
-        // Pre-flight check: If session token is expired or expiring within 10s, attempt proactive refresh
-        let currentSession = session;
-        const nowSec = Math.floor(Date.now() / 1000);
-        if (currentSession?.expires_at && currentSession.expires_at <= nowSec + 10) {
-          try {
-            const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
-            if (!refreshErr && refreshData?.session?.access_token) {
-              currentSession = refreshData.session;
-            } else {
-              // Session expired and cannot be refreshed, cleanly clear dead session
-              await supabase.auth.signOut().catch(() => {});
-              localStorage.removeItem('sh_token');
-              localStorage.removeItem('sh_user');
-              setUser(null);
-              return null;
-            }
-          } catch (_) {
-            await supabase.auth.signOut().catch(() => {});
-            return null;
-          }
-        }
-
+        setOauthError(null);
         // Step 2 & 13: Recover auth_intent from sessionStorage or localStorage (default: 'user')
         const storedIntent = sessionStorage.getItem('auth_intent') || localStorage.getItem('auth_intent');
         const authIntent = storedIntent === 'admin' ? 'admin' : storedIntent === 'artisan' ? 'artisan' : 'user';
@@ -90,9 +67,9 @@ export const AuthProvider = ({ children }) => {
 
         // Section 6: Verified Supabase session identity must win
         const { data } = await authAPI.supabaseSession({
-          accessToken: currentSession.access_token,
-          email: currentSession.user?.email,
-          supabase_uid: currentSession.user?.id,
+          accessToken: session.access_token,
+          email: session.user?.email,
+          supabase_uid: session.user?.id,
           auth_intent: authIntent,
           auth_flow: authFlow,
           is_signup: isSignupFlag
@@ -115,17 +92,11 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (e) {
         const isNotFound = e.response?.status === 404 || e.response?.data?.notFound;
-        const isExpired = e.response?.status === 401 ||
-                          e.response?.data?.expired ||
-                          (typeof e.response?.data?.error === 'string' && (
-                            e.response.data.error.includes('expired') ||
-                            e.response.data.error.includes('Invalid or expired')
-                          ));
         const errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
-        console.warn('[syncSupabaseSessionSingleFlight] Sync notice:', errMsg);
+        console.error('[syncSupabaseSessionSingleFlight] Sync error:', errMsg);
 
-        if (isNotFound || isExpired) {
-          // Cleanly clear invalid/expired Supabase session to prevent repeat failures
+        if (isNotFound) {
+          // Strict: When user has not registered, immediately sign out of Supabase to prevent unlinked session
           try {
             await supabase.auth.signOut();
           } catch (_) {}
@@ -139,16 +110,11 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
 
-        // Only show toast if user actively initiated an action, never on silent background sync
-        if (!silent && !isExpired) {
-          setOauthError(errMsg);
-          toast.error(errMsg, { duration: 6000 });
-        }
+        setOauthError(errMsg);
+        toast.error(errMsg, { duration: 6000 });
       } finally {
         syncPromiseRef.current = null;
-        if (!silent) {
-          setOauthProcessing(false);
-        }
+        setOauthProcessing(false);
       }
       return null;
     })();
@@ -187,7 +153,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        return await syncSupabaseSessionSingleFlight(session, true /* silent on background refresh */);
+        return await syncSupabaseSessionSingleFlight(session);
       }
     } catch (e) {
       console.warn('[refreshUser] Supabase getSession error:', e?.message || e);
@@ -250,7 +216,7 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (!session?.access_token || !session?.user?.email) {
+        if (!session?.access_token) {
           return;
         }
 
@@ -267,11 +233,14 @@ export const AuthProvider = ({ children }) => {
           Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
 
-        // Verified Supabase session identity must win when OAuth is active
-        if (isOAuthInFlight) {
+        // Section 6: Verified Supabase session identity must win when OAuth is active or no backend session exists
+        // Sync session if:
+        // 1. No backend token exists yet, OR
+        // 2. Google OAuth returned callback parameters in URL or marked in-flight
+        if (!currentToken || isOAuthInFlight) {
           setOauthProcessing(true);
           try {
-            await syncSupabaseSessionSingleFlight(session, false);
+            const syncedUser = await syncSupabaseSessionSingleFlight(session);
             sessionStorage.removeItem('oauth_in_flight');
 
             // Section 20: Clean URL after session evaluation
@@ -284,13 +253,6 @@ export const AuthProvider = ({ children }) => {
             console.error('[onAuthStateChange] Session sync failed:', err);
           } finally {
             setOauthProcessing(false);
-          }
-        } else if (!currentToken) {
-          // Silent background sync when no token exists and user has verified email session
-          try {
-            await syncSupabaseSessionSingleFlight(session, true /* silent */);
-          } catch (err) {
-            console.warn('[onAuthStateChange] Background session sync note:', err?.message || err);
           }
         }
       }
@@ -511,7 +473,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`, { id: 'auth-welcome-toast' });
+      toast.success(`Welcome back, ${normalizedUser.name || 'User'}! 👑`);
       return normalizedUser;
     } catch (err) {
       const errorData = err.response?.data;
@@ -547,7 +509,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('sh_token', data.token);
       localStorage.setItem('sh_user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      toast.success('Account created! Welcome to KalaStyle AI ✨', { id: 'signup-welcome-toast' });
+      toast.success('Account created! Welcome to KalaStyle AI ✨');
       return normalizedUser;
     } catch (err) {
       const errMsg = err.response?.data?.error || err.message || 'Failed to create account';

@@ -95,7 +95,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="h-screen w-full overflow-hidden bg-dark-900 flex text-gray-100">
+    <div className="min-h-screen bg-dark-900 flex text-gray-100">
       {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div 
@@ -104,14 +104,14 @@ export default function AdminLayout() {
         />
       )}
 
-      {/* Sidebar - Locked full viewport height, independent inner nav scrolling */}
+      {/* Sidebar */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 h-full w-64 bg-dark-800 border-r border-dark-600 
-        transform transition-transform duration-300 ease-in-out flex flex-col shrink-0 overflow-hidden
+        fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 
+        transform transition-transform duration-300 ease-in-out flex flex-col
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Brand Header */}
-        <div className="p-5 border-b border-dark-600 flex justify-between items-center bg-dark-850 shrink-0">
+        <div className="p-5 border-b border-dark-600 flex justify-between items-center bg-dark-850">
           <Link to="/admin" className="flex items-center gap-3">
             <img
               src="/images/kalastyle_logo.png"
@@ -132,7 +132,7 @@ export default function AdminLayout() {
         </div>
 
         {/* User Info Capsule */}
-        <div className="px-4 py-3 border-b border-dark-600/70 bg-dark-700/40 flex items-center justify-between shrink-0">
+        <div className="px-4 py-3 border-b border-dark-600/70 bg-dark-700/40 flex items-center justify-between">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-8 h-8 rounded-full bg-gold-500/20 border border-gold-500/40 text-gold-400 flex items-center justify-center font-bold text-xs shrink-0">
               {user?.name?.charAt(0) || 'A'}
@@ -152,8 +152,8 @@ export default function AdminLayout() {
           </div>
         </div>
 
-        {/* Navigation List - Only this section scrolls */}
-        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4 text-sm custom-scrollbar">
+        {/* Navigation List */}
+        <nav className="flex-1 overflow-y-auto p-3 space-y-4 text-sm custom-scrollbar">
           {navSections.map((sec, idx) => (
             <div key={idx} className="space-y-1">
               <p className="px-3 text-[10px] uppercase font-bold text-gray-400 tracking-wider">
@@ -190,8 +190,8 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        {/* Footer Actions - Permanently pinned at the bottom */}
-        <div className="p-3 border-t border-dark-600 bg-dark-850 space-y-1 shrink-0">
+        {/* Footer Actions */}
+        <div className="p-3 border-t border-dark-600 bg-dark-850 space-y-1">
           <Link
             to="/"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-gold-400 hover:bg-dark-700/50 transition-colors"
@@ -200,7 +200,7 @@ export default function AdminLayout() {
           </Link>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-xs text-red-400 hover:bg-red-400/10 hover:text-red-300 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-xs text-red-400 hover:bg-red-400/10 hover:text-red-300 transition-colors"
           >
             <HiLogout className="w-4 h-4 shrink-0" />
             <span>Sign Out</span>
@@ -209,9 +209,9 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-dark-900">
+      <main className="flex-1 flex flex-col min-w-0 bg-dark-900 overflow-hidden">
         {/* Top Navbar */}
-        <header className="h-16 shrink-0 border-b border-dark-600/80 bg-dark-800/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
+        <header className="h-16 border-b border-dark-600/80 bg-dark-800/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -249,7 +249,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Viewport */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 overflow-auto p-4 md:p-8">
           <Outlet />
         </div>
       </main>

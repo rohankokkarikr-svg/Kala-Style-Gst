@@ -68,36 +68,27 @@ const SCHEDULED_TASKS = [
   },
 ];
 
-// In-memory fallback and backoff state to prevent infinite retry loops on failure
-const inMemoryLastRun = new Map();
-const inMemoryFailureBackoff = new Map();
-
 /**
- * Fetch last execution timestamp for a scheduled task from database with in-memory fallback.
+ * Fetch last execution timestamp for a scheduled task from database.
  */
 async function getLastRunTimestamp(taskName) {
   try {
     const memoryKey = `scheduler_last_run_${taskName}`;
-    const { data, error } = await safeQuery(() =>
+    const { data } = await safeQuery(() =>
       supabase.from('ai_agent_memory').select('value').eq('key', memoryKey).maybeSingle()
     );
-    if (!error && data && data.value) {
+    if (data && data.value) {
       const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-      const ts = new Date(parsed).getTime();
-      inMemoryLastRun.set(taskName, ts);
-      return ts;
+      return new Date(parsed).getTime();
     }
   } catch (err) {}
-  return inMemoryLastRun.get(taskName) || 0;
+  return 0;
 }
 
 /**
- * Record successful run timestamp into database and in-memory cache.
+ * Record successful run timestamp into database.
  */
 async function setLastRunTimestamp(taskName, timestampMs) {
-  inMemoryLastRun.set(taskName, timestampMs);
-  inMemoryFailureBackoff.delete(taskName);
-
   try {
     const memoryKey = `scheduler_last_run_${taskName}`;
     await safeQuery(() =>
@@ -108,13 +99,11 @@ async function setLastRunTimestamp(taskName, timestampMs) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key' })
     );
-  } catch (err) {
-    console.warn(`[AI Scheduler] Persisting ${taskName} timestamp note:`, err.message);
-  }
+  } catch (err) {}
 }
 
 /**
- * Run one iteration of the scheduler cycle with circuit breaker.
+ * Run one iteration of the scheduler cycle.
  */
 async function tickScheduler() {
   if (isCycleRunning) return;
@@ -129,15 +118,6 @@ async function tickScheduler() {
     const now = Date.now();
 
     for (const task of SCHEDULED_TASKS) {
-      // Check failure backoff: don't hammer the database in a tight loop if task previously failed
-      const failureState = inMemoryFailureBackoff.get(task.name);
-      if (failureState) {
-        const backoffMs = Math.min(30 * 60 * 1000, 5 * 60 * 1000 * Math.pow(2, failureState.count - 1));
-        if (now - failureState.time < backoffMs) {
-          continue;
-        }
-      }
-
       const lastRun = await getLastRunTimestamp(task.name);
       const elapsed = now - lastRun;
 
@@ -152,9 +132,7 @@ async function tickScheduler() {
           await task.handler();
           await setLastRunTimestamp(task.name, now);
         } catch (taskErr) {
-          const errCount = (failureState?.count || 0) + 1;
-          inMemoryFailureBackoff.set(task.name, { time: now, count: errCount });
-          console.error(`❌ [AI Scheduler] Error executing ${task.name} (attempt failure #${errCount}):`, taskErr.message);
+          console.error(`❌ [AI Scheduler] Error executing ${task.name}:`, taskErr.message);
         }
       }
     }

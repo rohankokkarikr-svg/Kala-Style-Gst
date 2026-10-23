@@ -121,14 +121,6 @@ const resolveServiceRoleKey = () => {
     return 'sb_secret_test_mock_secret_key_0000000000000000';
   }
 
-  // Canonical fallback for production project if env var was missing or not set
-  const currentUrl = (process.env.SUPABASE_URL || '').trim();
-  if (currentUrl.includes('fwuhlhaadhhveuljsqbh')) {
-    resolvedEnvVarName = 'CANONICAL_PROJECT_FALLBACK';
-    resolvedKeyType = 'jwt_service_role';
-    return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg';
-  }
-
   // Missing in non-test environment
   resolvedKeyType = 'none';
   return null;
@@ -314,48 +306,16 @@ const formatSupabaseError = (error) => {
 };
 
 /**
- * Detects permanent SQL and authorization errors that should never be retried.
- */
-const isPermanentError = (err) => {
-  if (!err) return false;
-  const code = String(err.code || '');
-  const msg = String(err.message || '').toLowerCase();
-  const status = Number(err.status || 0);
-
-  return (
-    code === '42501' ||    // PostgreSQL insufficient privilege / violates row-level security
-    code === 'PGRST301' || // JWT expired or invalid
-    code === '42P01' ||    // relation does not exist
-    code === '42703' ||    // column does not exist
-    code === '23505' ||    // unique constraint violation
-    status === 401 ||
-    status === 403 ||
-    status === 404 ||
-    msg.includes('row-level security') ||
-    msg.includes('permission denied') ||
-    msg.includes('invalid api key') ||
-    msg.includes('jwt')
-  );
-};
-
-/**
- * Robust query wrapper with intelligent retry classification.
- * Retries transient failures (network timeouts, DNS blips) with bounded backoff.
- * NEVER endlessly retries permanent authorization errors (SQLSTATE 42501).
+ * Robust query wrapper with automatic retries for transient failures
  */
 const safeQuery = async (queryFn, maxRetries = 2) => {
   let lastError;
   for (let i = 0; i < maxRetries; i++) {
     try {
       const result = await queryFn();
-      if (!result?.error) return result;
+      if (!result.error) return result;
 
       lastError = result.error;
-      // Fail fast on permanent authorization or constraint errors
-      if (isPermanentError(lastError)) {
-        return result;
-      }
-
       if (i < maxRetries - 1) {
         await new Promise((res) => setTimeout(res, 500 * (i + 1)));
         continue;
@@ -363,9 +323,6 @@ const safeQuery = async (queryFn, maxRetries = 2) => {
       return result;
     } catch (err) {
       lastError = err;
-      if (isPermanentError(lastError)) {
-        return { data: null, error: err };
-      }
       if (i < maxRetries - 1) {
         await new Promise((res) => setTimeout(res, 500 * (i + 1)));
         continue;

@@ -688,7 +688,7 @@ export default function Products() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-5">
           <div className="bg-dark-850 border border-dark-600 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-fadeIn">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700 bg-dark-800/80 shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700 bg-dark-800/80">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-lg bg-gold-500/15 border border-gold-500/30 text-gold-400">
                   <HiPencilAlt className="w-5 h-5" />
@@ -712,8 +712,7 @@ export default function Products() {
             </div>
 
             {/* Modal Form Body */}
-            <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-6 overflow-y-auto flex-1 min-h-0 space-y-6 text-xs custom-scrollbar">
+            <form onSubmit={handleSaveEdit} className="p-6 overflow-y-auto flex-1 space-y-6 text-xs">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* Left Column: Imagery, Status & Flags (5 cols) */}
                 <div className="md:col-span-5 space-y-5">
@@ -1120,11 +1119,10 @@ export default function Products() {
                     </div>
                   </div>
                 </div>
-                </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-between px-6 py-4 border-t border-dark-700 bg-dark-800/60 shrink-0">
+              <div className="flex items-center justify-between pt-4 border-t border-dark-700">
                 <p className="text-[11px] text-gray-500 hidden sm:block">
                   Updates sync across the live storefront and customer app immediately.
                 </p>

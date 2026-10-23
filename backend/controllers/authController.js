@@ -143,9 +143,6 @@ exports.register = async (req, res) => {
       };
       if (verifiedUid) {
         insertPayload.supabase_uid = verifiedUid;
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
-          insertPayload.id = verifiedUid;
-        }
       }
 
       const { data: newUser, error } = await supabase
@@ -734,18 +731,7 @@ exports.syncSupabaseSession = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const bodyToken = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : null;
-    let headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
-
-    // Reject internal app backend tokens (iss: kalastyle-api) from being mistaken for Supabase tokens
-    if (headerToken) {
-      try {
-        const decoded = jwt.decode(headerToken);
-        if (decoded?.iss === 'kalastyle-api' || decoded?.issuer === 'kalastyle-api') {
-          headerToken = null;
-        }
-      } catch (_) {}
-    }
-
+    const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
     const token = bodyToken || headerToken;
 
     // Login portal intent: 'user' (customer) vs 'artisan' vs 'admin'
@@ -768,14 +754,9 @@ exports.syncSupabaseSession = async (req, res) => {
     let sbAuthRole = null;
 
     try {
-      const { data: { user: sbUser } = {}, error: sbError } = await supabase.auth.getUser(token);
+      const { data: { user: sbUser }, error: sbError } = await supabase.auth.getUser(token);
       if (sbError || !sbUser || !sbUser.email) {
-        console.warn('[syncSupabaseSession] Supabase getUser rejection:', sbError?.message || 'sbUser or sbUser.email missing');
-        return res.status(401).json({
-          error: 'Invalid or expired Supabase authentication token',
-          expired: true,
-          details: sbError?.message
-        });
+        return res.status(401).json({ error: 'Invalid or expired Supabase authentication token' });
       }
       verifiedEmail = normalizeEmail(sbUser.email);
       verifiedUid = sbUser.id;
@@ -924,14 +905,9 @@ exports.syncSupabaseSession = async (req, res) => {
 
       let newUser = null;
       if (verifiedUid) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid);
         const { data, error } = await supabase
           .from('users')
-          .insert([{
-            ...newUserData,
-            supabase_uid: verifiedUid,
-            ...(isUuid ? { id: verifiedUid } : {})
-          }])
+          .insert([{ ...newUserData, supabase_uid: verifiedUid }])
           .select()
           .single();
         if (!error && data) {

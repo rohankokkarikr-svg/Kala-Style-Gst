@@ -18,74 +18,37 @@ const protect = async (req, res, next) => {
     }
     
     let decodedId = null;
-    let authUser = null;
-
     try {
       const decoded = jwt.verify(token, jwtSecret);
       decodedId = decoded.id;
     } catch (jwtErr) {
-      // If backend JWT verification fails, check if this is a valid Supabase access token (e.g. from Google OAuth)
-      try {
-        const { data: sbData, error: sbErr } = await supabase.auth.getUser(token);
-        if (!sbErr && sbData?.user) {
-          const sbUser = sbData.user;
-          const { data: matchedUser, error: lookupErr } = await supabase
-            .from('users')
-            .select('*')
-            .or(`supabase_uid.eq.${sbUser.id},email.eq.${sbUser.email}`)
-            .maybeSingle();
-
-          if (lookupErr) {
-            console.error('Database error looking up Supabase user:', lookupErr);
-            return res.status(503).json({ error: 'Temporary database error, please retry' });
-          }
-
-          if (matchedUser) {
-            authUser = matchedUser;
-          }
-        }
-      } catch (sbLookupErr) {
-        console.warn('Supabase token verification fallback error:', sbLookupErr.message);
-      }
-
-      if (!authUser) {
-        return res.status(401).json({ error: 'Not authorized, token failed or expired' });
-      }
+      return res.status(401).json({ error: 'Not authorized, token failed or expired' });
     }
 
-    if (!authUser) {
-      if (!decodedId) {
-        return res.status(401).json({ error: 'Not authorized, invalid token payload' });
-      }
-
-      // Check if user still exists in DB
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', decodedId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Database error in auth middleware:', error);
-        return res.status(503).json({ error: 'Temporary database error, please retry' });
-      }
-
-      if (!user) {
-        return res.status(401).json({ error: 'Not authorized, user not found' });
-      }
-
-      authUser = user;
+    if (!decodedId) {
+      return res.status(401).json({ error: 'Not authorized, invalid token payload' });
     }
 
-    if (authUser.status && (authUser.status === 'blocked' || authUser.status === 'suspended')) {
+    // Check if user still exists in DB
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', decodedId)
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Not authorized, user not found' });
+    }
+
+    if (user.status && (user.status === 'blocked' || user.status === 'suspended')) {
       return res.status(403).json({ error: 'Your account has been suspended by the administrator.' });
     }
 
     // Never attach password hashes to req.user
-    delete authUser.password;
-    delete authUser.password_hash;
+    delete user.password;
+    delete user.password_hash;
 
-    req.user = authUser;
+    req.user = user;
     next();
   } catch (error) {
     console.error('Auth middleware error:', error.message);

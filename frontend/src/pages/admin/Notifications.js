@@ -108,7 +108,7 @@ export default function Notifications() {
         recipientId: notif.sender_id,
         recipientName: notif.sender?.name || 'User',
         recipientRole: notif.sender?.role || 'artisan',
-        defaultTitle: notif.title?.startsWith('Re:') ? notif.title : `Re: ${notif.title || 'Inquiry'}`
+        defaultTitle: `Re: ${notif.title || 'Inquiry'}`
       });
       setReplyModalOpen(true);
     }

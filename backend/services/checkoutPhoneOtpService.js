@@ -21,23 +21,8 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
 const supabase = require('../config/supabase');
 const { safeQuery } = require('../config/supabase');
-
-// Create an isolated ephemeral client so signInWithOtp / verifyOtp NEVER mutates
-// the singleton supabase client's session or strips its service_role privileges.
-const getIsolatedPhoneAuthClient = () => {
-  const url = process.env.SUPABASE_URL || 'https://fwuhlhaadhhveuljsqbh.supabase.co';
-  const key = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3dWhsaGFhZGhodmV1bGpzcWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4OTM4NiwiZXhwIjoyMTA0MzY1Mzg2fQ.Xm2JcJlCiYVJQAOToeIFqYgJASK3c90MZMoFg3duhYg';
-  return createClient(url, key, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-};
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isValidUuid = (val) => Boolean(val && typeof val === 'string' && UUID_REGEX.test(val.trim()));
@@ -433,8 +418,7 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
   // If not dispatched via direct Twilio (or direct Twilio failed), use Supabase Twilio provider
   if (!dispatchSuccess) {
     try {
-      const phoneAuthClient = getIsolatedPhoneAuthClient();
-      const { error: sbErr } = await phoneAuthClient.auth.signInWithOtp({ phone: phoneE164 });
+      const { error: sbErr } = await supabase.auth.signInWithOtp({ phone: phoneE164 });
 
       if (sbErr) {
         console.error('[checkoutPhoneOtpService] Supabase Twilio send error:', sbErr.message);
@@ -684,8 +668,7 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     // 4b. If not verified via Direct Twilio, check via Supabase Twilio Phone Provider
     if (!isVerified) {
       try {
-        const phoneAuthClient = getIsolatedPhoneAuthClient();
-        const { data: verifyData, error: verifyErr } = await phoneAuthClient.auth.verifyOtp({
+        const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
           phone: phoneE164,
           token: String(code).trim(),
           type: 'sms',
