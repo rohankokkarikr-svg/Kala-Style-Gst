@@ -98,25 +98,43 @@ describe('2. Public Catalog Read vs Anonymous Write Protection', () => {
   });
 
   test('Anonymous visitor CANNOT delete or modify products directly', async () => {
-    const { count: initialCount } = await adminClient
+    // 1. Insert a specific sentinel product as admin
+    const { data: sentinel, error: sentErr } = await adminClient
       .from('products')
-      .select('*', { count: 'exact', head: true });
+      .insert([{
+        name: 'Delete Protection Sentinel',
+        price: 999,
+        category: 'Handloom & Textiles',
+        status: 'approved'
+      }])
+      .select('id')
+      .single();
 
+    assert.strictEqual(sentErr, null, 'Sentinel product created');
+
+    // 2. Anonymous client attempts to delete the sentinel product
     const { data: deletedRows, error } = await anonClient
       .from('products')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000')
+      .eq('id', sentinel.id)
       .select();
-
-    const { count: afterCount } = await adminClient
-      .from('products')
-      .select('*', { count: 'exact', head: true });
 
     assert.ok(
       error !== null || (Array.isArray(deletedRows) && deletedRows.length === 0),
       'Anonymous delete must return error or delete 0 rows'
     );
-    assert.strictEqual(afterCount, initialCount, 'Database products count must remain unchanged after anonymous delete attempt');
+
+    // 3. Confirm the sentinel product is still in the database
+    const { data: stillExists } = await adminClient
+      .from('products')
+      .select('id')
+      .eq('id', sentinel.id)
+      .maybeSingle();
+
+    assert.ok(stillExists?.id, 'Sentinel product must still exist in database after anonymous delete attempt');
+
+    // Clean up sentinel product
+    await adminClient.from('products').delete().eq('id', sentinel.id);
   });
 });
 
@@ -246,3 +264,60 @@ describe('6. Frontend & Backend Secret Separation Audit', () => {
     }
   });
 });
+
+describe('7. Users Table RLS & Migration 023 Integrity', () => {
+  test('Migration 023 exists in both database/migrations and backend/migrations with required security policies', () => {
+    const dbMigPath = path.join(__dirname, '../../database/migrations/023_fix_users_table_rls_policies.sql');
+    const beMigPath = path.join(__dirname, '../migrations/023_fix_users_table_rls_policies.sql');
+
+    assert.ok(fs.existsSync(dbMigPath), 'database/migrations/023_fix_users_table_rls_policies.sql must exist');
+    assert.ok(fs.existsSync(beMigPath), 'backend/migrations/023_fix_users_table_rls_policies.sql must exist');
+
+    const content = fs.readFileSync(dbMigPath, 'utf8');
+    assert.ok(content.includes('set_user_identity_defaults'), 'Must include set_user_identity_defaults trigger function');
+    assert.ok(content.includes('users_insert_own'), 'Must include updated users_insert_own policy');
+    assert.ok(content.includes('public.is_admin()'), 'Must include public.is_admin() bypass for user management');
+    assert.ok(content.includes('users_service_role_all'), 'Must include service_role bypass policy');
+  });
+
+  test('Service-role client can insert, select and clean up users without RLS failure', async () => {
+    const testEmail = `test_audit_rls_${Date.now()}@example.com`;
+    const { data: newUser, error: insertErr } = await adminClient
+      .from('users')
+      .insert([{
+        name: 'RLS Audit Test',
+        email: testEmail,
+        password: 'hashedpassword',
+        role: 'user',
+        status: 'active'
+      }])
+      .select()
+      .single();
+
+    assert.strictEqual(insertErr, null, 'Service-role must not trigger RLS 42501 on users insert');
+    assert.ok(newUser?.id, 'User record created with UUID id');
+
+    // Clean up
+    const { error: delErr } = await adminClient
+      .from('users')
+      .delete()
+      .eq('id', newUser.id);
+
+    assert.strictEqual(delErr, null, 'Service-role can delete test user');
+  });
+
+  test('Anonymous client is strictly blocked from inserting into users table', async () => {
+    const { error } = await anonClient
+      .from('users')
+      .insert([{
+        name: 'Hacker',
+        email: 'malicious@example.com',
+        password: 'evil',
+        role: 'admin'
+      }]);
+
+    assert.ok(error !== null, 'Anonymous insert must be blocked by RLS or table permissions');
+    assert.strictEqual(error.code, '42501', 'Must return PostgreSQL 42501 permission denied / RLS error');
+  });
+});
+

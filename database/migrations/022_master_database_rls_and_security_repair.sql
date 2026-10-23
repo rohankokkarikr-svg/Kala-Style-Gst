@@ -314,29 +314,87 @@ END $$;
 -- STEP 7: USERS & AUTHENTICATION IDENTITY POLICIES
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Users: Identity defaults trigger
+CREATE OR REPLACE FUNCTION public.set_user_identity_defaults()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.supabase_uid IS NULL AND auth.uid() IS NOT NULL THEN
+    NEW.supabase_uid := (auth.uid())::text;
+  END IF;
+  IF NEW.id IS NULL THEN
+    IF auth.uid() IS NOT NULL THEN
+      NEW.id := auth.uid();
+    ELSE
+      NEW.id := gen_random_uuid();
+    END IF;
+  END IF;
+  IF NEW.supabase_uid IS NULL AND NEW.id IS NOT NULL AND auth.uid() IS NOT NULL AND NEW.id = auth.uid() THEN
+    NEW.supabase_uid := NEW.id::text;
+  END IF;
+  IF NEW.role IS NULL OR TRIM(NEW.role) = '' THEN
+    NEW.role := 'user';
+  ELSE
+    NEW.role := LOWER(TRIM(NEW.role));
+  END IF;
+  IF NEW.status IS NULL OR TRIM(NEW.status) = '' THEN
+    NEW.status := 'active';
+  ELSE
+    NEW.status := LOWER(TRIM(NEW.status));
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
+
+REVOKE EXECUTE ON FUNCTION public.set_user_identity_defaults() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_user_identity_defaults() TO anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS trg_set_user_identity_defaults ON public.users;
+CREATE TRIGGER trg_set_user_identity_defaults
+  BEFORE INSERT ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_user_identity_defaults();
+
 -- Users: Read own profile or admin reads all
 CREATE POLICY "users_select_own" ON public.users
   FOR SELECT TO authenticated
-  USING (supabase_uid = (SELECT auth.uid())::text OR public.is_admin());
+  USING (
+    supabase_uid = (SELECT auth.uid())::text
+    OR id = (SELECT auth.uid())
+    OR public.is_admin()
+  );
 
--- Users: Authenticated user creates initial profile (bound to own auth.uid())
--- Strictly forbids setting role = 'admin' or changing someone else's supabase_uid
+-- Users: Authenticated user creates initial profile or admin creates user
 CREATE POLICY "users_insert_own" ON public.users
   FOR INSERT TO authenticated
   WITH CHECK (
-    supabase_uid = (SELECT auth.uid())::text
-    AND role IN ('user', 'artisan')
-    AND status IN ('active', 'pending')
+    public.is_admin()
+    OR (
+      (
+        supabase_uid = (SELECT auth.uid())::text
+        OR id = (SELECT auth.uid())
+        OR (supabase_uid IS NULL AND id IS NULL)
+      )
+      AND role IN ('user', 'artisan')
+      AND (status IS NULL OR status IN ('active', 'pending'))
+    )
   );
 
 -- Users: User can update own name/phone/avatar; cannot self-promote to admin or change supabase_uid
 CREATE POLICY "users_update_own" ON public.users
   FOR UPDATE TO authenticated
-  USING (supabase_uid = (SELECT auth.uid())::text OR public.is_admin())
+  USING (
+    supabase_uid = (SELECT auth.uid())::text
+    OR id = (SELECT auth.uid())
+    OR public.is_admin()
+  )
   WITH CHECK (
     public.is_admin()
     OR (
-      supabase_uid = (SELECT auth.uid())::text
+      (
+        supabase_uid = (SELECT auth.uid())::text
+        OR id = (SELECT auth.uid())
+      )
       AND role = (SELECT u.role FROM public.users u WHERE u.id = public.users.id)
       AND status = (SELECT u.status FROM public.users u WHERE u.id = public.users.id)
     )

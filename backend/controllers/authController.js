@@ -143,6 +143,9 @@ exports.register = async (req, res) => {
       };
       if (verifiedUid) {
         insertPayload.supabase_uid = verifiedUid;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
+          insertPayload.id = verifiedUid;
+        }
       }
 
       const { data: newUser, error } = await supabase
@@ -905,9 +908,14 @@ exports.syncSupabaseSession = async (req, res) => {
 
       let newUser = null;
       if (verifiedUid) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid);
         const { data, error } = await supabase
           .from('users')
-          .insert([{ ...newUserData, supabase_uid: verifiedUid }])
+          .insert([{
+            ...newUserData,
+            supabase_uid: verifiedUid,
+            ...(isUuid ? { id: verifiedUid } : {})
+          }])
           .select()
           .single();
         if (!error && data) {
