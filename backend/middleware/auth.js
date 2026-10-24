@@ -29,14 +29,25 @@ const protect = async (req, res, next) => {
       return res.status(401).json({ error: 'Not authorized, invalid token payload' });
     }
 
-    // Check if user still exists in DB
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', decodedId)
-      .single();
+    // Check if user still exists in DB (with safeQuery retry guard against transient timeouts)
+    const { safeQuery } = require('../config/supabase');
+    let user = null;
+    try {
+      const { data, error } = await safeQuery(() =>
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id', decodedId)
+          .maybeSingle()
+      );
+      if (!error && data) {
+        user = data;
+      }
+    } catch (dbErr) {
+      console.warn('[auth.middleware] safeQuery user lookup note:', dbErr.message);
+    }
 
-    if (error || !user) {
+    if (!user) {
       return res.status(401).json({ error: 'Not authorized, user not found' });
     }
 

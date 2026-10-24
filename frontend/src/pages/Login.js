@@ -69,15 +69,37 @@ export default function Login() {
 
   const otpInputsRef = useRef([]);
 
-  // Check if OAuth callback is actively in-flight or in URL
-  const hasOAuthParams = typeof window !== 'undefined' && (
-    sessionStorage.getItem('oauth_in_flight') === 'true' ||
-    Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
-    Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+  // Check if OAuth callback is actively in-flight in the current URL
+  const hasUrlOAuthParams = typeof window !== 'undefined' && Boolean(
+    (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+    (window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
   );
 
-  // Synchronized state for Google OAuth verification banner
-  const isVerifyingGoogle = (hasOAuthParams || oauthProcessing) && !user && !oauthError;
+  const [oauthTimedOut, setOauthTimedOut] = useState(false);
+
+  // Clean stale oauth_in_flight if visiting /login directly without OAuth parameters in URL
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !hasUrlOAuthParams) {
+      sessionStorage.removeItem('oauth_in_flight');
+    }
+  }, [hasUrlOAuthParams]);
+
+  // Synchronized state for Google OAuth verification banner (strict: only if URL params or active processing AND not timed out)
+  const isVerifyingGoogle = (hasUrlOAuthParams || oauthProcessing) && !user && !oauthError && !oauthTimedOut;
+
+  // Safety fallback: if Google OAuth verification hangs for more than 5 seconds, restore login screen
+  useEffect(() => {
+    if (isVerifyingGoogle) {
+      const timer = setTimeout(() => {
+        sessionStorage.removeItem('oauth_in_flight');
+        setOauthTimedOut(true);
+        if (typeof window !== 'undefined' && (window.location.hash || window.location.search)) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isVerifyingGoogle]);
 
   // Auto-redirect when user session is active
   useEffect(() => {
@@ -422,6 +444,21 @@ export default function Login() {
           <p className="text-sm text-gray-400">
             Securely authenticating with Google and preparing your KalaStyle dashboard...
           </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.removeItem('oauth_in_flight');
+                setOauthTimedOut(true);
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState(null, '', window.location.pathname);
+                }
+              }}
+              className="text-xs text-gold-400 hover:text-gold-300 underline font-medium cursor-pointer"
+            >
+              Taking too long? Return to standard login
+            </button>
+          </div>
         </div>
       </div>
     );

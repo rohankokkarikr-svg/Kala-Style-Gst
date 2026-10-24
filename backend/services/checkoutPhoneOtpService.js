@@ -599,6 +599,9 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     if (!verifyErr && (verifyData?.user || verifyData?.session)) {
       console.log(`[checkoutPhoneOtpService] Real SMS OTP confirmed by Supabase for ${maskPhone(phoneE164)}`);
       isVerified = true;
+      try {
+        await supabase.auth.signOut();
+      } catch (_) {}
     } else if (verifyErr) {
       console.warn('[checkoutPhoneOtpService] Supabase verifyOtp note:', verifyErr.message);
     }

@@ -68,18 +68,19 @@ api.interceptors.response.use(
                              reqUrl.includes('/auth/otp-session') ||
                              reqUrl.includes('/auth/supabase-session');
 
-      // Do NOT trigger global redirect on login/signup failure so error toast can render cleanly
-      if (!isAuthEndpoint) {
+      const isOrderOrOtpEndpoint = reqUrl.includes('/orders') || reqUrl.includes('/phone-otp');
+      const isCheckoutPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/checkout');
+
+      // Do NOT trigger global redirect on login/signup or during active checkout / OTP verification
+      // so component-level handlers and toasts can display clear feedback without losing user state
+      if (!isAuthEndpoint && !isOrderOrOtpEndpoint && !isCheckoutPage) {
         localStorage.removeItem('sh_token');
         localStorage.removeItem('sh_user');
 
-        // Only redirect to login if currently accessing a protected dashboard or action
+        // Only redirect to login if currently accessing a protected dashboard
         const currentPath = window.location.pathname;
         const isProtectedRoute = currentPath.startsWith('/admin') ||
                                  currentPath.startsWith('/artisan') ||
-                                 currentPath.startsWith('/checkout') ||
-                                 currentPath.startsWith('/orders') ||
-                                 currentPath.startsWith('/my-orders') ||
                                  currentPath.startsWith('/account');
 
         if (isProtectedRoute && currentPath !== '/login') {

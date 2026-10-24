@@ -114,6 +114,7 @@ export const AuthProvider = ({ children }) => {
         toast.error(errMsg, { duration: 6000 });
       } finally {
         syncPromiseRef.current = null;
+        sessionStorage.removeItem('oauth_in_flight');
         setOauthProcessing(false);
       }
       return null;
@@ -227,17 +228,21 @@ export const AuthProvider = ({ children }) => {
           if (storedUserRaw) storedSbUid = JSON.parse(storedUserRaw)?.supabase_uid;
         } catch (_) {}
 
-        const isOAuthInFlight = typeof window !== 'undefined' && (
-          sessionStorage.getItem('oauth_in_flight') === 'true' ||
-          Boolean(window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
-          Boolean(window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
+        const hasUrlOAuth = typeof window !== 'undefined' && Boolean(
+          (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))) ||
+          (window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error=')))
         );
 
-        // Section 6: Verified Supabase session identity must win when OAuth is active or no backend session exists
+        // Clean stale flag if no OAuth URL parameters
+        if (!hasUrlOAuth) {
+          sessionStorage.removeItem('oauth_in_flight');
+        }
+
+        // Section 6: Verified Supabase session identity must win when OAuth is active in URL or no backend session exists
         // Sync session if:
         // 1. No backend token exists yet, OR
-        // 2. Google OAuth returned callback parameters in URL or marked in-flight
-        if (!currentToken || isOAuthInFlight) {
+        // 2. Google OAuth returned callback parameters in URL
+        if (!currentToken || hasUrlOAuth) {
           setOauthProcessing(true);
           try {
             const syncedUser = await syncSupabaseSessionSingleFlight(session);
@@ -252,6 +257,7 @@ export const AuthProvider = ({ children }) => {
           } catch (err) {
             console.error('[onAuthStateChange] Session sync failed:', err);
           } finally {
+            sessionStorage.removeItem('oauth_in_flight');
             setOauthProcessing(false);
           }
         }

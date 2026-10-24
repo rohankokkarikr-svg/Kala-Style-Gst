@@ -967,8 +967,12 @@ export default function Checkout() {
         return;
       }
 
+      if (err.response?.status === 401) {
+        toast.error('Your login session has expired or requires renewal. Please log in to complete your order.');
+        return;
+      }
+
       toast.error(errMsg);
-      throw err;
     } finally {
       setLoading(false);
     }
