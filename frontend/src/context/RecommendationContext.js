@@ -83,6 +83,25 @@ export const RecommendationProvider = ({ children }) => {
     } catch {}
   }, [signals]);
 
+  // Purge shopper profile and history on signout
+  useEffect(() => {
+    const handleLogout = () => {
+      setSignals([]);
+      setDismissedIds([]);
+      setPreferences([]);
+      try {
+        localStorage.removeItem(STORAGE_KEYS.SIGNALS);
+        localStorage.removeItem(STORAGE_KEYS.DISMISSED);
+        localStorage.removeItem(STORAGE_KEYS.PREFERENCES);
+      } catch (_) {}
+    };
+
+    window.addEventListener('kala:logout', handleLogout);
+    return () => {
+      window.removeEventListener('kala:logout', handleLogout);
+    };
+  }, []);
+
   // Record a shopper interaction signal
   const recordSignal = useCallback((type, data = {}) => {
     if (isPaused) return; // Respect privacy pause

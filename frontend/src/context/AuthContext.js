@@ -2,7 +2,76 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { authAPI } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { normalizeRole, getRoleHome, OTP_LENGTH, isValidOtp } from '../utils/authHelper';
+import apiCache from '../utils/apiCache';
 import toast from 'react-hot-toast';
+
+/**
+ * Completely purges all local storage, session storage, SWR API cache,
+ * browser caches, and emits cleanup events so no user data remains on the device.
+ */
+export const purgeAllUserCacheMemory = () => {
+  try {
+    // 1. Wipe primary auth keys & personal cart/wishlist
+    localStorage.removeItem('sh_token');
+    localStorage.removeItem('sh_user');
+    localStorage.removeItem('sh_pending_verification');
+    localStorage.removeItem('sh_cart');
+    localStorage.removeItem('sh_wishlist');
+    localStorage.removeItem('auth_flow');
+    localStorage.removeItem('auth_is_signup');
+    localStorage.removeItem('auth_intent');
+    localStorage.removeItem('recentlyViewed');
+
+    // 2. Wipe all prefix-matching cached data, notifications, and Supabase tokens
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (
+        key.startsWith('sh_') ||
+        key.startsWith('kala_swr_') ||
+        key.startsWith('kala_rec_') ||
+        key.startsWith('kala_shopper_') ||
+        key.startsWith('kala_dismissed_') ||
+        key.startsWith('kala_personalization_') ||
+        key.startsWith('kala_read_notifs_') ||
+        key.startsWith('kala_admin_') ||
+        key.startsWith('sb-')
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+    // 3. Clear all sessionStorage
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
+
+    // 4. Invalidate persistent and in-memory SWR caches
+    try {
+      if (apiCache && typeof apiCache.invalidate === 'function') {
+        apiCache.invalidate();
+      }
+    } catch (_) {}
+
+    // 5. Purge browser CacheStorage
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      }).catch(() => {});
+    }
+
+    // 6. Broadcast logout & cleanup events to other contexts and components
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kala:logout'));
+      window.dispatchEvent(new CustomEvent('kala:cart:clear'));
+      window.dispatchEvent(new CustomEvent('kala:wishlist:clear'));
+    }
+  } catch (err) {
+    console.warn('Notice during user cache memory purge:', err);
+  }
+};
 
 const AuthContext = createContext(null);
 
@@ -192,16 +261,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('sh_token');
-        localStorage.removeItem('sh_user');
-        sessionStorage.removeItem('auth_return_url');
-        sessionStorage.removeItem('oauth_in_flight');
-        sessionStorage.removeItem('auth_intent');
-        sessionStorage.removeItem('auth_flow');
-        localStorage.removeItem('auth_flow');
-        sessionStorage.removeItem('auth_is_signup');
-        localStorage.removeItem('auth_is_signup');
-        sessionStorage.removeItem('portal_notice');
+        purgeAllUserCacheMemory();
         setUser(null);
         setOauthProcessing(false);
         setOauthError(null);
@@ -734,8 +794,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await supabase.auth.signOut();
     } catch (_) {}
-    localStorage.removeItem('sh_token');
-    localStorage.removeItem('sh_user');
+    purgeAllUserCacheMemory();
     setUser(null);
 
     return { success: true };
@@ -746,12 +805,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await supabase.auth.signOut();
     } catch (e) {}
-    localStorage.removeItem('sh_token');
-    localStorage.removeItem('sh_user');
-    sessionStorage.removeItem('auth_return_url');
-    sessionStorage.removeItem('oauth_in_flight');
-    sessionStorage.removeItem('auth_intent');
-    sessionStorage.removeItem('portal_notice');
+    purgeAllUserCacheMemory();
     setUser(null);
     setOauthProcessing(false);
     setOauthError(null);

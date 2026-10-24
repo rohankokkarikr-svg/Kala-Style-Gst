@@ -29,6 +29,23 @@ export const WishlistProvider = ({ children }) => {
     }
   }, [wishlist]);
 
+  // Purge wishlist in-memory state on signout
+  useEffect(() => {
+    const handleLogout = () => {
+      setWishlist([]);
+      try {
+        localStorage.removeItem('sh_wishlist');
+      } catch (_) {}
+    };
+
+    window.addEventListener('kala:logout', handleLogout);
+    window.addEventListener('kala:wishlist:clear', handleLogout);
+    return () => {
+      window.removeEventListener('kala:logout', handleLogout);
+      window.removeEventListener('kala:wishlist:clear', handleLogout);
+    };
+  }, []);
+
   const addToWishlist = (product) => {
     if (!product || !product.id) return;
     setWishlist((prev) => {

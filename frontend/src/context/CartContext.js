@@ -15,6 +15,23 @@ export const CartProvider = ({ children }) => {
     localStorage.setItem('sh_cart', JSON.stringify(items));
   }, [items]);
 
+  // Purge cart in-memory state on signout
+  useEffect(() => {
+    const handleLogout = () => {
+      setItems([]);
+      try {
+        localStorage.removeItem('sh_cart');
+      } catch (_) {}
+    };
+
+    window.addEventListener('kala:logout', handleLogout);
+    window.addEventListener('kala:cart:clear', handleLogout);
+    return () => {
+      window.removeEventListener('kala:logout', handleLogout);
+      window.removeEventListener('kala:cart:clear', handleLogout);
+    };
+  }, []);
+
   const addToCart = (product, size, quantity = 1) => {
     const key = `${product.id}-${size}`;
     const exists = items.some((i) => i.key === key);

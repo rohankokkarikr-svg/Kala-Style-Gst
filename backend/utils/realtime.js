@@ -29,10 +29,56 @@ const initRealtime = (io) => {
   console.log('⚡ KalaStyle Multi-Device Realtime Sync Engine Initialized');
 };
 
+/**
+ * Sanitizes broadcast payloads to guarantee no customer PII (addresses, phone numbers,
+ * emails, personal IDs, tokens) is ever leaked over public broadcast channels.
+ */
+const sanitizeBroadcastPayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return payload;
+
+  const SENSITIVE_KEYS = new Set([
+    'shipping_address', 'address', 'phone', 'customer_phone', 'mobile',
+    'email', 'customer_email', 'billing_address', 'full_name', 'name',
+    'password', 'token', 'secret', 'signature', 'razorpay_signature',
+    'notes', 'aadhaar', 'pan', 'bank_account', 'ifsc'
+  ]);
+
+  if (Array.isArray(payload)) {
+    return payload.map(item => sanitizeBroadcastPayload(item));
+  }
+
+  const clean = {};
+  for (const [key, value] of Object.entries(payload)) {
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_KEYS.has(lowerKey)) {
+      continue; // Strip PII
+    }
+
+    if (key === 'order' && value && typeof value === 'object') {
+      // Retain only safe high-level sync fields for order notifications
+      clean.order = {
+        id: value.id,
+        order_status: value.order_status || value.status,
+        payment_status: value.payment_status,
+        status: value.status,
+        created_at: value.created_at,
+        updated_at: value.updated_at
+      };
+    } else if (value && typeof value === 'object') {
+      clean[key] = sanitizeBroadcastPayload(value);
+    } else {
+      clean[key] = value;
+    }
+  }
+
+  return clean;
+};
+
 const broadcastSync = (type, payload = {}) => {
+  const safePayload = sanitizeBroadcastPayload(payload);
   const eventData = {
     type,
-    payload,
+    payload: safePayload,
     timestamp: Date.now()
   };
 
@@ -52,7 +98,7 @@ const broadcastSync = (type, payload = {}) => {
       supaChannel.send({
         type: 'broadcast',
         event: 'KALA_SYNC',
-        payload: { type, data: payload }
+        payload: { type, data: safePayload }
       }).catch(() => {});
     }
   } catch (supaErr) {
@@ -63,5 +109,6 @@ const broadcastSync = (type, payload = {}) => {
 module.exports = {
   initRealtime,
   broadcastSync,
+  sanitizeBroadcastPayload,
   getIo: () => ioInstance,
 };

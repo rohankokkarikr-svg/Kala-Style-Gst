@@ -326,6 +326,25 @@ exports.markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Notification ID required' });
+    const userId = req.user?.id;
+    const userRole = (req.user?.role || 'user').toLowerCase();
+
+    // Verify notification ownership / audience authorization
+    const { data: notif } = await safeQuery(() =>
+      supabase.from('notifications').select('id, target_user_id, target_audience').eq('id', id).maybeSingle()
+    );
+
+    if (notif) {
+      const audiences = ['all'];
+      if (userRole === 'admin') audiences.push('admins');
+      else if (userRole === 'artisan') audiences.push('artisans');
+      else audiences.push('customers');
+
+      const isAllowed = notif.target_user_id === userId || audiences.includes(notif.target_audience) || userRole === 'admin';
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Unauthorized to mark this notification as read' });
+      }
+    }
 
     try {
       await safeQuery(() =>
@@ -434,9 +453,9 @@ exports.getRecipients = async (req, res) => {
         .limit(2)
     );
 
-    // 3. If caller is admin or artisan, also provide customers
+    // 3. If caller is admin, provide platform customers; if artisan, provide only customers who ordered from them
     let customers = [];
-    if (userRole === 'admin' || userRole === 'artisan') {
+    if (userRole === 'admin') {
       const { data: custData } = await safeQuery(() =>
         supabase
           .from('users')
@@ -446,6 +465,33 @@ exports.getRecipients = async (req, res) => {
           .limit(50)
       );
       customers = custData || [];
+    } else if (userRole === 'artisan') {
+      // Artisans can ONLY see customers who have placed orders for their products
+      const { data: prof } = await safeQuery(() =>
+        supabase.from('artisan_profiles').select('id').eq('user_id', req.user.id).maybeSingle()
+      );
+      const artisanId = prof?.id || req.user.id;
+
+      const { data: artOrders } = await safeQuery(() =>
+        supabase
+          .from('artisan_orders')
+          .select('order:orders(user_id)')
+          .eq('artisan_id', artisanId)
+          .limit(100)
+      );
+
+      const customerUserIds = [...new Set((artOrders || []).map(ao => ao.order?.user_id).filter(Boolean))];
+
+      if (customerUserIds.length > 0) {
+        const { data: custData } = await safeQuery(() =>
+          supabase
+            .from('users')
+            .select('id, name, email, role')
+            .in('id', customerUserIds)
+            .limit(50)
+        );
+        customers = custData || [];
+      }
     }
 
     res.json({

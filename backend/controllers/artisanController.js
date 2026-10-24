@@ -258,6 +258,11 @@ exports.getMyOrders = async (req, res) => {
 
     const productIds = (products || []).map(p => p.id);
 
+    // SECURITY: If artisan has no products, return empty array immediately (prevent leaking platform orders)
+    if (!isAdmin && productIds.length === 0) {
+      return res.json([]);
+    }
+
     let itemsQuery = supabase
       .from('order_items')
       .select(`
@@ -284,7 +289,7 @@ exports.getMyOrders = async (req, res) => {
         products(id, name, price, image_url, category)
       `);
 
-    if (!isAdmin && productIds.length > 0) {
+    if (!isAdmin) {
       itemsQuery = itemsQuery.in('product_id', productIds);
     }
 
@@ -309,7 +314,7 @@ exports.getMyOrders = async (req, res) => {
           ),
           products(id, name, price, image_url, category)
         `);
-      if (!isAdmin && productIds.length > 0) {
+      if (!isAdmin) {
         fallbackQuery = fallbackQuery.in('product_id', productIds);
       }
       const fallbackRes = await fallbackQuery;
@@ -471,7 +476,7 @@ exports.getMyArtisanOrders = async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (!isAdmin && profile?.id) {
-      query = query.or(`artisan_id.eq.${profile.id},artisan_id.is.null`);
+      query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`);
     }
 
     let { data: artOrders, error: myErr } = await query;
@@ -483,12 +488,7 @@ exports.getMyArtisanOrders = async (req, res) => {
 
     let orderList = artOrders || [];
 
-    // SECURITY: Do NOT fall back to loading all platform orders.
-    // If this artisan has no assigned orders, return an empty list.
-    // The previous fallback was leaking other artisans' customer data.
-
     const orderIds = [...new Set(orderList.map(ao => ao.order_id).filter(Boolean))];
-
 
     // 2. Fetch order_items for all these orders
     let itemsByOrderId = {};
@@ -498,7 +498,7 @@ exports.getMyArtisanOrders = async (req, res) => {
         .select(`
           id, order_id, product_id, quantity, price_at_time, unit_price_snapshot, total_price, size,
           product_name_snapshot, product_image_snapshot, artisan_id, item_status,
-          product:products (id, name, image_url, price, category)
+          product:products (id, name, image_url, price, category, artisan_id)
         `)
         .in('order_id', orderIds);
 
@@ -510,26 +510,30 @@ exports.getMyArtisanOrders = async (req, res) => {
       }
     }
 
-    // 3. Filter orders to only those relevant to this artisan:
-    // If admin or platform fallback, show all; otherwise filter by profile.id or fallback
-    const relevantOrders = (isAdmin || (profile?.id && orderList.every(ao => ao.artisan_id !== profile.id)))
+    // 3. Filter orders to only those strictly belonging to this artisan:
+    const relevantOrders = isAdmin
       ? orderList
       : orderList.filter(ao => {
-          if (ao.artisan_id === profile.id) return true;
-          if (ao.artisan_id === null) {
-            const orderItems = itemsByOrderId[ao.order_id] || [];
-            return orderItems.some(item => item.artisan_id === profile.id || !item.artisan_id);
-          }
-          return false;
+          if (String(ao.artisan_id) === String(profile?.id) || String(ao.artisan_id) === String(req.user?.id)) return true;
+          const orderItems = itemsByOrderId[ao.order_id] || [];
+          return orderItems.some(item =>
+            String(item.artisan_id) === String(profile?.id) ||
+            String(item.artisan_id) === String(req.user?.id) ||
+            String(item.product?.artisan_id) === String(profile?.id)
+          );
         });
 
     // 4. Format objects with backward-compatible aliases for all UI access patterns
     const result = relevantOrders.map(ao => {
       const allOrderItems = itemsByOrderId[ao.order_id] || [];
-      const artisanItems = allOrderItems.filter(
-        item => item.artisan_id === profile.id || !item.artisan_id
-      );
-      const displayItems = (artisanItems.length > 0 && !isAdmin) ? artisanItems : allOrderItems;
+      const artisanItems = isAdmin
+        ? allOrderItems
+        : allOrderItems.filter(
+            item => String(item.artisan_id) === String(profile?.id) ||
+                    String(item.artisan_id) === String(req.user?.id) ||
+                    String(item.product?.artisan_id) === String(profile?.id)
+          );
+      const displayItems = (artisanItems.length > 0) ? artisanItems : (isAdmin ? allOrderItems : []);
       const firstItem = displayItems[0] || {};
       const productObj = firstItem.product || {
         name: firstItem.product_name_snapshot,
@@ -649,14 +653,25 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
     if (byArtOrderId) {
       // SECURITY: Verify ownership immediately — artisan must own or be assigned to this sub-order
-      const isOwnedByArtisan = isAdmin
+      let isOwnedByArtisan = isAdmin
         || String(byArtOrderId.artisan_id) === String(profile.id)
-        || String(byArtOrderId.artisan_id) === String(req.user.id)
-        || byArtOrderId.artisan_id === null;
+        || String(byArtOrderId.artisan_id) === String(req.user.id);
+
+      if (!isOwnedByArtisan && byArtOrderId.artisan_id === null) {
+        const { data: itemMatch } = await supabase
+          .from('order_items')
+          .select('id')
+          .eq('order_id', byArtOrderId.order_id)
+          .or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`)
+          .limit(1);
+        if (itemMatch && itemMatch.length > 0) {
+          isOwnedByArtisan = true;
+        }
+      }
+
       if (isOwnedByArtisan) {
         artOrder = byArtOrderId;
       }
-      // If not owned, do NOT assign — fall through to other strategies
     }
 
     // Strategy 2: Match by master order_id (from URL parameter)
@@ -669,7 +684,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .limit(1);
 
       if (!isAdmin) {
-        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
+        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`);
       }
 
       const { data: byOrderId } = await query.maybeSingle();
@@ -689,7 +704,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         .limit(1);
 
       if (!isAdmin) {
-        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
+        query = query.or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id}`);
       }
 
       const { data: byBodyOrderId } = await query.maybeSingle();
