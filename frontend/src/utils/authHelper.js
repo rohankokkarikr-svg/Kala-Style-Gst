@@ -3,12 +3,12 @@ import { OTP_LENGTH, OTP_REGEX } from '../constants/auth';
 export { OTP_LENGTH, OTP_REGEX };
 
 /**
- * Validates that an OTP is strictly an 8-digit numeric string.
+ * Validates that an OTP is a valid 6-digit or 8-digit numeric string.
  */
 export const isValidOtp = (token) => {
   if (typeof token !== 'string') return false;
   const clean = token.trim();
-  return clean.length === OTP_LENGTH && OTP_REGEX.test(clean);
+  return (clean.length === 6 || clean.length === 8) && /^\d+$/.test(clean);
 };
 
 /**

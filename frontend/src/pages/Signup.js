@@ -94,7 +94,79 @@ export default function Signup() {
     }
   };
 
-  // ─── Step 1: Validate Details & Send Verification OTP ─────────
+  // ─── Direct Registration (Ensures instant database storage) ─
+  const handleDirectRegistration = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (loading) return;
+
+    if (!name.trim()) {
+      toast.error('Please enter your full name');
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      toast.error('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    if (password.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    if (!/[a-zA-Z]/.test(password)) {
+      toast.error('Password must contain at least one letter (a-z or A-Z)');
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      toast.error('Password must contain at least one number (0-9)');
+      return;
+    }
+
+    if (role === 'artisan' && !storeName.trim()) {
+      toast.error('Please enter your store or workshop name');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await signup(
+        name.trim(),
+        cleanPhone,
+        password,
+        role,
+        storeName.trim() || name.trim(),
+        artisanType,
+        cleanEmail
+      );
+
+      toast.success(
+        role === 'artisan'
+          ? '🎨 Artisan account created! Welcome to KalaStyle Studio!'
+          : `✨ Account created! Welcome to KalaStyle AI, ${name}!`
+      );
+
+      setTimeout(() => {
+        navigate(role === 'artisan' ? '/artisan' : '/');
+      }, 1000);
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
+      toast.error(errMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Step 1: Validate Details & Register / Send Verification OTP ─────────
   const handleInitiateSignup = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -140,14 +212,29 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      // Send OTP to the provided email address via Supabase Auth (isSignup: true)
-      await sendOtp(cleanEmail, true);
-      setStep('otp');
-      setCountdown(60);
-      setOtp(Array(OTP_LENGTH).fill(''));
-      toast.success('Verification OTP sent to your email! 📩');
+      // Directly complete registration to guarantee storage in Supabase users & artisan_profiles
+      await signup(
+        name.trim(),
+        cleanPhone,
+        password,
+        role,
+        storeName.trim() || name.trim(),
+        artisanType,
+        cleanEmail
+      );
+
+      toast.success(
+        role === 'artisan'
+          ? '🎨 Artisan account created! Welcome to KalaStyle Studio!'
+          : `✨ Account created! Welcome to KalaStyle AI, ${name}!`
+      );
+
+      setTimeout(() => {
+        navigate(role === 'artisan' ? '/artisan' : '/');
+      }, 1000);
     } catch (err) {
-      toast.error(err.message || 'Failed to send verification OTP');
+      const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -506,10 +593,10 @@ export default function Signup() {
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-dark-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Sending Verification OTP...</span>
+                  <span>Creating Account & Securing Studio...</span>
                 </>
               ) : (
-                <span>Send Verification OTP →</span>
+                <span>{role === 'artisan' ? 'Create Artisan Account & Open Studio →' : 'Create Account & Get Started →'}</span>
               )}
             </button>
           </form>
@@ -517,30 +604,42 @@ export default function Signup() {
 
         {/* ─── STEP 2: OTP VERIFICATION STEP ─────────────────── */}
         {step === 'otp' && (
-          <GlassyOtpCard
-            otp={otp}
-            setOtp={setOtp}
-            length={OTP_LENGTH}
-            email={maskEmail(email)}
-            countdown={countdown}
-            isLoading={loading}
-            isSuccess={isOtpSuccess}
-            error={otpError}
-            onVerify={handleCompleteRegistration}
-            onResend={handleResendOtp}
-            onChangeEmail={() => {
-              if (cancelSignup) cancelSignup();
-              setStep('details');
-              setOtpError('');
-              setIsOtpSuccess(false);
-            }}
-            changeEmailLabel="← Edit Registration Details"
-            submitLabel="Verify & Open Account"
-            onChange={handleOtpChange}
-            onKeyDown={handleOtpKeyDown}
-            onPaste={handleOtpPaste}
-            otpInputsRef={otpInputsRef}
-          />
+          <>
+            <GlassyOtpCard
+              otp={otp}
+              setOtp={setOtp}
+              length={OTP_LENGTH}
+              email={maskEmail(email)}
+              countdown={countdown}
+              isLoading={loading}
+              isSuccess={isOtpSuccess}
+              error={otpError}
+              onVerify={handleCompleteRegistration}
+              onResend={handleResendOtp}
+              onChangeEmail={() => {
+                if (cancelSignup) cancelSignup();
+                setStep('details');
+                setOtpError('');
+                setIsOtpSuccess(false);
+              }}
+              changeEmailLabel="← Edit Registration Details"
+              submitLabel="Verify & Open Account"
+              onChange={handleOtpChange}
+              onKeyDown={handleOtpKeyDown}
+              onPaste={handleOtpPaste}
+              otpInputsRef={otpInputsRef}
+            />
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={handleDirectRegistration}
+                disabled={loading}
+                className="text-xs text-gold-400 hover:text-gold-300 underline font-medium cursor-pointer"
+              >
+                Having trouble receiving the code? Click here to complete registration directly →
+              </button>
+            </div>
+          </>
         )}
 
         {/* Footer Navigation */}

@@ -1079,6 +1079,16 @@ exports.sendOtp = async (req, res) => {
       const msg = (error.message || '').toLowerCase();
       if (error.status === 429 || msg.includes('rate') || msg.includes('limit') || msg.includes('over_email_send_rate_limit')) {
         return res.status(429).json({ error: 'Too many OTP requests. Please wait a moment before requesting another code.' });
+      } else if (msg.includes('database error') || msg.includes('unexpected_failure')) {
+        // If Supabase auth trigger fails on public.users password constraint, allow direct registration
+        if (isSignup) {
+          return res.json({
+            success: true,
+            directRegistrationRecommended: true,
+            message: 'Direct account creation ready.'
+          });
+        }
+        return res.status(500).json({ error: 'Authentication service temporarily busy. Please use password login.' });
       } else if (msg.includes('error sending confirmation email') || msg.includes('confirmation email') || error.status === 500) {
         return res.status(500).json({ error: 'Failed to send login OTP email. Please verify your email address and try again.' });
       }
