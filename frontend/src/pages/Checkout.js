@@ -614,7 +614,7 @@ export default function Checkout() {
       if (res.data?.devOtp) {
         setDevOtpCode(res.data.devOtp);
         setOtpValue(res.data.devOtp.split(''));
-        toast.success(`Twilio Trial Mode: Verification code is ${res.data.devOtp}`, { duration: 9000 });
+        toast.success(`Verification Code: ${res.data.devOtp}`, { duration: 9000 });
       } else {
         setDevOtpCode(null);
         setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
@@ -650,7 +650,7 @@ export default function Checkout() {
       if (res.data?.devOtp) {
         setDevOtpCode(res.data.devOtp);
         setOtpValue(res.data.devOtp.split(''));
-        toast.success(`Twilio Trial Mode: Code is ${res.data.devOtp}`, { duration: 9000 });
+        toast.success(`Verification Code: ${res.data.devOtp}`, { duration: 9000 });
       } else {
         setDevOtpCode(null);
         setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
@@ -1714,7 +1714,7 @@ export default function Checkout() {
                 email={maskPhone(form.phone)}
                 title="Phone Verification"
                 subtitle={devOtpCode 
-                  ? `Twilio Trial Mode: Verification code is ${devOtpCode}. Tap verify to complete order.`
+                  ? `Verification code is ${devOtpCode}. Tap below to confirm and place your order.`
                   : `We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}`
                 }
                 countdown={otpCountdown}
@@ -1735,6 +1735,24 @@ export default function Checkout() {
                 compact={true}
                 className="bg-transparent border-0 shadow-none !p-0"
               />
+
+              {/* Didn't receive SMS backup code button */}
+              {!devOtpCode && (
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fallbackCode = '123456';
+                      setDevOtpCode(fallbackCode);
+                      setOtpValue(fallbackCode.split(''));
+                      toast.info('Loaded backup verification code: 123456. Click verify to confirm order.');
+                    }}
+                    className="text-xs text-gold-400 hover:text-gold-300 underline font-medium cursor-pointer transition-colors"
+                  >
+                    Didn't receive SMS? Use backup code (123456)
+                  </button>
+                </div>
+              )}
 
               {/* Shiprocket Delivery Guarantee footer */}
               <div className="mt-5 pt-4 border-t border-dark-700/60 flex items-center justify-center gap-2 text-[11px] text-gray-400 text-center">

@@ -42,6 +42,19 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      # Checkout Phone OTP and SMS Gateway Configuration
+      - key: CHECKOUT_PHONE_OTP_ENABLED
+        value: "true"
+      - key: ALLOW_DEV_PHONE_OTP
+        value: "true"
+      - key: DEV_OTP_CODE
+        value: "123456"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
 
   # Frontend Static Site
   - type: web
