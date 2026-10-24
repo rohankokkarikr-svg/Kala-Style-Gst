@@ -812,39 +812,12 @@ export default function ArtisanOrders() {
                           <FaWhatsapp className="w-3.5 h-3.5" /> Chat on WhatsApp
                         </a>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMessageTarget({
-                            recipientId: orderObj.user_id,
-                            recipientName: customerName,
-                            recipientRole: 'customer',
-                            defaultTitle: `Regarding Order #${orderObj.id?.substring(0, 8)}`,
-                            orderContext: orderObj
-                          });
-                          setMessageModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 font-bold py-1 px-2.5 rounded-lg bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 transition-all cursor-pointer"
-                      >
-                        <HiChatAlt2 className="w-3.5 h-3.5" /> Message Customer
-                      </button>
-
-                      {customerPhone && (
-                        <a
-                          href={`https://wa.me/91${customerPhone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(customerName)},%20this%20is%20regarding%20your%20order%20%23${encodeURIComponent(orderObj.id?.substring(0, 8))}%20for%20"${encodeURIComponent(item.products?.name || 'craft item')}".%20We%20are%20preparing%20it%20for%20dispatch!`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 font-medium py-1 px-2 rounded bg-green-500/10 border border-green-500/20"
-                        >
-                          <FaWhatsapp className="w-3.5 h-3.5" /> Chat on WhatsApp
-                        </a>
-                      )}
                       {loc.mapsUrl && (
                         <a
                           href={loc.mapsUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className={`inline-flex items-center gap-1.5 text-xs font-medium py-1 px-2 rounded border ${
+                          className={`inline-flex items-center gap-1.5 text-xs font-medium py-1 px-2.5 rounded-lg border transition-all ${
                             loc.hasLiveGps
                               ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
                               : 'text-blue-400 hover:text-blue-300 bg-blue-500/10 border-blue-500/20'
