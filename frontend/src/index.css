@@ -12,14 +12,14 @@
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
   @apply bg-dark-900 text-gray-100 font-sans;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 input, textarea, select {

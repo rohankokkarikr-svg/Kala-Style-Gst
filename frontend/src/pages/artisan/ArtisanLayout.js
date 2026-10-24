@@ -66,10 +66,10 @@ export default function ArtisanLayout() {
   const isActive = (path) => path === '/artisan' ? location.pathname === '/artisan' : location.pathname.startsWith(path);
 
   return (
-    <div className="min-h-screen bg-dark-900 flex">
+    <div className="h-screen w-full flex bg-dark-900 text-gray-100 overflow-hidden">
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
       <aside className={`
-        fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 
+        fixed md:static inset-y-0 left-0 z-50 h-screen w-64 shrink-0 bg-dark-800 border-r border-dark-600 
         transform transition-transform duration-300 ease-in-out flex flex-col overflow-hidden
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
@@ -133,7 +133,7 @@ export default function ArtisanLayout() {
         </nav>
 
         {/* Footer Actions - Pinned */}
-        <div className="p-4 border-t border-dark-600 bg-dark-850 space-y-2 shrink-0">
+        <div className="p-4 border-t border-dark-600 bg-dark-850 space-y-2 shrink-0 mt-auto">
           <Link to="/products" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 transition-colors">
             ← Back to Shop
           </Link>
@@ -142,7 +142,7 @@ export default function ArtisanLayout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col h-screen min-w-0 bg-dark-900 overflow-hidden">
         <header className="h-16 border-b border-dark-600 bg-dark-800/90 backdrop-blur-md flex items-center justify-between px-4 md:px-8 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-400 p-2"><HiMenu className="w-6 h-6" /></button>
@@ -165,7 +165,7 @@ export default function ArtisanLayout() {
             </Link>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-4 md:p-8"><Outlet /></div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar"><Outlet /></div>
       </main>
     </div>
   );

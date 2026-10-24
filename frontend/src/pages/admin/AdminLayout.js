@@ -95,7 +95,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-dark-900 flex text-gray-100">
+    <div className="h-screen w-full bg-dark-900 flex text-gray-100 overflow-hidden">
       {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div 
@@ -106,7 +106,7 @@ export default function AdminLayout() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 
+        fixed md:static inset-y-0 left-0 z-50 h-screen w-64 shrink-0 bg-dark-800 border-r border-dark-600 
         transform transition-transform duration-300 ease-in-out flex flex-col overflow-hidden
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
@@ -191,7 +191,7 @@ export default function AdminLayout() {
         </nav>
 
         {/* Footer Actions - Pinned */}
-        <div className="p-3 border-t border-dark-600 bg-dark-850 space-y-1 shrink-0">
+        <div className="p-3 border-t border-dark-600 bg-dark-850 space-y-1 shrink-0 mt-auto">
           <Link
             to="/"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-gold-400 hover:bg-dark-700/50 transition-colors"
@@ -209,9 +209,9 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 bg-dark-900 overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen min-w-0 bg-dark-900 overflow-hidden">
         {/* Top Navbar */}
-        <header className="h-16 border-b border-dark-600/80 bg-dark-800/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
+        <header className="h-16 shrink-0 border-b border-dark-600/80 bg-dark-800/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -249,7 +249,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Viewport */}
-        <div className="flex-1 overflow-auto p-4 md:p-8">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <Outlet />
         </div>
       </main>
