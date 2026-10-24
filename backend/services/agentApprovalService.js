@@ -186,13 +186,30 @@ async function createApproval(params = {}) {
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24h
   };
 
+  // If FULL_AUTONOMOUS mode is active and Emergency Stop is not active, auto-execute immediately
+  try {
+    const aiControlCenter = require('../ai/aiControlCenter');
+    const controlSettings = await aiControlCenter.getControlSettings();
+    if (controlSettings.ai_mode === 'FULL_AUTONOMOUS' && !controlSettings.ai_emergency_stop) {
+      console.log(`⚡ [AI Approval Service] FULL_AUTONOMOUS mode active: Auto-executing ${toolName} immediately.`);
+      const execResult = await executeApprovedAction(approval, adminId || '00000000-0000-0000-0000-000000000000');
+      approval.status = 'EXECUTED';
+      approval.executed_at = new Date().toISOString();
+      approval.execution_result = execResult;
+      approval.auto_executed = true;
+      approval.executionMessage = execResult?.message || 'Executed automatically by Full Autonomous AI Operations.';
+    }
+  } catch (autoErr) {
+    console.warn('[AI Approval Service] Auto-execution check notice:', autoErr.message);
+  }
+
   try {
     const { data, error } = await safeQuery(() =>
       supabase.from('ai_agent_approvals').insert([approval]).select().single()
     );
     if (!error && data) {
-      console.log(`✅ [AI Approval Service] Created approval in Supabase: ${data.id}`);
-      return data;
+      console.log(`✅ [AI Approval Service] Created approval in Supabase: ${data.id} (${data.status})`);
+      return { ...data, executionMessage: approval.executionMessage };
     }
     if (error) {
       console.warn('⚠️ [AI Approval Service] Supabase insert failed, using memory fallback:', error.message);

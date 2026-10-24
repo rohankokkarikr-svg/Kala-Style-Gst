@@ -398,13 +398,36 @@ exports.getStatus = async (req, res) => {
 
 /**
  * Update autonomous control settings (AI Mode, Emergency Stop, Action Budgets).
+ * When mode is set to FULL_AUTONOMOUS, automatically and immediately executes
+ * all pending administrative tasks (artisans, products, reviews, orders, approvals).
  */
 exports.updateControl = async (req, res) => {
   try {
     const aiControlCenter = require('../ai/aiControlCenter');
-    const updated = await aiControlCenter.updateControlSettings(req.body);
-    res.json({ success: true, control_settings: updated });
+    const updated = await aiControlCenter.updateControlSettings(req.body, req.user?.id);
+
+    let autonomousSummary = null;
+    if (req.body.ai_mode === 'FULL_AUTONOMOUS' && !updated.ai_emergency_stop) {
+      console.log('⚡ [AI Admin Controller] Mode set to FULL_AUTONOMOUS. Executing complete admin operations pass...');
+      const aiFullAutonomousManager = require('../ai/aiFullAutonomousManager');
+      const cycleResult = await aiFullAutonomousManager.executeFullAutonomousCycle({
+        adminId: req.user?.id,
+        triggerSource: 'MODE_CHANGE_FULL_AUTONOMOUS',
+        force: true,
+      });
+      autonomousSummary = cycleResult?.summary || null;
+    }
+
+    res.json({
+      success: true,
+      control_settings: updated,
+      autonomous_summary: autonomousSummary,
+      message: req.body.ai_mode === 'FULL_AUTONOMOUS'
+        ? (autonomousSummary?.message || 'Full Automatic Mode active. AI has completed all pending admin tasks.')
+        : `Control settings updated successfully (Mode: ${updated.ai_mode}).`,
+    });
   } catch (error) {
+    console.error('❌ [AI Admin Controller] updateControl error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
@@ -421,6 +444,24 @@ exports.runAutopilot = async (req, res) => {
     });
     res.json(result);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Explicitly trigger a Full Autonomous Operations Pass across all domains on-demand.
+ */
+exports.runFullAutonomousPass = async (req, res) => {
+  try {
+    const aiFullAutonomousManager = require('../ai/aiFullAutonomousManager');
+    const result = await aiFullAutonomousManager.executeFullAutonomousCycle({
+      adminId: req.user?.id,
+      triggerSource: 'ADMIN_PANEL_PASS_BUTTON',
+      force: true,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [AI Admin Controller] runFullAutonomousPass error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };

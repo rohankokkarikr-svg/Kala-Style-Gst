@@ -341,8 +341,9 @@ export const aiManagerAPI = {
   approveAction:    (id)       => api.post(`/admin/ai-manager/approvals/${id}/approve`),
   rejectAction:     (id, data) => api.post(`/admin/ai-manager/approvals/${id}/reject`, data),
   // New: Control Center & Autopilot
-  updateControl:    (data)     => api.put('/admin/ai-manager/control', data),
-  runAutopilot:     ()         => api.post('/admin/ai-manager/autopilot'),
+  updateControl:         (data)     => api.put('/admin/ai-manager/control', data),
+  runAutopilot:          ()         => api.post('/admin/ai-manager/autopilot'),
+  runFullAutonomousPass: ()         => api.post('/admin/ai-manager/full-autonomous-pass'),
 };
 
 // ─── Shiprocket Shipping & Logistics ─────────────

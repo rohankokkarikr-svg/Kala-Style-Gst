@@ -392,11 +392,60 @@ export default function AIManagement() {
 
   const handleModeChange = async (newMode) => {
     try {
-      await aiManagerAPI.updateControl({ ai_mode: newMode });
-      toast.success(`AI Mode changed to ${newMode}`);
+      if (newMode === 'FULL_AUTONOMOUS') {
+        const toastId = toast.loading('⚡ Activating Full Automatic Mode: AI is executing all pending admin work...');
+        const { data } = await aiManagerAPI.updateControl({ ai_mode: newMode });
+        const summary = data?.autonomous_summary;
+        if (summary) {
+          toast.success(
+            `👑 Full Automatic Active! ${summary.message || 'All admin work completed by AI.'}`,
+            { id: toastId, duration: 6000 }
+          );
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `sys_${Date.now()}`,
+              role: 'assistant',
+              content: `👑 **Full Automatic AI Operations Mode Activated**\n\n${summary.message || 'All platform administration is now completely executed by AI.'}\n\n• Artisans Verified: **${summary.artisans_verified}**\n• Products Approved: **${summary.products_approved}**\n• Reviews Moderated: **${summary.reviews_approved} approved, ${summary.reviews_flagged} flagged**\n• Pending Approvals Executed: **${summary.approvals_executed}**\n• Orders Screened: **${summary.orders_confirmed} confirmed, ${summary.orders_held} held**\n\nAutonomous background sentinels are continuously active — all future submissions and platform events will be handled 100% by AI without requiring manual admin actions!`,
+              timestamp: new Date()
+            }
+          ]);
+        } else {
+          toast.success('AI Mode changed to FULL_AUTONOMOUS', { id: toastId });
+        }
+      } else {
+        await aiManagerAPI.updateControl({ ai_mode: newMode });
+        toast.success(`AI Mode changed to ${newMode}`);
+      }
       await fetchStatusAndData();
     } catch (err) {
       toast.error('Failed to change AI mode');
+    }
+  };
+
+  const handleRunFullAutonomousPass = async () => {
+    const toastId = toast.loading('Executing 100% Full Autonomous Admin Operations Pass...');
+    try {
+      const { data } = await aiManagerAPI.runFullAutonomousPass();
+      if (data?.success) {
+        const s = data.summary;
+        toast.success(`Complete! ${s?.message || 'All admin tasks processed.'}`, { id: toastId, duration: 5000 });
+        await fetchStatusAndData();
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai_${Date.now()}`,
+            role: 'assistant',
+            content: `🤖 **Full Autonomous Operations Pass Report**\n\n${s?.message || 'Sweep completed successfully.'}\n\n• Artisans Verified: **${s?.artisans_verified || 0}**\n• Products Approved: **${s?.products_approved || 0}**\n• Reviews Moderated: **${(s?.reviews_approved || 0) + (s?.reviews_flagged || 0)}**\n• Approvals Executed: **${s?.approvals_executed || 0}**\n• Orders Screened: **${s?.orders_confirmed || 0} confirmed, ${s?.orders_held || 0} held**\n\nAll tasks up to date!`,
+            timestamp: new Date()
+          }
+        ]);
+        setActiveTab('chat');
+      } else {
+        toast.error(data?.reason || 'Pass could not execute', { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Autonomous pass failed', { id: toastId });
     }
   };
 
@@ -447,7 +496,7 @@ export default function AIManagement() {
             {/* Run Today's Autopilot Button */}
             <button
               onClick={handleRunAutopilot}
-              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-dark-900 font-bold text-xs shadow-md shadow-gold-500/20 flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-dark-900 font-bold text-xs shadow-md shadow-gold-500/20 flex items-center gap-1.5 transition-all cursor-pointer"
               title="Run complete autonomous admin sweep across all 12 sentinels"
             >
               <HiSparkles className="w-4 h-4" />
@@ -457,7 +506,7 @@ export default function AIManagement() {
             {/* Emergency Stop Button */}
             <button
               onClick={handleToggleEmergencyStop}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
                 statusInfo?.control_settings?.ai_emergency_stop
                   ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
                   : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30'
@@ -471,13 +520,13 @@ export default function AIManagement() {
             <select
               value={statusInfo?.control_settings?.ai_mode || 'AUTONOMOUS'}
               onChange={(e) => handleModeChange(e.target.value)}
-              className="bg-dark-700 border border-dark-600 text-xs rounded-lg px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-gold-500 font-medium"
+              className="bg-dark-700 border border-dark-600 text-xs rounded-lg px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-gold-500 font-semibold cursor-pointer"
             >
               <option value="OFF">Mode: OFF</option>
               <option value="READ_ONLY">Mode: READ_ONLY</option>
               <option value="ASSISTED">Mode: ASSISTED</option>
               <option value="AUTONOMOUS">Mode: AUTONOMOUS</option>
-              <option value="FULL_AUTONOMOUS">Mode: FULL_AUTONOMOUS</option>
+              <option value="FULL_AUTONOMOUS">⚡ Full Automatic (100% AI Admin)</option>
             </select>
 
             {/* Autonomous Mode Status Badge */}
@@ -485,6 +534,11 @@ export default function AIManagement() {
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
                 <span>EMERGENCY STOP</span>
+              </div>
+            ) : statusInfo?.control_settings?.ai_mode === 'FULL_AUTONOMOUS' ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gold-500/20 border border-gold-500/40 text-gold-400 text-xs font-bold shadow-gold">
+                <span className="w-2 h-2 rounded-full bg-gold-400 animate-pulse" />
+                <span>⚡ Full Automatic AI</span>
               </div>
             ) : statusInfo?.autonomous_active ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
@@ -567,6 +621,51 @@ export default function AIManagement() {
           })}
         </div>
       </div>
+
+      {/* ── Full Automatic AI Operations Status Banner ── */}
+      {statusInfo?.control_settings?.ai_mode === 'FULL_AUTONOMOUS' && (
+        <div className="bg-gradient-to-r from-gold-500/15 via-emerald-500/10 to-dark-850 border border-gold-500/40 rounded-2xl p-5 shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="p-3 bg-gold-500/20 border border-gold-500/40 rounded-xl text-gold-400 shrink-0 shadow-gold">
+              <HiSparkles className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-white font-bold text-base tracking-wide">
+                  Full Automatic Mode Active (100% Autonomous AI Admin)
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> LIVE AUTO-PILOT
+                </span>
+              </div>
+              <p className="text-gray-300 text-xs mt-1.5 leading-relaxed max-w-3xl">
+                All platform administrative operations are currently executed completely by AI. Indian artisan verification, product catalog approvals, customer review moderation, pending approval requests, and order fraud screening run automatically in real-time.
+              </p>
+              <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-400 flex-wrap">
+                <span className="flex items-center gap-1 text-gold-400 font-medium">✓ Auto-Verify Artisans</span>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-gold-400 font-medium">✓ Auto-Approve Products</span>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-gold-400 font-medium">✓ Auto-Moderate Reviews</span>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-gold-400 font-medium">✓ Auto-Execute Approvals</span>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-gold-400 font-medium">✓ Auto-Screen Orders</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={handleRunFullAutonomousPass}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-amber-500 hover:from-gold-400 hover:to-amber-400 text-dark-950 font-bold text-xs shadow-lg shadow-gold-500/20 flex items-center gap-2 transition-all cursor-pointer"
+              title="Force an immediate 100% autonomous pass across all domains right now"
+            >
+              <HiLightningBolt className="w-4 h-4" />
+              <span>Run Full Pass Now</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── TAB 1: Interactive Chat with Operations Manager ── */}
       {activeTab === 'chat' && (

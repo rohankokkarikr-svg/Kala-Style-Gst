@@ -434,6 +434,18 @@ async function processPendingJobs() {
         } catch (e) {}
       }
     }
+
+    // 3. If in FULL_AUTONOMOUS mode, run complete administrative operations pass
+    if (globalSettings.ai_mode === 'FULL_AUTONOMOUS' && !globalSettings.ai_emergency_stop) {
+      try {
+        const aiFullAutonomousManager = require('./aiFullAutonomousManager');
+        await aiFullAutonomousManager.executeFullAutonomousCycle({
+          triggerSource: 'AUTONOMOUS_BACKGROUND_WORKER',
+        });
+      } catch (autoErr) {
+        console.warn('[AI Job Processor] Full autonomous cycle notice:', autoErr.message);
+      }
+    }
   } catch (err) {
     console.error('❌ [AI Job Processor] Cycle error:', err.message);
   } finally {
