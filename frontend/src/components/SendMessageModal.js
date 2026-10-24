@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   HiX, 
   HiPaperAirplane, 
@@ -46,8 +47,24 @@ export default function SendMessageModal({
         setTitle(`Inquiry about Order #${orderContext.order_number || orderContext.id?.slice(0, 8)}`);
       }
       loadRecipients();
+
+      // Lock body scroll and handle Escape key to close
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+      document.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.removeEventListener('keydown', handleKeyDown);
+      };
     }
-  }, [isOpen, initialRecipientId, defaultTitle, productContext, orderContext]);
+  }, [isOpen, initialRecipientId, defaultTitle, productContext, orderContext, onClose]);
 
   const loadRecipients = async () => {
     setLoadingRecipients(true);
@@ -109,16 +126,22 @@ export default function SendMessageModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[99999] overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex min-h-screen items-center justify-center animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div 
         style={{ backgroundColor: '#141414' }}
-        className="bg-[#141414] border border-gold-500/40 rounded-2xl max-w-lg w-full shadow-2xl shadow-black overflow-hidden relative"
+        className="bg-[#141414] border border-gold-500/40 rounded-2xl max-w-lg w-full shadow-2xl shadow-black relative my-auto max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header - Pinned at top */}
         <div 
           style={{ backgroundColor: '#1c1c1c' }}
-          className="flex items-center justify-between px-6 py-4 border-b border-dark-600 bg-[#1c1c1c]"
+          className="flex items-center justify-between px-6 py-4 border-b border-dark-600 bg-[#1c1c1c] shrink-0"
         >
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gold-500/15 border border-gold-500/30 flex items-center justify-center text-gold-400">
@@ -130,122 +153,129 @@ export default function SendMessageModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-dark-700 transition-colors"
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-dark-700 transition-colors cursor-pointer"
+            title="Close"
           >
             <HiX className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          {/* Recipient Selection */}
-          {!initialRecipientId && (
-            <div className="space-y-1.5">
-              <label className="block text-gray-300 font-semibold">Send Message To</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setRecipientType('admin'); setSelectedRecipientId(''); }}
-                  className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-medium transition-all ${
-                    recipientType === 'admin'
-                      ? 'border-gold-500 bg-gold-500/15 text-gold-400 font-bold'
-                      : 'border-dark-600 bg-dark-800 text-gray-400 hover:border-dark-500'
-                  }`}
-                >
-                  <HiShieldCheck className="w-4 h-4" /> Platform Support (Admin)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRecipientType('specific')}
-                  className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-medium transition-all ${
-                    recipientType === 'specific'
-                      ? 'border-gold-500 bg-gold-500/15 text-gold-400 font-bold'
-                      : 'border-dark-600 bg-dark-800 text-gray-400 hover:border-dark-500'
-                  }`}
-                >
-                  <HiUser className="w-4 h-4" /> Select Artisan / User
-                </button>
-              </div>
-
-              {recipientType === 'specific' && (
-                <div className="pt-2">
-                  <select
-                    value={selectedRecipientId}
-                    onChange={(e) => setSelectedRecipientId(e.target.value)}
-                    style={{ backgroundColor: '#202020', color: '#ffffff' }}
-                    className="w-full bg-[#202020] border border-dark-600 rounded-xl p-2.5 text-white focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500"
-                    required
+        {/* Form Body - Scrollable if screen height is constrained */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+            {/* Recipient Selection */}
+            {!initialRecipientId && (
+              <div className="space-y-1.5">
+                <label className="block text-gray-300 font-semibold">Send Message To</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRecipientType('admin'); setSelectedRecipientId(''); }}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-medium transition-all cursor-pointer ${
+                      recipientType === 'admin'
+                        ? 'border-gold-500 bg-gold-500/15 text-gold-400 font-bold'
+                        : 'border-dark-600 bg-dark-800 text-gray-400 hover:border-dark-500'
+                    }`}
                   >
-                    <option value="" style={{ backgroundColor: '#202020' }}>-- Choose Artisan Workshop --</option>
-                    {recipients.artisans.map(a => (
-                      <option key={a.id} value={a.user_id || a.id} style={{ backgroundColor: '#202020' }}>
-                        🎨 {a.store_name} ({a.specialization || 'Handmade Craft'})
-                      </option>
-                    ))}
-                    {recipients.customers.length > 0 && (
-                      <optgroup label="Customers" style={{ backgroundColor: '#202020' }}>
-                        {recipients.customers.map(c => (
-                          <option key={c.id} value={c.id} style={{ backgroundColor: '#202020' }}>
-                            👤 {c.name || 'Customer'} ({c.email})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                    <HiShieldCheck className="w-4 h-4" /> Platform Support (Admin)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecipientType('specific')}
+                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-medium transition-all cursor-pointer ${
+                      recipientType === 'specific'
+                        ? 'border-gold-500 bg-gold-500/15 text-gold-400 font-bold'
+                        : 'border-dark-600 bg-dark-800 text-gray-400 hover:border-dark-500'
+                    }`}
+                  >
+                    <HiUser className="w-4 h-4" /> Select Artisan / User
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
 
-          {initialRecipientId && (
-            <div 
-              style={{ backgroundColor: '#1c1c1c' }}
-              className="p-3 bg-[#1c1c1c] border border-dark-600 rounded-xl flex items-center justify-between"
-            >
-              <div>
-                <span className="text-[10px] text-gray-400 uppercase tracking-wider block">Recipient</span>
-                <span className="text-sm font-bold text-gold-400">
-                  {initialRecipientName || 'Artisan Workshop'}
+                {recipientType === 'specific' && (
+                  <div className="pt-2">
+                    <select
+                      value={selectedRecipientId}
+                      onChange={(e) => setSelectedRecipientId(e.target.value)}
+                      style={{ backgroundColor: '#202020', color: '#ffffff' }}
+                      className="w-full bg-[#202020] border border-dark-600 rounded-xl p-2.5 text-white focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500"
+                      required
+                    >
+                      <option value="" style={{ backgroundColor: '#202020' }}>-- Choose Artisan Workshop --</option>
+                      {recipients.artisans.map(a => (
+                        <option key={a.id} value={a.user_id || a.id} style={{ backgroundColor: '#202020' }}>
+                          🎨 {a.store_name} ({a.specialization || 'Handmade Craft'})
+                        </option>
+                      ))}
+                      {recipients.customers.length > 0 && (
+                        <optgroup label="Customers" style={{ backgroundColor: '#202020' }}>
+                          {recipients.customers.map(c => (
+                            <option key={c.id} value={c.id} style={{ backgroundColor: '#202020' }}>
+                              👤 {c.name || 'Customer'} ({c.email})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {initialRecipientId && (
+              <div 
+                style={{ backgroundColor: '#1c1c1c' }}
+                className="p-3 bg-[#1c1c1c] border border-dark-600 rounded-xl flex items-center justify-between"
+              >
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider block">Recipient</span>
+                  <span className="text-sm font-bold text-gold-400">
+                    {initialRecipientName || 'Artisan Workshop'}
+                  </span>
+                </div>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-gold-500/15 text-gold-400 border border-gold-500/30 font-semibold capitalize">
+                  {initialRecipientRole || 'Artisan'}
                 </span>
               </div>
-              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-gold-500/15 text-gold-400 border border-gold-500/30 font-semibold capitalize">
-                {initialRecipientRole || 'Artisan'}
-              </span>
+            )}
+
+            {/* Subject / Title */}
+            <div className="space-y-1.5">
+              <label className="block text-gray-300 font-semibold">Subject / Title (Optional)</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Custom craft inquiry or size inquiry"
+                style={{ backgroundColor: '#202020', color: '#ffffff' }}
+                className="w-full bg-[#202020] border border-dark-600 rounded-xl p-3 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500 transition-colors"
+              />
             </div>
-          )}
 
-          {/* Subject / Title */}
-          <div className="space-y-1.5">
-            <label className="block text-gray-300 font-semibold">Subject / Title (Optional)</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Custom craft inquiry or size inquiry"
-              style={{ backgroundColor: '#202020', color: '#ffffff' }}
-              className="w-full bg-[#202020] border border-dark-600 rounded-xl p-3 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500 transition-colors"
-            />
+            {/* Message Content */}
+            <div className="space-y-1.5">
+              <label className="block text-gray-300 font-semibold">
+                Your Message <span className="text-gold-400">*</span>
+              </label>
+              <textarea
+                rows={4}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message details here..."
+                style={{ backgroundColor: '#202020', color: '#ffffff' }}
+                className="w-full bg-[#202020] border border-dark-600 rounded-xl p-3 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500 resize-none leading-relaxed transition-colors"
+                required
+              />
+            </div>
           </div>
 
-          {/* Message Content */}
-          <div className="space-y-1.5">
-            <label className="block text-gray-300 font-semibold">
-              Your Message <span className="text-gold-400">*</span>
-            </label>
-            <textarea
-              rows={4}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your message details here..."
-              style={{ backgroundColor: '#202020', color: '#ffffff' }}
-              className="w-full bg-[#202020] border border-dark-600 rounded-xl p-3 text-white text-xs placeholder-gray-400 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500 resize-none leading-relaxed transition-colors"
-              required
-            />
-          </div>
-
-          {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-dark-600">
+          {/* Footer Actions - Pinned at bottom */}
+          <div 
+            style={{ backgroundColor: '#171717' }}
+            className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-dark-600 bg-[#171717] shrink-0"
+          >
             <button
               type="button"
               onClick={onClose}
@@ -266,4 +296,6 @@ export default function SendMessageModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

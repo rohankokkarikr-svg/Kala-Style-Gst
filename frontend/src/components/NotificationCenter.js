@@ -209,7 +209,7 @@ export default function NotificationCenter({ className = '', buttonClassName = '
       {isOpen && (
         <div 
           style={{ backgroundColor: '#121212' }}
-          className="absolute right-0 mt-3 w-80 sm:w-96 bg-[#121212] border border-dark-600 rounded-2xl shadow-2xl shadow-black z-[999] overflow-hidden"
+          className="absolute right-0 mt-3 w-80 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#121212] border border-dark-600 rounded-2xl shadow-2xl shadow-black z-[999] overflow-hidden"
         >
           {/* Header */}
           <div 
