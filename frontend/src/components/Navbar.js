@@ -284,19 +284,6 @@ export default function Navbar() {
               {/* Notification Center */}
               <NotificationCenter />
 
-              {/* Dedicated Admin Center Button — hidden on admin pages since user is already there */}
-              {isAdmin && !location.pathname.startsWith('/admin') && (
-                <Link
-                  to="/admin"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs font-bold transition-all shadow-gold whitespace-nowrap shrink-0"
-                  title="Open Admin Control Center"
-                >
-                  <HiChartBar className="w-4 h-4 text-gold-400 shrink-0" />
-                  <span className="hidden md:inline">Admin Center</span>
-                  <span className="inline md:hidden">Admin</span>
-                </Link>
-              )}
-
               {/* User Avatar / Sign In */}
               {user ? (
                 <div className="relative group" ref={userMenuRef}>
