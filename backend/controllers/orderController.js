@@ -620,10 +620,14 @@ exports.updateOrderStatus = async (req, res) => {
       const aoUpdate = {
         status: mappedStatus,
         updated_at: now,
-        ...(mappedStatus === 'delivered' ? { delivered_at: now } : {}),
+        ...(mappedStatus === 'delivered' ? { delivered_at: now } : { delivered_at: null }),
         ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
       };
       if (timestampMap[mappedStatus]) aoUpdate[timestampMap[mappedStatus]] = now;
+      if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup'].includes(mappedStatus)) {
+        aoUpdate.dispatched_at = null;
+        aoUpdate.out_for_delivery_at = null;
+      }
       if (mappedStatus === 'rejected' && req.body.rejection_reason) aoUpdate.rejection_reason = req.body.rejection_reason;
       if (!mySubOrder.artisan_id && callerArtisanId) {
         aoUpdate.artisan_id = callerArtisanId;

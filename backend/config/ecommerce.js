@@ -114,17 +114,18 @@ const VALID_OPERATIONAL_STATUSES = [
 const ARTISAN_STATUS_TRANSITIONS = {
   pending:           ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
   confirmed:         ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
-  accepted:          ['preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  preparing:         ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  processing:        ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  in_preparation:    ['ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  ready_for_pickup:  ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  packed:            ['dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  dispatched:        ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  shipped:           ['out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  on_the_way:        ['delivered', 'cancelled', 'rejected'],
-  delivered:         ['cancelled', 'rejected'],
-  completed:         ['cancelled', 'rejected'],
+  accepted:          ['preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  preparing:         ['accepted', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  processing:        ['accepted', 'preparing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  in_preparation:    ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  ready_for_pickup:  ['preparing', 'processing', 'in_preparation', 'accepted', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  packed:            ['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  dispatched:        ['ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  shipped:           ['ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
+  out_for_delivery:  ['shipped', 'dispatched', 'ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'delivered', 'cancelled', 'rejected'],
+  on_the_way:        ['shipped', 'dispatched', 'ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'delivered', 'cancelled', 'rejected'],
+  delivered:         ['out_for_delivery', 'shipped', 'dispatched', 'ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'cancelled', 'rejected'],
+  completed:         ['delivered', 'out_for_delivery', 'shipped', 'dispatched', 'ready_for_pickup', 'packed', 'preparing', 'processing', 'in_preparation', 'accepted', 'cancelled', 'rejected'],
   rejected:          ['cancelled'],
   cancelled:         ['rejected'],
 };
@@ -133,16 +134,21 @@ function isValidArtisanTransition(from, to) {
   if (!from || !to) return true;
   if (from === to) return true; // Idempotent updates are always allowed
   
+  const fromClean = String(from).toLowerCase().trim();
+  const toClean = String(to).toLowerCase().trim();
+
+  if (fromClean === toClean) return true;
+
   // Terminal guard: rejected and cancelled orders cannot later be accepted without a controlled admin workflow
-  if ((from === 'rejected' || from === 'cancelled') && (to === 'accepted' || to === 'preparing' || to === 'dispatched' || to === 'delivered')) {
+  if ((fromClean === 'rejected' || fromClean === 'cancelled') && (toClean === 'accepted' || toClean === 'preparing' || toClean === 'processing' || toClean === 'dispatched' || toClean === 'delivered')) {
     return false;
   }
 
   // Cancellation and rejection are always allowed from active states (including returns or exceptions)
-  if (to === 'cancelled' || to === 'rejected') return true;
+  if (toClean === 'cancelled' || toClean === 'rejected') return true;
 
-  const allowed = ARTISAN_STATUS_TRANSITIONS[from];
-  if (allowed && allowed.includes(to)) return true;
+  const allowed = ARTISAN_STATUS_TRANSITIONS[fromClean];
+  if (allowed && allowed.includes(toClean)) return true;
 
   return false;
 }

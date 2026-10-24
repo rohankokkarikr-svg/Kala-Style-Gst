@@ -834,6 +834,13 @@ exports.updateArtisanOrderStatus = async (req, res) => {
 
     const updateData = { status, updated_at: now };
     if (timestampMap[status]) updateData[timestampMap[status]] = now;
+    if (status !== 'delivered') {
+      updateData.delivered_at = null;
+    }
+    if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup'].includes(status)) {
+      updateData.dispatched_at = null;
+      updateData.out_for_delivery_at = null;
+    }
     if (status === 'rejected' && rejection_reason) updateData.rejection_reason = rejection_reason;
     if (!artOrder.artisan_id && profile?.id) updateData.artisan_id = profile.id;
 
