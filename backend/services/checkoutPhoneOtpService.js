@@ -415,34 +415,37 @@ const sendCheckoutPhoneOtp = async ({ userId, rawPhone }) => {
     }
   }
 
-  // If not dispatched via direct Twilio (e.g. Twilio not configured, trial restriction, or send failed)
+  // If not dispatched via direct Twilio (or direct Twilio not configured), dispatch REAL SMS via Supabase Twilio Provider
   if (!dispatchSuccess) {
-    const devCode = process.env.DEV_OTP_CODE || '123456';
-    trialChallenges.add(challenge.id);
-    await safeQuery(() =>
-      supabase
-        .from('checkout_otp_challenges')
-        .update({ purpose: `${CHECKOUT_OTP_PURPOSE}:trial` })
-        .eq('id', challenge.id)
-    );
+    try {
+      const { data: sbData, error: sbErr } = await supabase.auth.signInWithOtp({ phone: phoneE164 });
 
-    const isDirectTried = isDirectTwilioConfigured();
-    const fallbackMsg = isDirectTried
-      ? `Twilio Trial Mode: verification code is ${devCode}.`
-      : `SMS Gateway in Demo/Verification mode: verification code is ${devCode}.`;
+      if (sbErr) {
+        console.error('[checkoutPhoneOtpService] Supabase Twilio SMS send error:', sbErr.message);
+        const msg = String(sbErr.message || '');
+        if (msg.includes('21608') || msg.toLowerCase().includes('unverified')) {
+          return {
+            success: false,
+            error: `Twilio Trial limitation: The number ${maskPhone(phoneE164)} is not verified in your Twilio Console. Please verify it at twilio.com/user/account/phone-numbers/verified to receive real SMS, or upgrade your Twilio account.`,
+            isTwilioTrialUnverified: true,
+          };
+        }
 
-    console.log(`[checkoutPhoneOtpService] Demo/Trial code ${devCode} enabled for challenge ${challenge.id} (Direct Twilio configured: ${isDirectTried})`);
+        return {
+          success: false,
+          error: `SMS delivery failed: ${msg}`,
+        };
+      }
 
-    return {
-      success: true,
-      maskedPhone: maskPhone(phoneE164),
-      challengeId: challenge.id,
-      expiresIn: CHALLENGE_EXPIRY_MS / 1000,
-      cooldownSeconds: RESEND_COOLDOWN_MS / 1000,
-      devOtp: devCode,
-      isTrialFallback: true,
-      message: fallbackMsg,
-    };
+      console.log(`[checkoutPhoneOtpService] REAL SMS OTP dispatched via Supabase Twilio Provider → ${maskPhone(phoneE164)} (challenge: ${challenge.id})`);
+      dispatchSuccess = true;
+    } catch (sbEx) {
+      console.error('[checkoutPhoneOtpService] Supabase Twilio SMS exception:', sbEx.message);
+      return {
+        success: false,
+        error: sbEx.message || 'Failed to dispatch real SMS verification code. Please try again.',
+      };
+    }
   }
 
   return {
@@ -582,50 +585,56 @@ const verifyCheckoutPhoneOtp = async ({ userId, rawPhone, code, challengeId }) =
     return { success: false, error: 'Too many incorrect attempts. Please request a new verification code.' };
   }
 
-  // 4. Verify code via Dev/Trial Fallback OR Direct Twilio Verify
-  const devCode = process.env.DEV_OTP_CODE || '123456';
-  const isDevCode = String(code).trim() === devCode;
-  const isTrialChallenge = trialChallenges.has(challenge.id) || (challenge.purpose && challenge.purpose.includes('trial'));
-  const isDevAllowed = isDevCode && (
-    isTrialChallenge ||
-    !isDirectTwilioConfigured() ||
-    process.env.NODE_ENV !== 'production' ||
-    process.env.ALLOW_DEV_PHONE_OTP === 'true'
-  );
-
+  // 4. Verify real SMS OTP via Supabase Twilio Provider OR Direct Twilio Verify
   let isVerified = false;
 
-  if (isDevAllowed) {
-    console.log(`[checkoutPhoneOtpService] Dev/Trial OTP accepted for challenge ${challenge.id}, user ${userId}`);
-    isVerified = true;
-  } else {
-    // 4a. Check via Direct Twilio Verify if configured
-    if (isDirectTwilioConfigured()) {
-      try {
-        const client = getTwilioClient();
-        const svcSid = getVerifyServiceSid();
+  // 4a. Verify real SMS OTP via Supabase Twilio Phone Provider
+  try {
+    const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
+      phone: phoneE164,
+      token: String(code).trim(),
+      type: 'sms',
+    });
 
-        const verificationCheck = await client.verify.v2.services(svcSid)
-          .verificationChecks
-          .create({ to: phoneE164, code: String(code).trim() });
-
-        if (verificationCheck.status === 'approved') {
-          isVerified = true;
-        }
-      } catch (twilioErr) {
-        console.warn('[checkoutPhoneOtpService] Direct Twilio verifyCheck note:', twilioErr.message);
-      }
+    if (!verifyErr && (verifyData?.user || verifyData?.session)) {
+      console.log(`[checkoutPhoneOtpService] Real SMS OTP confirmed by Supabase for ${maskPhone(phoneE164)}`);
+      isVerified = true;
+    } else if (verifyErr) {
+      console.warn('[checkoutPhoneOtpService] Supabase verifyOtp note:', verifyErr.message);
     }
+  } catch (sbVerifyErr) {
+    console.warn('[checkoutPhoneOtpService] Supabase verify exception note:', sbVerifyErr.message);
+  }
 
-    // Fallback: If Direct Twilio check didn't approve, but code matches devCode
-    if (!isVerified && isDevCode) {
-      console.log(`[checkoutPhoneOtpService] Fallback devCode accepted for challenge ${challenge.id}`);
+  // 4b. If not verified via Supabase, verify via Direct Twilio Verify if configured
+  if (!isVerified && isDirectTwilioConfigured()) {
+    try {
+      const client = getTwilioClient();
+      const svcSid = getVerifyServiceSid();
+
+      const verificationCheck = await client.verify.v2.services(svcSid)
+        .verificationChecks
+        .create({ to: phoneE164, code: String(code).trim() });
+
+      if (verificationCheck.status === 'approved') {
+        isVerified = true;
+      }
+    } catch (twilioErr) {
+      console.warn('[checkoutPhoneOtpService] Direct Twilio verifyCheck note:', twilioErr.message);
+    }
+  }
+
+  // 4c. Test environment bypass (only if ALLOW_DEV_PHONE_OTP is enabled in test environment)
+  if (!isVerified && process.env.ALLOW_DEV_PHONE_OTP === 'true' && process.env.NODE_ENV !== 'production') {
+    const devCode = process.env.DEV_OTP_CODE || '123456';
+    if (String(code).trim() === devCode) {
+      console.log(`[checkoutPhoneOtpService] Test dev code accepted in non-production environment`);
       isVerified = true;
     }
+  }
 
-    if (!isVerified) {
-      return { success: false, error: 'Incorrect verification code. Please check your SMS and try again.' };
-    }
+  if (!isVerified) {
+    return { success: false, error: 'Incorrect verification code. Please check the SMS sent to your mobile phone and try again.' };
   }
 
   // 5. Issue opaque one-time verification token

@@ -611,15 +611,9 @@ export default function Checkout() {
       const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
       setLastOtpPhone(cleanPhone);
       setOtpChallengeId(res.data?.challengeId || null);
-      if (res.data?.devOtp) {
-        setDevOtpCode(res.data.devOtp);
-        setOtpValue(res.data.devOtp.split(''));
-        toast.success(`Verification Code: ${res.data.devOtp}`, { duration: 9000 });
-      } else {
-        setDevOtpCode(null);
-        setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
-        toast.success(`SMS verification code dispatched to ${res.data?.maskedPhone || maskPhone(cleanPhone)}! 📱`);
-      }
+      setDevOtpCode(null);
+      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      toast.success(`SMS verification code dispatched to ${res.data?.maskedPhone || maskPhone(cleanPhone)}! Please check your mobile phone. 📱`);
       setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
       setShowOtpModal(true);
@@ -647,15 +641,9 @@ export default function Checkout() {
       const res = await orderAPI.phoneOtpSend({ phone: cleanPhone });
       setLastOtpPhone(cleanPhone);
       setOtpChallengeId(res.data?.challengeId || null);
-      if (res.data?.devOtp) {
-        setDevOtpCode(res.data.devOtp);
-        setOtpValue(res.data.devOtp.split(''));
-        toast.success(`Verification Code: ${res.data.devOtp}`, { duration: 9000 });
-      } else {
-        setDevOtpCode(null);
-        setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
-        toast.success(`A fresh verification code was sent via SMS to ${res.data?.maskedPhone || maskPhone(cleanPhone)}.`);
-      }
+      setDevOtpCode(null);
+      setOtpValue(Array(CHECKOUT_OTP_LENGTH).fill(''));
+      toast.success(`A fresh verification code was sent via SMS to ${res.data?.maskedPhone || maskPhone(cleanPhone)}. Please check your mobile phone.`);
       setOtpCountdown(res.data?.cooldownSeconds || 60);
       setCanResendOtp(false);
     } catch (err) {
@@ -1713,10 +1701,7 @@ export default function Checkout() {
                 length={CHECKOUT_OTP_LENGTH}
                 email={maskPhone(form.phone)}
                 title="Phone Verification"
-                subtitle={devOtpCode 
-                  ? `Verification code is ${devOtpCode}. Tap below to confirm and place your order.`
-                  : `We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}`
-                }
+                subtitle={`We sent a 6-digit SMS verification code to ${maskPhone(form.phone)} for order amount ₹${finalTotal.toLocaleString()}. Please check your SMS and enter the 6-digit code.`}
                 countdown={otpCountdown}
                 isLoading={otpLoading}
                 isSuccess={isOtpSuccess}
@@ -1725,7 +1710,7 @@ export default function Checkout() {
                 onResend={handleResendOrderOtp}
                 onChangeEmail={() => setShowOtpModal(false)}
                 changeEmailLabel="Cancel / Edit Delivery Details"
-                submitLabel={devOtpCode ? `Verify Code (${devOtpCode}) & Confirm Order` : "Verify Phone & Confirm Order"}
+                submitLabel="Verify Phone & Confirm Order"
                 verifyingLabel="Verifying SMS Code..."
                 successLabel="Phone Verified & Secured"
                 onChange={handleOtpInputChange}
@@ -1735,24 +1720,6 @@ export default function Checkout() {
                 compact={true}
                 className="bg-transparent border-0 shadow-none !p-0"
               />
-
-              {/* Didn't receive SMS backup code button */}
-              {!devOtpCode && (
-                <div className="mt-3 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const fallbackCode = '123456';
-                      setDevOtpCode(fallbackCode);
-                      setOtpValue(fallbackCode.split(''));
-                      toast.info('Loaded backup verification code: 123456. Click verify to confirm order.');
-                    }}
-                    className="text-xs text-gold-400 hover:text-gold-300 underline font-medium cursor-pointer transition-colors"
-                  >
-                    Didn't receive SMS? Use backup code (123456)
-                  </button>
-                </div>
-              )}
 
               {/* Shiprocket Delivery Guarantee footer */}
               <div className="mt-5 pt-4 border-t border-dark-700/60 flex items-center justify-center gap-2 text-[11px] text-gray-400 text-center">
