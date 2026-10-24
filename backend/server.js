@@ -115,16 +115,23 @@ app.use('/api/payments', paymentsRouter);
 app.post('/api/create-order', protect, paymentsRouter.createOrderDirect);
 app.post('/api/verify-payment', protect, paymentsRouter.verifyPaymentDirect);
 
-// Fast HTTP caching headers ONLY on public catalog GET queries; NEVER cache private/user endpoints
+// Fast HTTP caching headers ONLY on public catalog GET queries; NEVER cache private/user/order endpoints
 app.use((req, res, next) => {
   const isPrivate = req.path.includes('/auth') || 
                     req.path.includes('/admin') || 
+                    req.path.includes('/artisan') || 
+                    req.path.includes('/order') || 
+                    req.path.includes('/payment') || 
+                    req.path.includes('/checkout') || 
+                    req.path.includes('/notification') || 
                     req.path.includes('/me') || 
                     req.path.includes('/my') || 
                     req.path.includes('/health');
   if (req.method === 'GET') {
     if (isPrivate) {
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, private');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
     } else {
       res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
     }

@@ -28,7 +28,10 @@ export default function ArtisanDashboard() {
       </div>
 
       {/* Pending Orders Alert Banner */}
-      {!loading && stats?.recentOrders?.some(o => (o.orders?.status === 'pending' || o.orders?.status === 'confirmed' || o.status === 'pending')) && (
+      {!loading && stats?.recentOrders?.some(o => {
+        const isAccepted = o.status === 'accepted' || o.item_status === 'accepted' || o.accepted_at || o.orders?.status === 'accepted' || o.orders?.order_status === 'accepted';
+        return !isAccepted && (o.orders?.status === 'pending' || o.orders?.status === 'confirmed' || o.status === 'pending');
+      }) && (
         <div className="bg-gradient-to-r from-amber-500/20 via-dark-800 to-gold-500/10 border-2 border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-amber-500/10 animate-in fade-in">
           <div className="flex items-center gap-3">
             <span className="p-2 bg-amber-500/20 text-amber-400 rounded-lg text-lg">⚡</span>

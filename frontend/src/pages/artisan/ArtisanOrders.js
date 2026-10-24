@@ -45,11 +45,12 @@ export default function ArtisanOrders() {
     if (!quiet) setLoading(true);
     try {
       let loaded = false;
+      let rawData = null;
       // 1. Try modern artisan_orders based endpoint first
       try {
         const res = await artisanAPI.getArtisanOrders();
         if (res?.data && Array.isArray(res.data)) {
-          setOrders(res.data);
+          rawData = res.data;
           loaded = true;
         }
       } catch (e) { /* fallback to getMyOrders */ }
@@ -59,7 +60,7 @@ export default function ArtisanOrders() {
         try {
           const res = await artisanAPI.getMyOrders();
           if (res?.data && Array.isArray(res.data)) {
-            setOrders(res.data);
+            rawData = res.data;
             loaded = true;
           }
         } catch (e) { /* fallback to getMyStats */ }
@@ -69,10 +70,42 @@ export default function ArtisanOrders() {
       if (!loaded) {
         try {
           const statsRes = await artisanAPI.getMyStats();
-          setOrders(statsRes?.data?.recentOrders || []);
+          rawData = statsRes?.data?.recentOrders || [];
         } catch (err) {
           console.error('Failed to load artisan orders:', err);
         }
+      }
+
+      if (rawData && Array.isArray(rawData)) {
+        // Resiliently merge fresh data with local accepted state to prevent stale server snapshots from reverting confirmed orders
+        setOrders(prev => {
+          const locallyAcceptedIds = new Set(
+            prev.filter(p => p.status === 'accepted' || p.accepted_at || p.item_status === 'accepted').map(p => p.id || p.order_id)
+          );
+          return rawData.map(item => {
+            const orderObj = item.orders || item.order || {};
+            const itemKey = item.id || item.order_id || orderObj.id;
+            const wasAccepted = locallyAcceptedIds.has(itemKey) || Boolean(
+              item.accepted_at ||
+              item.status === 'accepted' ||
+              item.item_status === 'accepted' ||
+              orderObj.status === 'accepted' ||
+              orderObj.order_status === 'accepted'
+            );
+
+            if (wasAccepted && (item.status === 'pending' || !item.status || orderObj.status === 'confirmed' || orderObj.status === 'pending')) {
+              return {
+                ...item,
+                status: 'accepted',
+                item_status: 'accepted',
+                accepted_at: item.accepted_at || new Date().toISOString(),
+                order: item.order ? { ...item.order, status: 'accepted', order_status: 'accepted' } : undefined,
+                orders: item.orders ? { ...item.orders, status: 'accepted', order_status: 'accepted' } : undefined,
+              };
+            }
+            return item;
+          });
+        });
       }
     } finally {
       setLoading(false);
@@ -85,9 +118,34 @@ export default function ArtisanOrders() {
 
   // 1. DOM Real-time listener: instantly reflect when a customer places or updates an order
   useEffect(() => {
-    const handleSync = () => { 
+    const handleSync = (e) => { 
       // Skip background refetch if user has an update currently in-flight
       if (updatingId) return;
+
+      // If sync event carries updated status, immediately apply it to local state for 0ms visual feedback
+      if (e?.detail) {
+        const payload = e.detail.payload || e.detail;
+        const targetOrderId = payload.order_id || payload.orderId || payload.id;
+        const targetArtisanOrderId = payload.artisan_order_id || payload.artisanOrderId;
+        const newStatus = payload.status || payload.order_status;
+        if (newStatus && (targetOrderId || targetArtisanOrderId)) {
+          setOrders(prev => prev.map(item => {
+            const matches = (targetArtisanOrderId && (item.id === targetArtisanOrderId || item.artisan_order_id === targetArtisanOrderId)) ||
+                            (targetOrderId && (item.order_id === targetOrderId || item.order?.id === targetOrderId || item.orders?.id === targetOrderId));
+            if (matches) {
+              return {
+                ...item,
+                status: newStatus,
+                item_status: newStatus,
+                accepted_at: newStatus === 'accepted' ? (item.accepted_at || new Date().toISOString()) : item.accepted_at,
+                order: item.order ? { ...item.order, status: newStatus, order_status: newStatus } : undefined,
+                orders: item.orders ? { ...item.orders, status: newStatus, order_status: newStatus } : undefined,
+              };
+            }
+            return item;
+          }));
+        }
+      }
       fetchOrders(true); 
     };
     window.addEventListener('kala:sync:orders_updated', handleSync);
@@ -159,6 +217,8 @@ export default function ArtisanOrders() {
     const targetId = artisanOrderId || orderId;
     setUpdatingId(targetId);
 
+    const nowIso = new Date().toISOString();
+
     // Optimistically update local state immediately
     setOrders(prev => prev.map(item => {
       const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
@@ -168,6 +228,7 @@ export default function ArtisanOrders() {
           ...item,
           status: 'accepted',
           item_status: 'accepted',
+          accepted_at: nowIso,
           orders: item.orders ? { ...item.orders, status: 'accepted', order_status: 'accepted' } : undefined,
           order: item.order ? { ...item.order, status: 'accepted', order_status: 'accepted' } : undefined,
         };
@@ -190,6 +251,23 @@ export default function ArtisanOrders() {
       } else {
         await artisanAPI.updateOrderStatus(orderId, { status: 'accepted' });
       }
+
+      // Definitively lock in the accepted state in state
+      setOrders(prev => prev.map(item => {
+        const isTarget = (artisanOrderId && item.id === artisanOrderId) ||
+                         (!artisanOrderId && (item.orders?.id === orderId || item.order?.id === orderId || item.order_id === orderId));
+        if (isTarget) {
+          return {
+            ...item,
+            status: 'accepted',
+            item_status: 'accepted',
+            accepted_at: item.accepted_at || nowIso,
+            orders: item.orders ? { ...item.orders, status: 'accepted', order_status: 'accepted' } : undefined,
+            order: item.order ? { ...item.order, status: 'accepted', order_status: 'accepted' } : undefined,
+          };
+        }
+        return item;
+      }));
 
       toast.success('🎉 Order Confirmed! The customer will see "Accepted by Artisan" on their tracking status bar.');
       window.dispatchEvent(new CustomEvent('kala:sync:orders_updated', {
@@ -379,7 +457,6 @@ export default function ArtisanOrders() {
     preparing: 'processing',
     in_preparation: 'processing',
     ready_for_pickup: 'processing',
-    accepted: 'processing',
     partially_processing: 'processing',
     packed: 'processing',
     dispatched: 'shipped',
@@ -399,10 +476,10 @@ export default function ArtisanOrders() {
     pending:                      { label: 'Pending Packing',          bg: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40', icon: HiClock },
     confirmed:                    { label: 'Order Confirmed',          bg: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40', icon: HiClock },
     payment_verification_pending: { label: 'UTR Pending Verification', bg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',   icon: HiClock },
+    accepted:                     { label: 'Accepted by Artisan',      bg: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', icon: HiCheckCircle },
     processing:                   { label: 'In Preparation',           bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
     preparing:                    { label: 'In Preparation',           bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
     ready_for_pickup:             { label: 'Ready for Pickup',         bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
-    accepted:                     { label: 'Accepted by Artisan',      bg: 'bg-blue-500/20 text-blue-400 border-blue-500/40',       icon: HiShoppingBag },
     shipped:                      { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
     dispatched:                   { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
     out_for_delivery:             { label: 'Out for Delivery',         bg: 'bg-purple-500/20 text-purple-400 border-purple-500/40', icon: HiTruck },
@@ -415,13 +492,26 @@ export default function ArtisanOrders() {
 
   const filteredOrders = orders.filter(item => {
     const orderObj = item.orders || item.order || {};
-    const rawStatus = item.status || item.item_status || orderObj.status || 'pending';
+    const isAcceptedInRecord = Boolean(
+      item.accepted_at ||
+      item.status === 'accepted' ||
+      item.item_status === 'accepted' ||
+      orderObj.status === 'accepted' ||
+      orderObj.order_status === 'accepted'
+    );
+    const rawStatus = isAcceptedInRecord 
+      ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status || orderObj.status)
+          ? (item.status || item.item_status || orderObj.status)
+          : 'accepted')
+      : (item.status || item.item_status || orderObj.status || 'pending');
     const status = normalizeArtisanStatus(rawStatus);
     const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
     const isUtrPending = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
 
     if (filter === 'utr_pending') {
       if (!isUtrPending) return false;
+    } else if (filter === 'processing') {
+      if (status !== 'processing' && status !== 'accepted') return false;
     } else if (filter !== 'all' && status !== filter) {
       return false;
     }
@@ -552,7 +642,18 @@ export default function ArtisanOrders() {
             const customerPhone = orderObj.phone || customerObj.phone || '';
             const customerEmail = customerObj.email || '';
             const loc = extractOrderLocation(orderObj);
-            const rawStatus = item.status || item.item_status || orderObj.status || 'pending';
+            const isAcceptedInRecord = Boolean(
+              item.accepted_at ||
+              item.status === 'accepted' ||
+              item.item_status === 'accepted' ||
+              orderObj.status === 'accepted' ||
+              orderObj.order_status === 'accepted'
+            );
+            const rawStatus = isAcceptedInRecord 
+              ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status || orderObj.status)
+                  ? (item.status || item.item_status || orderObj.status)
+                  : 'accepted')
+              : (item.status || item.item_status || orderObj.status || 'pending');
             const statusKey = normalizeArtisanStatus(rawStatus);
             const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG[rawStatus] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
@@ -839,9 +940,10 @@ export default function ArtisanOrders() {
 
                 {/* ── Real-Time Artisan Order Verification: Accept or Reject Banner ── */}
                 {(() => {
-                  const isAwaitingDecision = (rawStatus === 'pending' || rawStatus === 'confirmed') && item.status !== 'accepted';
-                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted';
-                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected';
+                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted' || item.item_status === 'accepted' || orderObj.status === 'accepted' || orderObj.order_status === 'accepted' || Boolean(item.accepted_at);
+                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected' || item.item_status === 'rejected' || orderObj.status === 'rejected' || orderObj.order_status === 'rejected' || Boolean(item.rejected_at);
+                  const isFurther = ['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'completed'].includes(statusKey);
+                  const isAwaitingDecision = !isAccepted && !isRejected && !isFurther && (rawStatus === 'pending' || rawStatus === 'confirmed' || statusKey === 'pending');
 
                   if (isAwaitingDecision) {
                     return (
@@ -916,14 +1018,14 @@ export default function ArtisanOrders() {
                     );
                   }
 
-                  if (isAccepted && !isRejected) {
+                  if ((isAccepted || isFurther) && !isRejected) {
                     return (
                       <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2.5">
                           <HiCheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
                           <div>
                             <span className="font-bold text-emerald-300">Order Confirmed by You:</span>
-                            <span className="text-gray-300 ml-1.5">Customer tracking status bar is showing "Accepted by Artisan". Preparation is underway.</span>
+                            <span className="text-gray-300 ml-1.5">Customer tracking status bar is showing "Accepted by Artisan". Handcrafted preparation is underway.</span>
                           </div>
                         </div>
                         <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-emerald-500/30">

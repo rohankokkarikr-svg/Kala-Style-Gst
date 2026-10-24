@@ -327,7 +327,18 @@ exports.getMyOrders = async (req, res) => {
 
     // Attach extracted clean utr_number, item status and shipping details to order objects
     const sorted = (orderItems || []).map(item => {
-      item.status = item.item_status || item.status || item.orders?.status || 'pending';
+      const isAccepted = Boolean(
+        item.item_status === 'accepted' ||
+        item.status === 'accepted' ||
+        item.orders?.status === 'accepted' ||
+        item.orders?.order_status === 'accepted'
+      );
+      item.status = isAccepted
+        ? (['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.item_status || item.status || item.orders?.status)
+            ? (item.item_status || item.status || item.orders?.status)
+            : 'accepted')
+        : (item.item_status || item.status || item.orders?.status || 'pending');
+      item.item_status = item.status;
       item.order = item.orders || {};
       if (item.orders) {
         let utr = item.orders.transaction_id || item.orders.razorpay_payment_id;
@@ -357,6 +368,9 @@ exports.getMyOrders = async (req, res) => {
       return timeB - timeA;
     });
 
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.json(sorted);
   } catch (err) {
     console.error('getMyOrders error:', err);
@@ -530,10 +544,23 @@ exports.getMyArtisanOrders = async (req, res) => {
       }
       orderObj.utr_number = utr || null;
 
+      const isAccepted = Boolean(
+        ao.accepted_at ||
+        ao.status === 'accepted' ||
+        firstItem.item_status === 'accepted' ||
+        orderObj.status === 'accepted' ||
+        orderObj.order_status === 'accepted'
+      );
+      const resolvedStatus = isAccepted
+        ? (['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(ao.status || firstItem.item_status || orderObj.status)
+            ? (ao.status || firstItem.item_status || orderObj.status)
+            : 'accepted')
+        : (ao.status || firstItem.item_status || orderObj.status || 'pending');
+
       return {
         ...ao,
-        status: ao.status || firstItem.item_status || orderObj.status || 'pending',
-        item_status: ao.status || firstItem.item_status || orderObj.status || 'pending',
+        status: resolvedStatus,
+        item_status: resolvedStatus,
         order: orderObj,
         orders: orderObj,          // compatibility alias
         items: displayItems,
@@ -545,6 +572,9 @@ exports.getMyArtisanOrders = async (req, res) => {
       };
     });
 
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.json(result);
   } catch (err) {
     console.error('getMyArtisanOrders error:', err);
@@ -959,6 +989,9 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       rejection_reason: status === 'rejected' ? rejection_reason : undefined,
     });
 
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.json({
       success: true,
       artisan_order: updated || { ...artOrder, ...updateData },
