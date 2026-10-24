@@ -633,6 +633,7 @@ export default function ProductList() {
             className={`
               fixed inset-0 z-50 bg-dark-950/95 backdrop-blur-md p-6 overflow-y-auto transform transition-transform duration-300
               lg:sticky lg:top-24 lg:z-10 lg:translate-x-0 lg:bg-dark-800 lg:p-6 lg:rounded-2xl lg:border lg:border-dark-700 lg:w-72 lg:block
+              lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto custom-scrollbar
               ${filterOpen ? 'translate-x-0' : '-translate-x-full'}
             `}
           >

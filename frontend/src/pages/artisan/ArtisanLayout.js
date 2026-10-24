@@ -68,65 +68,78 @@ export default function ArtisanLayout() {
   return (
     <div className="min-h-screen bg-dark-900 flex">
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
-      <aside className={'fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 transform transition-transform duration-300 ease-in-out ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0')}>
-        <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-dark-600 flex justify-between items-center">
-            <Link to="/" className="flex items-center gap-3">
-              <img
-                src="/images/kalastyle_logo.png"
-                alt="KalaStyle AI"
-                className="h-10 w-10 object-cover rounded-full ring-2 ring-gold-500/80 shadow-gold"
-              />
-              <div className="leading-tight">
-                <div className="font-serif text-lg font-bold gold-text">KalaStyle AI</div>
-                <div className="text-xs text-gray-400 uppercase tracking-widest">Artisan Studio</div>
-              </div>
-            </Link>
-            <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400"><HiX className="w-6 h-6" /></button>
-          </div>
-          {user && (
-            <div className="px-4 py-3 border-b border-dark-600 bg-dark-700/50">
-              <p className="text-white font-semibold text-sm truncate">{user.name}</p>
-              <p className="text-gold-400 text-xs">{profile?.store_name || user.artisan_profile?.store_name || 'Artisan'}</p>
-              <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                <span className={'text-[10px] px-2 py-0.5 rounded-full font-medium ' + (currentStatus === 'verified' ? 'bg-green-500/20 text-green-400' : currentStatus === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400')}>
-                  {currentStatus === 'verified' ? '✓ Verified' : currentStatus === 'rejected' ? '✗ Rejected' : '⏳ Pending Verification'}
-                </span>
-                {user.role === 'admin' && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold-500/20 text-gold-400 border border-gold-500/40">
-                    👑 ADMIN
-                  </span>
-                )}
-              </div>
+      <aside className={`
+        fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-dark-800 border-r border-dark-600 
+        transform transition-transform duration-300 ease-in-out flex flex-col overflow-hidden
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        {/* Brand Header - Pinned */}
+        <div className="p-5 border-b border-dark-600 flex justify-between items-center bg-dark-850 shrink-0">
+          <Link to="/" className="flex items-center gap-3">
+            <img
+              src="/images/kalastyle_logo.png"
+              alt="KalaStyle AI"
+              className="h-10 w-10 object-cover rounded-full ring-2 ring-gold-500/80 shadow-gold"
+            />
+            <div className="leading-tight">
+              <div className="font-serif text-lg font-bold gold-text">KalaStyle AI</div>
+              <div className="text-xs text-gray-400 uppercase tracking-widest">Artisan Studio</div>
+            </div>
+          </Link>
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white p-1">
+            <HiX className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* User Info Capsule - Pinned */}
+        {user && (
+          <div className="px-4 py-3 border-b border-dark-600 bg-dark-700/50 shrink-0">
+            <p className="text-white font-semibold text-sm truncate">{user.name}</p>
+            <p className="text-gold-400 text-xs truncate">{profile?.store_name || user.artisan_profile?.store_name || 'Artisan'}</p>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <span className={'text-[10px] px-2 py-0.5 rounded-full font-medium ' + (currentStatus === 'verified' ? 'bg-green-500/20 text-green-400' : currentStatus === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400')}>
+                {currentStatus === 'verified' ? '✓ Verified' : currentStatus === 'rejected' ? '✗ Rejected' : '⏳ Pending Verification'}
+              </span>
               {user.role === 'admin' && (
-                <Link
-                  to="/admin"
-                  className="flex items-center justify-center gap-2 mt-2.5 py-1.5 px-3 rounded-xl bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 font-bold text-xs transition-all shadow-gold"
-                >
-                  <HiChartBar className="w-4 h-4 text-gold-400" /> Switch to Admin Center 🛡️
-                </Link>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold-500/20 text-gold-400 border border-gold-500/40">
+                  👑 ADMIN
+                </span>
               )}
             </div>
-          )}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {links.map((l) => {
-              const active = isActive(l.path);
-              return (
-                <Link key={l.name} to={l.path} onClick={() => setSidebarOpen(false)}
-                  className={'admin-sidebar-item ' + (active ? 'active ' : '') + (l.highlight ? 'bg-gold-500/5 border border-gold-500/20' : '')}>
-                  <l.icon className="w-5 h-5 shrink-0" />
-                  {l.name}
-                  {l.highlight && !active && <span className="ml-auto text-[9px] font-bold text-gold-500 bg-gold-500/10 px-1.5 py-0.5 rounded-full">AI</span>}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="p-4 border-t border-dark-600 space-y-2">
-            <Link to="/products" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 transition-colors">← Back to Shop</Link>
-            <button onClick={logout} className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-red-400 hover:bg-red-400/10 transition-colors">
-              <HiLogout className="w-5 h-5 shrink-0" /> Logout
-            </button>
+            {user.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="flex items-center justify-center gap-2 mt-2.5 py-1.5 px-3 rounded-xl bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 font-bold text-xs transition-all shadow-gold"
+              >
+                <HiChartBar className="w-4 h-4 text-gold-400" /> Switch to Admin Center 🛡️
+              </Link>
+            )}
           </div>
+        )}
+
+        {/* Navigation List - Only this middle section scrolls smoothly */}
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 custom-scrollbar">
+          {links.map((l) => {
+            const active = isActive(l.path);
+            return (
+              <Link key={l.name} to={l.path} onClick={() => setSidebarOpen(false)}
+                className={'admin-sidebar-item ' + (active ? 'active ' : '') + (l.highlight ? 'bg-gold-500/5 border border-gold-500/20' : '')}>
+                <l.icon className="w-5 h-5 shrink-0" />
+                <span className="truncate">{l.name}</span>
+                {l.highlight && !active && <span className="ml-auto text-[9px] font-bold text-gold-500 bg-gold-500/10 px-1.5 py-0.5 rounded-full">AI</span>}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Footer Actions - Pinned */}
+        <div className="p-4 border-t border-dark-600 bg-dark-850 space-y-2 shrink-0">
+          <Link to="/products" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 transition-colors">
+            ← Back to Shop
+          </Link>
+          <button onClick={logout} className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer">
+            <HiLogout className="w-5 h-5 shrink-0" /> Logout
+          </button>
         </div>
       </aside>
       <main className="flex-1 flex flex-col min-w-0">

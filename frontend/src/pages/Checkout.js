@@ -989,7 +989,7 @@ export default function Checkout() {
           <HiReceiptTax className="w-4 h-4 text-gold-400" />
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">Order Summary</h3>
         </div>
-        <div className="divide-y divide-dark-600 max-h-64 overflow-y-auto">
+        <div className="divide-y divide-dark-600 max-h-64 overflow-y-auto custom-scrollbar">
           {items.map((item) => (
             <div key={item.key} className="flex items-center gap-3 px-5 py-3">
               <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-700 border border-dark-600">
@@ -1665,7 +1665,7 @@ export default function Checkout() {
           </div>
 
           {/* Sidebar */}
-          <div className="lg:col-span-5 lg:sticky lg:top-24">
+          <div className="lg:col-span-5 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto custom-scrollbar">
             <OrderSummary />
           </div>
         </div>

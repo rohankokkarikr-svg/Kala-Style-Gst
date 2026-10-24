@@ -70,7 +70,7 @@ export default function PrivacyPolicy() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Quick Nav Sidebar (Desktop) */}
-          <aside className="hidden lg:block lg:col-span-4 sticky top-24 space-y-2 card p-4 border border-dark-600/80 bg-dark-950/80 backdrop-blur-md">
+          <aside className="hidden lg:block lg:col-span-4 sticky top-24 space-y-2 card p-4 border border-dark-600/80 bg-dark-950/80 backdrop-blur-md max-h-[calc(100vh-7rem)] overflow-y-auto custom-scrollbar">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gold-400 px-3 py-2">
               Policy Table of Contents
             </h3>
