@@ -61,12 +61,17 @@ export default function Orders() {
     if (!quiet) setLoading(true);
     try {
       apiCache.invalidateOrders();
-      const { data } = await orderAPI.getMyOrders();
+      const res = await orderAPI.getMyOrders();
+      const data = res?.data;
       if (Array.isArray(data)) {
         setOrders(data);
+      } else if (data && Array.isArray(data.orders)) {
+        setOrders(data.orders);
       }
     } catch (err) {
-      if (!quiet) toast.error('Failed to load orders');
+      console.error('[Orders] Failed to load orders:', err);
+      const errMsg = err.response?.data?.error || err.message || 'Failed to load orders';
+      if (!quiet) toast.error(errMsg);
     } finally {
       setLoading(false);
     }

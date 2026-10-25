@@ -304,7 +304,12 @@ exports.getMyOrders = async (req, res) => {
       'Expires': '0',
     });
 
-    const { data, error } = await supabase
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    let { data, error } = await supabase
       .from('orders')
       .select(`
         *,
@@ -319,11 +324,31 @@ exports.getMyOrders = async (req, res) => {
           artisan:artisan_profiles (id, store_name, profile_image)
         )
       `)
-      .eq('user_id', req.user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    res.json(data);
+    if (error) {
+      console.warn('[getMyOrders] Primary query note, attempting fallback:', error.message);
+      const fallback = await supabase
+        .from('orders')
+        .select(`
+          *,
+          items:order_items (
+            id, quantity, price_at_time, size,
+            product:products (id, name, image_url, category)
+          ),
+          artisan_orders (
+            id, artisan_id, status, subtotal, total_amount
+          )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (fallback.error) throw fallback.error;
+      data = fallback.data;
+    }
+
+    res.json(data || []);
   } catch (error) {
     console.error('[getMyOrders] Error:', error);
     res.status(500).json({ error: 'Server error fetching orders' });
