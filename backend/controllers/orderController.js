@@ -667,17 +667,19 @@ exports.updateOrderStatus = async (req, res) => {
 
       await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
 
-      // Inventory processing:
-      // 1. If newly rejected, restore stock
-      if (mappedStatus === 'rejected') {
+      // Inventory and refund processing:
+      // 1. If newly rejected or cancelled, restore stock & refund if UPI paid (STRICTLY NOT COD)
+      if (mappedStatus === 'rejected' || mappedStatus === 'cancelled') {
         try {
           const { restoreInventory, processRefund } = require('../services/orderService');
           await restoreInventory(id);
-          if (order.payment_status === 'paid') {
-            await processRefund(id, null, req.body.rejection_reason || 'Order rejected by artisan');
+          const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+          const isPaid = order.payment_status === 'paid' || order.payment_status === 'cod_collected';
+          if (!isCod && isPaid) {
+            await processRefund(id, null, req.body.rejection_reason || `Order ${mappedStatus} by artisan`);
           }
         } catch (invErr) {
-          console.warn('[orderController] Inventory/refund notice on rejection:', invErr.message);
+          console.warn('[orderController] Inventory/refund notice on rejection/cancellation:', invErr.message);
         }
       }
       // 2. If recovering/reverting FROM rejected/cancelled back to active, re-deduct atomic stock
@@ -981,9 +983,11 @@ exports.cancelOrder = async (req, res) => {
         .eq('user_id', user_id);
     }
 
-    // Handle refund for paid online orders
+    // Handle refund for paid UPI / online orders (STRICTLY NOT COD)
+    const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+    const isPaid = order.payment_status === 'paid' || order.payment_status === 'cod_collected';
     let refundInfo = null;
-    if (order.payment_status === 'paid' && order.payment_method === 'razorpay') {
+    if (!isCod && isPaid) {
       const refundResult = await processRefund(id, null, 'Order cancelled by customer');
       if (refundResult.success) {
         refundInfo = refundResult.refund;

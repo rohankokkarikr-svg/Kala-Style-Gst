@@ -650,112 +650,22 @@ router.post('/refund', protect, async (req, res) => {
       }
     }
 
-    const { data: payment } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('order_id', orderId)
-      .maybeSingle();
-
-    if (!payment || payment.status !== 'paid') {
-      return res.status(400).json({ error: 'No paid transaction exists to refund' });
+    const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+    if (isCod) {
+      return res.status(400).json({ error: 'Cash on Delivery (COD) orders cannot be refunded as no online payment was collected.' });
     }
 
-    const providerPaymentId = payment.provider_payment_id || order.razorpay_payment_id;
-    if (!providerPaymentId) {
-      return res.status(400).json({ error: 'No Razorpay payment ID on record for this order' });
+    const { processRefund } = require('../services/orderService');
+    const refundRes = await processRefund(orderId, amount, reason || 'Refund requested');
+
+    if (!refundRes.success) {
+      return res.status(400).json({ error: refundRes.error || 'Refund failed' });
     }
-
-    // Amount validation
-    const alreadyRefunded = Number(payment.refund_amount || 0);
-    const orderTotal = Number(order.total_amount || 0);
-    const maxRefundable = Math.max(0, orderTotal - alreadyRefunded);
-
-    if (maxRefundable <= 0) {
-      return res.status(400).json({ error: 'Order has already been fully refunded' });
-    }
-
-    const refundAmount = (amount !== undefined && amount !== null && amount !== '') ? Number(amount) : maxRefundable;
-    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
-      return res.status(400).json({ error: 'Refund amount must be a positive finite number' });
-    }
-
-    if (refundAmount > maxRefundable) {
-      return res.status(400).json({
-        error: `Requested refund (₹${refundAmount}) exceeds maximum refundable balance (₹${maxRefundable})`,
-      });
-    }
-
-    // 2. Call Razorpay refund API
-    const rzpRefund = await createRefund(providerPaymentId, refundAmount, {
-      reason: reason || 'Customer cancellation',
-      order_id: orderId,
-    });
-
-    if (!rzpRefund.success) {
-      console.error('[refund] Razorpay refund error:', rzpRefund.error);
-      return res.status(500).json({ error: `Refund failed: ${rzpRefund.error}` });
-    }
-
-    const refundObj = rzpRefund.refund;
-    const now = new Date().toISOString();
-    const newRefundTotal = alreadyRefunded + refundAmount;
-    const isFullRefund = newRefundTotal >= orderTotal;
-
-    // 3. Update database
-    await supabase
-      .from('payments')
-      .update({
-        refund_id: refundObj.id,
-        refund_amount: newRefundTotal,
-        status: isFullRefund ? 'refunded' : 'partially_refunded',
-        refunded_at: now,
-        updated_at: now,
-      })
-      .eq('order_id', orderId);
-
-    await supabase
-      .from('orders')
-      .update({
-        payment_status: isFullRefund ? 'refunded' : 'partially_refunded',
-        order_status: isFullRefund ? 'cancelled' : order.order_status,
-        status: isFullRefund ? 'cancelled' : order.status,
-        updated_at: now,
-      })
-      .eq('id', orderId);
-
-    // 4. Reverse loyalty reward if granted
-    await reverseRewardIfNeeded(orderId);
-
-    // 5. Audit log
-    try {
-      await supabase.from('activity_logs').insert([{
-        action: 'PAYMENT_REFUND',
-        actor_id: req.user.id,
-        actor_role: req.user.role,
-        entity_id: orderId,
-        details: JSON.stringify({
-          refund_id: refundObj.id,
-          amount: refundAmount,
-          reason: reason || 'Customer cancellation',
-          is_full: isFullRefund,
-        }),
-        created_at: now,
-      }]);
-    } catch (auditErr) {
-      console.warn('[refund] Activity log notice:', auditErr.message);
-    }
-
-    broadcastSync('PAYMENTS_UPDATED', { orderId, status: isFullRefund ? 'refunded' : 'partially_refunded', refund_id: refundObj.id });
-    broadcastSync('ORDERS_UPDATED', { orderId, order_status: isFullRefund ? 'cancelled' : order.order_status, payment_status: isFullRefund ? 'refunded' : 'partially_refunded' });
 
     res.json({
       success: true,
       message: 'Refund initiated successfully',
-      refund: {
-        id: refundObj.id,
-        amount: refundAmount,
-        status: refundObj.status,
-      },
+      refund: refundRes.refund,
     });
   } catch (err) {
     console.error('[refund] Exception:', err.message);

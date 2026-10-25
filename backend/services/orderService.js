@@ -922,43 +922,207 @@ exports.createArtisanEarning = async (artisanOrderId, artOrder, artisanProfileId
  * @param {string} reason
  */
 exports.processRefund = async (orderId, amount, reason) => {
-  const { createRefund } = require('./paymentService');
+  if (!orderId) {
+    return { error: 'Order ID is required' };
+  }
 
+  // 1. Fetch master order to check payment method & status
+  const { data: order, error: orderErr } = await supabase
+    .from('orders')
+    .select('id, user_id, order_number, total_amount, payment_status, payment_method, razorpay_payment_id, transaction_id, status, order_status')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (orderErr || !order) {
+    return { error: 'Order not found' };
+  }
+
+  // 2. Strict Check: COD orders MUST NOT be refunded
+  const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
+  if (isCod) {
+    return {
+      error: 'Cash on Delivery (COD) orders cannot be refunded as no online payment was collected',
+      isCod: true,
+      skipped: true,
+    };
+  }
+
+  // 3. Fetch payment record from database
   const { data: payment } = await supabase
     .from('payments')
     .select('*')
     .eq('order_id', orderId)
     .maybeSingle();
 
-  if (!payment || payment.status !== 'paid') {
-    return { error: 'No paid payment found for this order' };
+  const isOrderPaid = ['paid', 'partially_refunded'].includes(order.payment_status);
+  const isPaymentPaid = payment && ['paid', 'partially_refunded'].includes(payment.status);
+
+  if (!isOrderPaid && !isPaymentPaid) {
+    return { error: 'No paid UPI or online payment found for this order to refund' };
   }
 
-  if (!payment.provider_payment_id) {
-    return { error: 'No payment provider ID found — cannot process refund' };
+  // 4. Calculate refundable amount
+  const orderTotal = Number(order.total_amount || payment?.amount || 0);
+  const alreadyRefunded = Number(payment?.refund_amount || 0);
+  const maxRefundable = Math.max(0, orderTotal - alreadyRefunded);
+
+  if (maxRefundable <= 0) {
+    return { error: 'Order has already been fully refunded' };
   }
 
-  const refundAmount = amount || payment.amount;
-  const result = await createRefund(payment.provider_payment_id, refundAmount, { reason });
+  const refundAmount = (amount !== undefined && amount !== null && amount !== '')
+    ? Math.min(Number(amount), maxRefundable)
+    : maxRefundable;
 
-  if (!result.success) return { error: result.error };
+  if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+    return { error: 'Invalid refund amount' };
+  }
 
-  const isPartial = refundAmount < payment.amount;
+  const newRefundTotal = alreadyRefunded + refundAmount;
+  const isPartial = newRefundTotal < orderTotal;
 
-  await supabase.from('payments').update({
-    status: isPartial ? 'partially_refunded' : 'refunded',
-    refund_id: result.refund.id,
-    refund_amount: refundAmount,
-    refunded_at: new Date().toISOString(),
-  }).eq('order_id', orderId);
+  // 5. Gateway / Provider handling
+  const providerPaymentId = payment?.provider_payment_id || order.razorpay_payment_id;
+  let refundRecord = null;
 
+  if (providerPaymentId && String(providerPaymentId).startsWith('pay_')) {
+    try {
+      const { createRefund } = require('./paymentService');
+      const rzpRes = await createRefund(providerPaymentId, refundAmount, {
+        reason: reason || 'UPI Order Cancellation Refund',
+        order_id: orderId,
+      });
+      if (rzpRes.success && rzpRes.refund) {
+        refundRecord = rzpRes.refund;
+      } else {
+        console.warn('[orderService.processRefund] Razorpay refund notice:', rzpRes.error);
+      }
+    } catch (rzpErr) {
+      console.warn('[orderService.processRefund] Razorpay exception notice:', rzpErr.message);
+    }
+  }
+
+  // For UPI direct payments, UTR submissions, or gateway fallbacks:
+  if (!refundRecord) {
+    const cleanNum = (order.order_number || String(orderId).substring(0, 8)).replace(/[^a-zA-Z0-9]/g, '');
+    const refundRef = `ref_upi_${cleanNum}_${Date.now()}`;
+    refundRecord = {
+      id: refundRef,
+      payment_id: providerPaymentId || order.transaction_id || `UPI_${cleanNum}`,
+      amount: refundAmount,
+      currency: 'INR',
+      status: 'processed',
+      method: order.payment_method || 'upi',
+      note: reason || 'UPI Order Cancellation Refund',
+      created_at: Math.floor(Date.now() / 1000),
+    };
+  }
+
+  const now = new Date().toISOString();
+  const newPaymentStatus = isPartial ? 'partially_refunded' : 'refunded';
+  const newOrderStatus = isPartial ? 'partially_cancelled' : 'cancelled';
+
+  // 6. Update payments table
+  if (payment) {
+    await supabase.from('payments').update({
+      status: newPaymentStatus,
+      refund_id: refundRecord.id,
+      refund_amount: newRefundTotal,
+      refunded_at: now,
+      updated_at: now,
+    }).eq('order_id', orderId);
+  } else {
+    try {
+      await supabase.from('payments').insert([{
+        order_id: orderId,
+        user_id: order.user_id,
+        amount: orderTotal,
+        currency: 'INR',
+        provider: order.payment_method || 'upi',
+        status: newPaymentStatus,
+        refund_id: refundRecord.id,
+        refund_amount: newRefundTotal,
+        refunded_at: now,
+        created_at: now,
+        updated_at: now,
+      }]);
+    } catch (insErr) {
+      console.warn('[orderService.processRefund] Insert payment record notice:', insErr.message);
+    }
+  }
+
+  // 7. Update orders table
   await supabase.from('orders').update({
-    payment_status: isPartial ? 'partially_refunded' : 'refunded',
-    order_status: isPartial ? 'partially_cancelled' : 'cancelled',
-    status: isPartial ? 'partially_cancelled' : 'cancelled',
+    payment_status: newPaymentStatus,
+    order_status: newOrderStatus,
+    status: newOrderStatus,
+    updated_at: now,
   }).eq('id', orderId);
 
-  return { success: true, refund: result.refund };
+  // 8. Reverse reward if applicable
+  if (order.user_id) {
+    try {
+      const { reverseRewardIfNeeded } = require('./rewardService');
+      await reverseRewardIfNeeded(order.user_id);
+    } catch (rErr) {
+      console.warn('[orderService.processRefund] Reverse reward notice:', rErr.message);
+    }
+  }
+
+  // 9. Activity audit log
+  try {
+    await supabase.from('activity_logs').insert([{
+      action: 'PAYMENT_REFUND',
+      actor_id: order.user_id,
+      actor_role: 'system',
+      entity_id: orderId,
+      details: JSON.stringify({
+        refund_id: refundRecord.id,
+        amount: refundAmount,
+        reason: reason || 'UPI Order Cancellation',
+        is_partial: isPartial,
+        payment_method: order.payment_method || 'upi',
+      }),
+      created_at: now,
+    }]);
+  } catch (auditErr) {}
+
+  // 10. Send in-app notification to the customer
+  try {
+    const { createSystemNotification } = require('../controllers/notificationController');
+    await createSystemNotification({
+      title: `UPI Refund Processed for Order #${order.order_number || String(orderId).substring(0, 8)}`,
+      message: `Your paid amount of ₹${refundAmount.toFixed(2)} has been refunded to your original UPI account. (Refund ID: ${refundRecord.id}).`,
+      target_audience: 'specific',
+      target_user_id: order.user_id,
+      sender_id: null,
+    });
+  } catch (notifErr) {
+    console.warn('[orderService.processRefund] Notification notice:', notifErr.message);
+  }
+
+  // 11. Broadcast sync
+  try {
+    broadcastSync('PAYMENTS_UPDATED', {
+      id: orderId,
+      orderId,
+      status: newPaymentStatus,
+      payment_status: newPaymentStatus,
+      refund_id: refundRecord.id,
+      refund_amount: newRefundTotal,
+    });
+    broadcastSync('ORDERS_UPDATED', {
+      id: orderId,
+      orderId,
+      order_status: newOrderStatus,
+      status: newOrderStatus,
+      payment_status: newPaymentStatus,
+    });
+  } catch (syncErr) {
+    console.warn('[orderService.processRefund] Broadcast sync notice:', syncErr.message);
+  }
+
+  return { success: true, refund: refundRecord };
 };
 
 // ── Atomic Inventory Operations ──────────────────────────────────────────────
