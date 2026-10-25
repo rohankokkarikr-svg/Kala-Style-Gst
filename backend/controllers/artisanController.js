@@ -890,10 +890,25 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     if (timestampMap[status]) updateData[timestampMap[status]] = now;
     if (status !== 'delivered') {
       updateData.delivered_at = null;
+      // If order was previously marked delivered, clean up premature earnings record on backward transition
+      if (artOrder.status === 'delivered') {
+        try {
+          await supabase.from('artisan_earnings').delete().eq('order_id', artOrder.id);
+        } catch (e) {
+          console.warn('[artisanController] Premature earning cleanup notice:', e.message);
+        }
+      }
     }
-    if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup'].includes(status)) {
+    if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup', 'pending', 'confirmed'].includes(status)) {
       updateData.dispatched_at = null;
       updateData.out_for_delivery_at = null;
+    }
+    if (['accepted', 'pending', 'confirmed'].includes(status)) {
+      updateData.prepared_at = null;
+      updateData.ready_at = null;
+    }
+    if (['pending', 'confirmed'].includes(status)) {
+      updateData.accepted_at = null;
     }
     if (status === 'rejected' && rejection_reason) updateData.rejection_reason = rejection_reason;
     if (!artOrder.artisan_id && profile?.id) updateData.artisan_id = profile.id;

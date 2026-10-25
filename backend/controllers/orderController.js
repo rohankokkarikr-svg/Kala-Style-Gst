@@ -442,6 +442,13 @@ exports.getOrderTracking = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized access to this order tracking' });
     }
 
+    // Safety sanitization: If payment_method is NOT cod, payment_status must never be cod_pending
+    const cleanPayMethod = String(order.payment_method || '').toLowerCase().trim();
+    if (cleanPayMethod !== 'cod' && order.payment_status === 'cod_pending') {
+      order.payment_status = order.transaction_id ? 'pending_verification' : 'pending';
+      supabase.from('orders').update({ payment_status: order.payment_status }).eq('id', order.id).then(() => {}).catch(() => {});
+    }
+
     // Fallback: If artisan_orders is empty, synthesize from order details
     if (!order.artisan_orders || order.artisan_orders.length === 0) {
       order.artisan_orders = [{
@@ -624,9 +631,21 @@ exports.updateOrderStatus = async (req, res) => {
         ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
       };
       if (timestampMap[mappedStatus]) aoUpdate[timestampMap[mappedStatus]] = now;
-      if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup'].includes(mappedStatus)) {
+      if (mappedStatus !== 'delivered' && mySubOrder.status === 'delivered') {
+        try {
+          await supabase.from('artisan_earnings').delete().eq('order_id', mySubOrder.id);
+        } catch (e) {}
+      }
+      if (['preparing', 'processing', 'in_preparation', 'accepted', 'ready_for_pickup', 'pending', 'confirmed'].includes(mappedStatus)) {
         aoUpdate.dispatched_at = null;
         aoUpdate.out_for_delivery_at = null;
+      }
+      if (['accepted', 'pending', 'confirmed'].includes(mappedStatus)) {
+        aoUpdate.prepared_at = null;
+        aoUpdate.ready_at = null;
+      }
+      if (['pending', 'confirmed'].includes(mappedStatus)) {
+        aoUpdate.accepted_at = null;
       }
       if (mappedStatus === 'rejected' && req.body.rejection_reason) aoUpdate.rejection_reason = req.body.rejection_reason;
       if (!mySubOrder.artisan_id && callerArtisanId) {

@@ -664,7 +664,7 @@ export default function ArtisanOrders() {
                     </span>
                     {orderObj.payment_method && (
                       <span className="text-[10px] font-medium text-gray-300 bg-dark-700 px-2 py-0.5 rounded border border-dark-600">
-                        💳 {orderObj.payment_method.toUpperCase()} {orderObj.payment_status === 'completed' || orderObj.payment_status === 'paid' ? '• Paid' : ''}
+                        {orderObj.payment_method === 'cod' ? '💵 COD' : orderObj.payment_method === 'upi' ? '📱 UPI / QR' : '💳 ONLINE'} {orderObj.payment_status === 'completed' || orderObj.payment_status === 'paid' ? '• Paid ✓' : orderObj.payment_status === 'pending_verification' ? '• UTR Verification' : orderObj.payment_method === 'cod' ? '• Payment Pending' : '• Pending'}
                       </span>
                     )}
                     {orderObj.shipping_status && (
@@ -1205,7 +1205,7 @@ export default function ArtisanOrders() {
                       </select>
                     </div>
 
-                    {/* Quick 1-Click Progressive Next-Step Buttons */}
+                    {/* Quick 1-Click Progressive Next-Step & Revert Buttons */}
                     {statusKey === 'pending' && (
                       <button
                         onClick={() => handleAcceptOrder(effectiveOrderId, effectiveArtisanOrderId)}
@@ -1216,36 +1216,76 @@ export default function ArtisanOrders() {
                       </button>
                     )}
                     {statusKey === 'accepted' && (
-                      <button
-                        onClick={() => handleStatusChange(effectiveOrderId, 'processing', effectiveArtisanOrderId)}
-                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
-                        className="text-xs py-1.5 px-3 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
-                      >
-                        <HiShoppingBag className="w-3.5 h-3.5" /> Start Preparation →
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'pending', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-2.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-600 font-medium transition-all"
+                          title="Revert back to Pending"
+                        >
+                          ⏪ Back to Pending
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'processing', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-3 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
+                        >
+                          <HiShoppingBag className="w-3.5 h-3.5" /> Start Preparation →
+                        </button>
+                      </div>
                     )}
                     {statusKey === 'processing' && (
-                      <button
-                        onClick={() => handleStatusChange(effectiveOrderId, 'shipped', effectiveArtisanOrderId)}
-                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
-                        className="text-xs py-1.5 px-3 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/40 hover:bg-purple-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
-                      >
-                        <HiTruck className="w-3.5 h-3.5" /> Mark Shipped →
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'accepted', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-2.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-600 font-medium transition-all"
+                          title="Revert back to Confirmed"
+                        >
+                          ⏪ Back to Confirmed
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'shipped', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-3 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/40 hover:bg-purple-500/30 font-semibold transition-all flex items-center gap-1 shadow-sm"
+                        >
+                          <HiTruck className="w-3.5 h-3.5" /> Mark Shipped →
+                        </button>
+                      </div>
                     )}
                     {statusKey === 'shipped' && (
-                      <button
-                        onClick={() => handleStatusChange(effectiveOrderId, 'delivered', effectiveArtisanOrderId)}
-                        disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
-                        className="text-xs py-1.5 px-3 rounded-lg bg-green-500/20 text-green-400 border border-green-500/40 hover:bg-green-500/30 font-bold transition-all flex items-center gap-1 shadow-sm"
-                      >
-                        <HiCheckCircle className="w-3.5 h-3.5" /> Mark as Delivered ✓
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'processing', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-2.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-gray-300 border border-dark-600 font-medium transition-all"
+                          title="Revert back to In Preparation"
+                        >
+                          ⏪ Back to Crafting
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'delivered', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-3 rounded-lg bg-green-500/20 text-green-400 border border-green-500/40 hover:bg-green-500/30 font-bold transition-all flex items-center gap-1 shadow-sm"
+                        >
+                          <HiCheckCircle className="w-3.5 h-3.5" /> Mark as Delivered ✓
+                        </button>
+                      </div>
                     )}
                     {statusKey === 'delivered' && (
-                      <span className="text-xs py-1 px-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1 shadow-sm">
-                        <HiCheckCircle className="w-3.5 h-3.5" /> Delivered Successfully
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleStatusChange(effectiveOrderId, 'shipped', effectiveArtisanOrderId)}
+                          disabled={updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId}
+                          className="text-xs py-1.5 px-2.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-amber-300 border border-amber-500/30 font-medium transition-all"
+                          title="Revert delivered status if clicked by mistake"
+                        >
+                          ⏪ Revert to Shipped
+                        </button>
+                        <span className="text-xs py-1 px-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1 shadow-sm">
+                          <HiCheckCircle className="w-3.5 h-3.5" /> Delivered Successfully
+                        </span>
+                      </div>
                     )}
                     {(updatingId === effectiveOrderId || updatingId === effectiveArtisanOrderId) && (
                       <span className="text-xs text-gold-400 animate-pulse font-medium">Updating...</span>

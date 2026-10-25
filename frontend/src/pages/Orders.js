@@ -199,7 +199,10 @@ export default function Orders() {
     }
     if (!pm) return 'Cash on Delivery (COD)';
     const pmLower = pm.toLowerCase();
-    if (pmLower.includes('upi') || pmLower.includes('razorpay') || pmLower.includes('phonepe') || pmLower.includes('online')) {
+    if (pmLower === 'upi' || pmLower.startsWith('upi')) {
+      return 'UPI / QR Code';
+    }
+    if (pmLower.includes('razorpay') || pmLower.includes('online')) {
       return 'Razorpay (UPI / Online)';
     }
     if (pmLower.includes('cod')) {
@@ -368,10 +371,14 @@ export default function Orders() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-0.5">Payment Status</span>
-                  <span className={`font-black capitalize ${
+                  <span className={`font-black ${
                     order.payment_status?.toLowerCase() === 'paid' ? 'text-green-400' : 'text-amber-500'
                   }`}>
-                    {order.payment_status || 'Pending'}
+                    {order.payment_status?.toLowerCase() === 'paid'
+                      ? 'Paid ✓'
+                      : order.payment_status === 'pending_verification'
+                      ? 'Verification Pending'
+                      : (String(order.payment_method || '').toLowerCase() === 'cod' ? 'COD Payment Pending' : 'Payment Pending')}
                   </span>
                 </div>
               </div>

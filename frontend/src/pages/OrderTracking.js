@@ -49,26 +49,35 @@ function getStepIndex(status) {
 
 function getEffectiveStatus(subStatus, mainStatus) {
   const normSub = normalizeStatus(subStatus);
+  if (normSub === 'rejected') return 'rejected';
+  if (normSub === 'cancelled') return 'cancelled';
+  if (subStatus) return subStatus;
+
   const normMain = normalizeStatus(mainStatus);
-  if (normSub === 'rejected' || normMain === 'rejected') return 'rejected';
-  if (normSub === 'cancelled' || normMain === 'cancelled') return 'cancelled';
-  const subIdx = STATUS_ORDER.indexOf(normSub);
-  const mainIdx = STATUS_ORDER.indexOf(normMain);
-  if (subIdx >= 0 && mainIdx >= 0) {
-    return subIdx >= mainIdx ? (subStatus || normSub) : (mainStatus || normMain);
-  }
-  return subStatus || mainStatus || 'pending';
+  if (normMain === 'rejected') return 'rejected';
+  if (normMain === 'cancelled') return 'cancelled';
+  return mainStatus || 'pending';
 }
 
 function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, shipmentStatus }) {
   const norm = normalizeStatus(status);
+  const cleanPayMethod = String(paymentMethod || '').toLowerCase().trim();
+  const isCod = cleanPayMethod === 'cod';
   const shippingDelivered = isDelivered ||
     String(shipmentStatus || '').toUpperCase() === 'DELIVERED' ||
     String(shipmentStatus || '').toLowerCase() === 'delivered';
 
   if (type === 'payment') {
-    // COD before collection: cod_pending
-    if (norm === 'cod_pending' || status === 'cod_pending') {
+    // 1. Paid states
+    if (norm === 'paid' || status === 'paid' || status === 'cod_collected' || norm === 'completed') {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+          {isCod ? 'Paid — COD Collected ✓' : 'Payment Paid ✓'}
+        </span>
+      );
+    }
+    // 2. COD before collection: ONLY when paymentMethod is COD!
+    if (isCod && (norm === 'cod_pending' || status === 'cod_pending' || norm === 'pending')) {
       return (
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
           shippingDelivered
@@ -79,21 +88,23 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
         </span>
       );
     }
-    // COD after collection (current state: paid) or legacy cod_collected
-    if (norm === 'paid' || status === 'paid' || status === 'cod_collected') {
+    // 3. Verification pending (e.g. UPI UTR submitted by customer)
+    if (norm === 'pending_verification' || status === 'pending_verification' || norm === 'payment_verification_pending') {
       return (
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
-          {paymentMethod === 'cod' ? 'Paid — COD Collected ✓' : 'Payment Paid ✓'}
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold animate-pulse">
+          UPI — Verification Pending
         </span>
       );
     }
-    if (norm === 'pending' || status === 'pending') {
+    // 4. Non-COD pending (UPI / Online pending payment)
+    if (norm === 'pending' || status === 'pending' || norm === 'cod_pending' || status === 'cod_pending') {
       return (
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
-          Payment Pending
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 font-semibold">
+          {cleanPayMethod === 'upi' ? 'UPI — Payment Pending' : 'Payment Pending'}
         </span>
       );
     }
+    // 5. Failed
     if (norm === 'failed' || status === 'failed') {
       return (
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
@@ -101,6 +112,7 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
         </span>
       );
     }
+    // 6. Refunded
     if (status === 'refunded' || status === 'partially_refunded') {
       return (
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">
@@ -111,7 +123,7 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
     // Fallback
     return (
       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-500/20 text-gray-300 border border-gray-500/30">
-        {status || 'Unknown'}
+        {status || 'Pending'}
       </span>
     );
   }
@@ -157,22 +169,23 @@ function StatusBadge({ status, type = 'status', paymentMethod, isDelivered, ship
 }
 
 function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
-  const rawStatus = (order.order_status || order.status || 'pending').toLowerCase();
-  const allAo = artisanOrders.length > 0 ? artisanOrders : [{ status: rawStatus }];
-  const aoStatuses = allAo.map(ao => (ao.status || rawStatus || 'pending').toLowerCase());
+  // Artisan sub-order is the definitive live source of truth from the artisan side
+  const primaryAo = artisanOrders[0];
+  const effectiveRaw = primaryAo?.status || order.order_status || order.status || 'pending';
+  const normStatus = normalizeStatus(effectiveRaw);
+
   const rejectionReason = artisanOrders.find(ao => ao.rejection_reason)?.rejection_reason || order.rejection_reason || null;
 
-  const isRejected = aoStatuses.some(s => s === 'rejected') || rawStatus === 'rejected';
-  const isCancelled = aoStatuses.some(s => s === 'cancelled') || rawStatus === 'cancelled';
-  const isDelivered = aoStatuses.length > 0 && (aoStatuses.every(s => s === 'delivered') || rawStatus === 'delivered');
-  const isDispatched = aoStatuses.some(s => ['dispatched', 'shipped', 'out_for_delivery', 'on_the_way'].includes(s)) ||
-    ['dispatched', 'shipped', 'out_for_delivery'].includes(rawStatus);
-  const isPreparing = aoStatuses.some(s => ['preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed'].includes(s)) ||
-    ['preparing', 'processing'].includes(rawStatus);
-  const isAccepted = aoStatuses.some(s => s === 'accepted') || rawStatus === 'accepted';
-  const isAwaitingArtisan = !isAccepted && !isPreparing && !isDispatched && !isDelivered && !isRejected && !isCancelled;
+  const isRejected = normStatus === 'rejected';
+  const isCancelled = normStatus === 'cancelled';
+  const isDelivered = normStatus === 'delivered';
+  const isDispatched = ['dispatched', 'out_for_delivery'].includes(normStatus);
+  const isPreparing = ['preparing', 'ready_for_pickup'].includes(normStatus);
+  const isAccepted = normStatus === 'accepted';
+  const isAwaitingArtisan = normStatus === 'pending';
 
   // Compute active milestone (0: Placed, 1: Artisan Confirmed, 2: Crafting, 3: Dispatched, 4: Delivered)
+  // Perfectly supports both forward and backward transitions!
   let activeStage = 0;
   if (isDelivered) activeStage = 4;
   else if (isDispatched) activeStage = 3;
@@ -356,7 +369,7 @@ function LiveOrderStatusTracker({ order, artisanOrders = [] }) {
 }
 
 function ArtisanTimeline({ artisanOrder, overallStatus }) {
-  const effectiveStatus = getEffectiveStatus(artisanOrder?.status, overallStatus);
+  const effectiveStatus = artisanOrder?.status || overallStatus;
   const currentIdx = getStepIndex(effectiveStatus);
   const isCancelled = ['cancelled', 'rejected'].includes(normalizeStatus(effectiveStatus));
 
@@ -366,7 +379,7 @@ function ArtisanTimeline({ artisanOrder, overallStatus }) {
       <div className="absolute left-5 top-4 bottom-4 w-0.5 bg-dark-600/60" />
       <div className="space-y-3.5">
         {ARTISAN_STEPS.map((step, idx) => {
-          const isDone = idx <= currentIdx && !isCancelled;
+          const isDone = idx < currentIdx && !isCancelled;
           const isCurrent = idx === currentIdx && !isCancelled;
           return (
             <div key={step.key} className="flex items-center gap-4 relative z-10">
@@ -483,7 +496,7 @@ export default function OrderTracking() {
           setOrder(prev => {
             if (!prev) return prev;
             const updatedAos = (prev.artisan_orders || []).map(ao => {
-              if (targetIds.includes(String(ao.id))) {
+              if (targetIds.length === 0 || targetIds.includes(String(ao.id)) || (prev.artisan_orders || []).length === 1) {
                 return { ...ao, status: nextStatus };
               }
               return ao;
@@ -668,10 +681,16 @@ export default function OrderTracking() {
             <div className="bg-dark-700/40 rounded-xl p-3">
               <p className="text-gray-500 text-xs mb-1">Payment Method</p>
               <p className="text-white font-medium capitalize">
-                {order.payment_method === 'razorpay' ? '💳 Online (Razorpay)' :
+                {order.payment_method === 'razorpay' ? '💳 Online (Razorpay / UPI)' :
+                 order.payment_method === 'upi' ? '📱 UPI / QR Code' :
                  order.payment_method === 'cod' ? '💵 Cash on Delivery' :
                  order.payment_method || 'N/A'}
               </p>
+              {order.transaction_id && (
+                <p className="text-[11px] text-gold-400 font-mono mt-0.5 truncate select-all" title={`Ref: ${order.transaction_id}`}>
+                  Ref: {order.transaction_id}
+                </p>
+              )}
             </div>
             <div className="bg-dark-700/40 rounded-xl p-3">
               <p className="text-gray-500 text-xs mb-1">Total Amount</p>
@@ -743,7 +762,7 @@ export default function OrderTracking() {
                     <span className="text-gold-400 font-medium">
                       {(order.payment_method || shipment?.payment_method || '').toLowerCase() === 'cod'
                         ? 'COD (Cash on Delivery)'
-                        : 'Prepaid / Online Delivery'}
+                        : 'Prepaid / Online Delivery (UPI)'}
                     </span>
                   </p>
                 </div>
