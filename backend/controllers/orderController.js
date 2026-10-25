@@ -304,12 +304,7 @@ exports.getMyOrders = async (req, res) => {
       'Expires': '0',
     });
 
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('orders')
       .select(`
         *,
@@ -324,31 +319,11 @@ exports.getMyOrders = async (req, res) => {
           artisan:artisan_profiles (id, store_name, profile_image)
         )
       `)
-      .eq('user_id', userId)
+      .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.warn('[getMyOrders] Primary query note, attempting fallback:', error.message);
-      const fallback = await supabase
-        .from('orders')
-        .select(`
-          *,
-          items:order_items (
-            id, quantity, price_at_time, size,
-            product:products (id, name, image_url, category)
-          ),
-          artisan_orders (
-            id, artisan_id, status, subtotal, total_amount
-          )
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (fallback.error) throw fallback.error;
-      data = fallback.data;
-    }
-
-    res.json(data || []);
+    if (error) throw error;
+    res.json(data);
   } catch (error) {
     console.error('[getMyOrders] Error:', error);
     res.status(500).json({ error: 'Server error fetching orders' });
@@ -692,19 +667,17 @@ exports.updateOrderStatus = async (req, res) => {
 
       await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
 
-      // Inventory and refund processing:
-      // 1. If newly rejected or cancelled, restore stock & refund if UPI paid (STRICTLY NOT COD)
-      if (mappedStatus === 'rejected' || mappedStatus === 'cancelled') {
+      // Inventory processing:
+      // 1. If newly rejected, restore stock
+      if (mappedStatus === 'rejected') {
         try {
           const { restoreInventory, processRefund } = require('../services/orderService');
           await restoreInventory(id);
-          const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
-          const isPaid = order.payment_status === 'paid' || order.payment_status === 'cod_collected';
-          if (!isCod && isPaid) {
-            await processRefund(id, null, req.body.rejection_reason || `Order ${mappedStatus} by artisan`);
+          if (order.payment_status === 'paid') {
+            await processRefund(id, null, req.body.rejection_reason || 'Order rejected by artisan');
           }
         } catch (invErr) {
-          console.warn('[orderController] Inventory/refund notice on rejection/cancellation:', invErr.message);
+          console.warn('[orderController] Inventory/refund notice on rejection:', invErr.message);
         }
       }
       // 2. If recovering/reverting FROM rejected/cancelled back to active, re-deduct atomic stock
@@ -1008,11 +981,9 @@ exports.cancelOrder = async (req, res) => {
         .eq('user_id', user_id);
     }
 
-    // Handle refund for paid UPI / online orders (STRICTLY NOT COD)
-    const isCod = String(order.payment_method || '').toLowerCase().trim() === 'cod';
-    const isPaid = order.payment_status === 'paid' || order.payment_status === 'cod_collected';
+    // Handle refund for paid online orders
     let refundInfo = null;
-    if (!isCod && isPaid) {
+    if (order.payment_status === 'paid' && order.payment_method === 'razorpay') {
       const refundResult = await processRefund(id, null, 'Order cancelled by customer');
       if (refundResult.success) {
         refundInfo = refundResult.refund;

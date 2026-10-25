@@ -999,14 +999,10 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       // Step B: Remove any recorded earnings for this order
       await supabase.from('artisan_earnings').delete().eq('order_id', artOrder.order_id);
 
-      // Step C: If UPI paid (and strictly NOT COD), initiate refund to user's account
-      const isCod = String(masterOrder?.payment_method || '').toLowerCase().trim() === 'cod';
-      const isPaid = masterOrder?.payment_status === 'paid' || masterOrder?.payment_status === 'cod_collected';
-      let refundInfo = null;
-      if (!isCod && isPaid) {
+      // Step C: If prepaid, initiate refund
+      if (masterOrder?.payment_status === 'paid') {
         try {
-          const refRes = await processRefund(artOrder.order_id, null, rejection_reason || `Order ${status} by artisan`);
-          if (refRes?.success) refundInfo = refRes.refund;
+          await processRefund(artOrder.order_id, null, rejection_reason || `Order ${status} by artisan`);
         } catch (refErr) {
           console.warn('[artisanController] Refund notice on rejection/cancellation:', refErr.message);
         }
@@ -1028,13 +1024,10 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       if (customerUserId) {
         try {
           const { createSystemNotification } = require('./notificationController');
-          const isPrepaid = !isCod && isPaid;
-          const refundText = isPrepaid
-            ? `Your UPI payment of ₹${Number(masterOrder?.total_amount || 0).toFixed(2)} has been refunded to your account.${refundInfo?.id ? ` (Refund Ref: ${refundInfo.id})` : ''}`
-            : 'As this was a Cash on Delivery (COD) order, no amount was charged.';
+          const isPrepaid = masterOrder?.payment_status === 'paid';
           await createSystemNotification({
             title: `Order #${orderNum} Update: ${status === 'cancelled' ? 'Cancelled' : 'Rejected'} by Artisan`,
-            message: `The artisan has ${status === 'cancelled' ? 'cancelled' : 'rejected'} order #${orderNum}. Reason: ${rejection_reason || 'Artisan unable to fulfill order'}. ${refundText}`,
+            message: `The artisan has ${status === 'cancelled' ? 'cancelled' : 'rejected'} order #${orderNum}. Reason: ${rejection_reason || 'Artisan unable to fulfill order'}. ${isPrepaid ? 'Your payment refund has been initiated.' : ''}`,
             target_audience: 'specific',
             target_user_id: customerUserId,
             sender_id: req.user.id,

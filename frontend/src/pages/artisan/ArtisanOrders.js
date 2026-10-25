@@ -654,7 +654,7 @@ export default function ArtisanOrders() {
                     </span>
                     {orderObj.payment_method && (
                       <span className="text-[10px] font-medium text-gray-300 bg-dark-700 px-2 py-0.5 rounded border border-dark-600">
-                        {orderObj.payment_method === 'cod' ? '💵 COD' : orderObj.payment_method === 'upi' ? '📱 UPI / QR' : '💳 ONLINE'} {orderObj.payment_status === 'refunded' ? '• Refunded 💸' : orderObj.payment_status === 'partially_refunded' ? '• Partial Refund 💸' : orderObj.payment_status === 'completed' || orderObj.payment_status === 'paid' ? '• Paid ✓' : orderObj.payment_status === 'pending_verification' ? '• UTR Verification' : orderObj.payment_method === 'cod' ? '• Payment Pending' : '• Pending'}
+                        {orderObj.payment_method === 'cod' ? '💵 COD' : orderObj.payment_method === 'upi' ? '📱 UPI / QR' : '💳 ONLINE'} {orderObj.payment_status === 'completed' || orderObj.payment_status === 'paid' ? '• Paid ✓' : orderObj.payment_status === 'pending_verification' ? '• UTR Verification' : orderObj.payment_method === 'cod' ? '• Payment Pending' : '• Pending'}
                       </span>
                     )}
                     {orderObj.shipping_status && (

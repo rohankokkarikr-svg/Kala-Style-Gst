@@ -40,18 +40,9 @@ export default function Orders() {
     if (!confirmCancel) return;
 
     try {
-      const res = await orderAPI.cancelOrder(orderId);
-      if (res.data?.refund) {
-        toast.success(`Order cancelled. ₹${res.data.refund.amount || ''} UPI refund initiated to your account! 💸`);
-      } else {
-        toast.success('Order cancelled successfully! 🚫');
-      }
-      setOrders(prev => prev.map(o => o.id === orderId ? {
-        ...o,
-        status: 'cancelled',
-        order_status: 'cancelled',
-        ...(res.data?.refund ? { payment_status: 'refunded' } : {})
-      } : o));
+      await orderAPI.cancelOrder(orderId);
+      toast.success('Order cancelled successfully! 🚫');
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'cancelled', order_status: 'cancelled' } : o));
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to cancel order');
     }
@@ -61,17 +52,12 @@ export default function Orders() {
     if (!quiet) setLoading(true);
     try {
       apiCache.invalidateOrders();
-      const res = await orderAPI.getMyOrders();
-      const data = res?.data;
+      const { data } = await orderAPI.getMyOrders();
       if (Array.isArray(data)) {
         setOrders(data);
-      } else if (data && Array.isArray(data.orders)) {
-        setOrders(data.orders);
       }
     } catch (err) {
-      console.error('[Orders] Failed to load orders:', err);
-      const errMsg = err.response?.data?.error || err.message || 'Failed to load orders';
-      if (!quiet) toast.error(errMsg);
+      if (!quiet) toast.error('Failed to load orders');
     } finally {
       setLoading(false);
     }
@@ -433,17 +419,9 @@ export default function Orders() {
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-0.5">Payment Status</span>
                   <span className={`font-black ${
-                    ['refunded', 'partially_refunded'].includes(order.payment_status?.toLowerCase())
-                      ? 'text-cyan-400'
-                      : order.payment_status?.toLowerCase() === 'paid'
-                      ? 'text-green-400'
-                      : 'text-amber-500'
+                    order.payment_status?.toLowerCase() === 'paid' ? 'text-green-400' : 'text-amber-500'
                   }`}>
-                    {order.payment_status?.toLowerCase() === 'refunded'
-                      ? 'Refunded to Account ✓'
-                      : order.payment_status?.toLowerCase() === 'partially_refunded'
-                      ? 'Partially Refunded'
-                      : order.payment_status?.toLowerCase() === 'paid'
+                    {order.payment_status?.toLowerCase() === 'paid'
                       ? 'Paid ✓'
                       : order.payment_status === 'pending_verification'
                       ? 'Verification Pending'
