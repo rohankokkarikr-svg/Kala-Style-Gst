@@ -578,8 +578,10 @@ export const AuthProvider = ({ children }) => {
       toast.success('Account created! Welcome to KalaStyle AI ✨');
       return normalizedUser;
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
-      throw new Error(errMsg);
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to create account';
+      const customErr = new Error(errMsg);
+      customErr.response = err.response;
+      throw customErr;
     } finally {
       isSigningUpRef.current = false;
     }

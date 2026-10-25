@@ -5,6 +5,7 @@ import { HiEye, HiEyeOff } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
 import { OTP_LENGTH, isValidOtp } from '../utils/authHelper';
 import GlassyOtpCard from '../components/GlassyOtpCard';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 export default function Signup() {
@@ -36,6 +37,7 @@ export default function Signup() {
   const { signup, cancelSignup, sendOtp, verifyOtp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const otpInputsRef = useRef([]);
+  const isSubmittingRegistrationRef = useRef(false);
 
   // Auto-focus first input when entering OTP step
   useEffect(() => {
@@ -247,7 +249,7 @@ export default function Signup() {
 
   // ─── Step 2: Verify OTP & Create the User/Artisan Account ──────
   const handleCompleteRegistration = async (codeToVerify) => {
-    if (loading) return;
+    if (loading || isSubmittingRegistrationRef.current) return;
     const code = (codeToVerify || otp.join('')).trim();
     if (!isValidOtp(code)) {
       setOtpError(`Please enter your ${OTP_LENGTH}-digit OTP verification code.`);
@@ -256,6 +258,7 @@ export default function Signup() {
 
     setOtpError('');
     setLoading(true);
+    isSubmittingRegistrationRef.current = true;
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phone.replace(/\D/g, '');
@@ -263,7 +266,13 @@ export default function Signup() {
     try {
       // 1. Verify OTP with Supabase Auth (syncSession = false so signup creates the full profile)
       const verifyRes = await verifyOtp(cleanEmail, code, false, true);
-      const sbUid = verifyRes?.data?.user?.id;
+      let sbUid = verifyRes?.data?.user?.id || verifyRes?.data?.session?.user?.id || verifyRes?.user?.id || null;
+      if (!sbUid) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          sbUid = sessionData?.session?.user?.id || null;
+        } catch (_) {}
+      }
       setCountdown(0);
 
       // 2. Complete registration in database with role, password & linked supabase_uid
@@ -290,13 +299,14 @@ export default function Signup() {
       }, 1600);
     } catch (err) {
       setIsOtpSuccess(false);
-      const errMsg = err.response?.data?.error || err.message || 'Verification failed. Please check the code.';
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Verification failed. Please check the code.';
       setOtpError(errMsg);
       toast.error(errMsg);
       // Clear OTP fields on error
       setOtp(Array(OTP_LENGTH).fill(''));
       otpInputsRef.current[0]?.focus();
     } finally {
+      isSubmittingRegistrationRef.current = false;
       setLoading(false);
     }
   };

@@ -79,18 +79,38 @@ exports.register = async (req, res) => {
       } catch (_) {}
     }
 
-    // Check if user exists (by email OR phone)
-    const { data: existingUsers } = await supabase
-      .from('users')
-      .select('*')
-      .or(`email.eq.${userEmail},phone.eq.${cleanPhone},email.eq.${cleanPhone}`)
-      .limit(5);
+    // Check if user exists (by email, phone, or verified Supabase UID)
+    const orConditions = [
+      `email.ilike.${userEmail}`,
+      `phone.eq.${cleanPhone}`,
+      `email.eq.${cleanPhone}`,
+    ];
+    if (verifiedUid) {
+      orConditions.push(`supabase_uid.eq.${verifiedUid}`);
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
+        orConditions.push(`id.eq.${verifiedUid}`);
+      }
+    }
+
+    const { data: existingUsers, error: queryErr } = await safeQuery(() =>
+      supabase.from('users').select('*').or(orConditions.join(',')).limit(10)
+    );
+
+    if (queryErr) {
+      console.warn('[authController.register] Warning querying existing users:', queryErr?.message);
+    }
 
     let user = null;
+    const existingWithUid = verifiedUid
+      ? existingUsers?.find(u => u.supabase_uid === verifiedUid || String(u.id) === verifiedUid)
+      : null;
+    const existingWithEmail = existingUsers?.find(u => u.email && u.email.toLowerCase() === userEmail) || existingWithUid;
     const existingWithPhone = existingUsers?.find(u => u.phone && u.phone === cleanPhone);
-    const existingWithEmail = existingUsers?.find(u => u.email && u.email.toLowerCase() === userEmail);
 
-    if (existingWithPhone && (!existingWithEmail || existingWithPhone.id !== existingWithEmail.id)) {
+    if (existingWithPhone && existingWithEmail && existingWithPhone.id !== existingWithEmail.id) {
+      return res.status(400).json({ error: 'An account with this phone number already exists.' });
+    }
+    if (existingWithPhone && !existingWithEmail) {
       return res.status(400).json({ error: 'An account with this phone number already exists.' });
     }
 
@@ -99,40 +119,44 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     if (existingWithEmail) {
-      // If user exists by email but has no phone (e.g. created via OTP session), update it into full account
-      if (!existingWithEmail.phone) {
-        // Section 13: Never allow public registration to overwrite existing role if it is admin or artisan
-        const existingRole = normalizeRole(existingWithEmail.role);
-        let preservedRole = existingRole;
-        if (existingRole !== 'admin' && existingRole !== 'artisan') {
-          preservedRole = userRole;
-        }
-
-        const updatePayload = {
-          name: name || existingWithEmail.name,
-          phone: cleanPhone,
-          password: hashedPassword,
-          role: preservedRole,
-          status: existingWithEmail.status || 'active'
-        };
-        if (verifiedUid && !existingWithEmail.supabase_uid) {
-          updatePayload.supabase_uid = verifiedUid;
-        }
-
-        const { data: updatedUser, error: updateErr } = await supabase
-          .from('users')
-          .update(updatePayload)
-          .eq('id', existingWithEmail.id)
-          .select()
-          .single();
-
-        if (updateErr) throw updateErr;
-        user = updatedUser;
-      } else {
+      // If user exists by email but has no phone (e.g. created via OTP session trigger), update into full account
+      // Also allow if the existing record matches this exact phone or was recently provisioned by OTP
+      if (existingWithEmail.phone && existingWithEmail.phone !== cleanPhone && existingWithEmail.password && existingWithEmail.password.length > 20) {
         return res.status(400).json({ error: 'An account with this email address already exists. Please login instead.' });
       }
+
+      // Section 13: Never allow public registration to overwrite existing role if it is admin or artisan
+      const existingRole = normalizeRole(existingWithEmail.role);
+      let preservedRole = existingRole;
+      if (existingRole !== 'admin' && existingRole !== 'artisan') {
+        preservedRole = userRole;
+      }
+
+      const updatePayload = {
+        name: name || existingWithEmail.name,
+        phone: cleanPhone,
+        password: hashedPassword,
+        role: preservedRole,
+        status: existingWithEmail.status || 'active'
+      };
+      if (verifiedUid && !existingWithEmail.supabase_uid) {
+        updatePayload.supabase_uid = verifiedUid;
+      }
+
+      const { data: updatedUser, error: updateErr } = await supabase
+        .from('users')
+        .update(updatePayload)
+        .eq('id', existingWithEmail.id)
+        .select()
+        .single();
+
+      if (updateErr) {
+        console.error('[authController.register] Error updating existing user record:', updateErr);
+        throw updateErr;
+      }
+      user = updatedUser;
     } else {
-      // Create user
+      // Create user with upsert resilience
       const insertPayload = {
         name,
         email: userEmail,
@@ -143,16 +167,42 @@ exports.register = async (req, res) => {
       };
       if (verifiedUid) {
         insertPayload.supabase_uid = verifiedUid;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
+          insertPayload.id = verifiedUid;
+        }
       }
 
-      const { data: newUser, error } = await supabase
+      let { data: newUser, error: insertErr } = await supabase
         .from('users')
-        .insert([insertPayload])
+        .upsert([insertPayload], { onConflict: 'email' })
         .select()
         .single();
 
-      if (error) throw error;
-      user = newUser;
+      if (insertErr) {
+        console.warn('[authController.register] Upsert notice, falling back to update:', insertErr?.message);
+        const { data: fallbackUser, error: fallbackErr } = await supabase
+          .from('users')
+          .update(insertPayload)
+          .or(`email.ilike.${userEmail},supabase_uid.eq.${verifiedUid || 'NONE'}`)
+          .select()
+          .single();
+
+        if (fallbackErr || !fallbackUser) {
+          throw insertErr;
+        }
+        user = fallbackUser;
+      } else {
+        user = newUser;
+      }
+    }
+
+    // Synchronize password into Supabase Auth admin API if verifiedUid is present
+    if (verifiedUid) {
+      try {
+        await supabase.auth.admin.updateUserById(verifiedUid, { password });
+      } catch (sbPassErr) {
+        console.warn('[authController.register] Supabase Auth password sync notice:', sbPassErr?.message);
+      }
     }
 
     // If artisan, also create artisan_profiles row with UPI information
