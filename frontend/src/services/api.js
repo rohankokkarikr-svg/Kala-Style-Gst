@@ -171,14 +171,7 @@ export const orderAPI = {
   phoneOtpSend:       (data)     => api.post('/orders/phone-otp/send', data),
   phoneOtpVerify:     (data)     => api.post('/orders/phone-otp/verify', data),
   calculateTotal:     (data)     => api.post('/orders/calculate-total', data),
-  getMyOrders:        ()         => api.get('/orders/my', {
-    params: { _t: Date.now() },
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    },
-  }),
+  getMyOrders:        ()         => api.get('/orders/my', { params: { _t: Date.now() } }),
   getAll:             (params)   => api.get('/orders', { params }),
   getById:            (id)       => api.get(`/orders/${id}`),
   getTracking:        (id)       => api.get(`/orders/${id}/tracking`, { params: { _t: Date.now() } }),
@@ -246,9 +239,9 @@ export const artisanAPI = {
   getById:                  (id)     => cachedGet(`/artisans/${id}`, {}, 60000),
   getMyProfile:             ()       => api.get('/artisans/me'),
   getMyStats:               ()       => api.get('/artisans/me/stats', { params: { _t: Date.now() } }),
-  getMyOrders:              ()       => api.get('/artisans/me/orders', { params: { _t: Date.now() }, headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } }),
+  getMyOrders:              ()       => api.get('/artisans/me/orders', { params: { _t: Date.now() } }),
   // New: artisan_orders based endpoint (secure, uses artisan_id)
-  getArtisanOrders:         ()       => api.get('/artisans/orders', { params: { _t: Date.now() }, headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } }),
+  getArtisanOrders:         ()       => api.get('/artisans/orders', { params: { _t: Date.now() } }),
   updateArtisanSubOrderStatus: (id, d) => { apiCache.invalidateOrders(); apiCache.invalidate('/artisans'); return api.patch(`/artisans/orders/${id}/status`, d); },
   getEarnings:              ()       => api.get('/artisans/earnings'),
   // Legacy compat
