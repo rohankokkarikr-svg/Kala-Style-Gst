@@ -208,7 +208,13 @@ exports.getMyStats = async (req, res) => {
         `)
         .in('product_id', productIds);
 
-      const sortedItems = (orderItems || []).sort((a, b) => {
+      // Filter out cancelled and rejected orders so they are never counted in stats or revenue
+      const validItems = (orderItems || []).filter(item => {
+        const orderSt = String(item.orders?.order_status || item.orders?.status || item.item_status || item.status || '').toLowerCase();
+        return orderSt !== 'cancelled' && orderSt !== 'rejected';
+      });
+
+      const sortedItems = validItems.sort((a, b) => {
         const timeA = new Date(a.orders?.created_at || 0).getTime();
         const timeB = new Date(b.orders?.created_at || 0).getTime();
         return timeB - timeA;
@@ -216,7 +222,7 @@ exports.getMyStats = async (req, res) => {
 
       recentOrders = sortedItems.slice(0, 100);
       totalOrders = sortedItems.length;
-      totalRevenue = sortedItems.reduce((sum, item) => sum + (item.price_at_time * item.quantity), 0);
+      totalRevenue = sortedItems.reduce((sum, item) => sum + ((Number(item.price_at_time) || Number(item.unit_price_snapshot) || 0) * (Number(item.quantity) || 1)), 0);
     }
 
     // Compute real customer review average rating for this artisan's products
@@ -255,7 +261,7 @@ exports.getMyStats = async (req, res) => {
       totalRevenue,
       avgRating,
       totalReviews,
-      earningsTotal: profile.earnings_total || totalRevenue,
+      earningsTotal: totalRevenue,
       products: products || [],
       recentOrders
     });
@@ -362,18 +368,21 @@ exports.getMyOrders = async (req, res) => {
 
     // Attach extracted clean utr_number, item status and shipping details to order objects
     const sorted = (orderItems || []).map(item => {
-      const isAccepted = Boolean(
-        item.item_status === 'accepted' ||
-        item.status === 'accepted' ||
-        item.orders?.status === 'accepted' ||
-        item.orders?.order_status === 'accepted'
-      );
-      item.status = isAccepted
-        ? (['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.item_status || item.status || item.orders?.status)
-            ? (item.item_status || item.status || item.orders?.status)
-            : 'accepted')
-        : (item.item_status || item.status || item.orders?.status || 'pending');
-      item.item_status = item.status;
+      const advancedStatuses = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'];
+      const candidates = [item.item_status, item.status, item.orders?.order_status, item.orders?.status].filter(Boolean);
+      const advancedFound = candidates.find(c => advancedStatuses.includes(c));
+
+      let resolvedStatus = 'pending';
+      if (advancedFound) {
+        resolvedStatus = advancedFound;
+      } else if (candidates.includes('accepted') || item.accepted_at) {
+        resolvedStatus = 'accepted';
+      } else {
+        resolvedStatus = candidates[0] || 'pending';
+      }
+
+      item.status = resolvedStatus;
+      item.item_status = resolvedStatus;
       item.order = item.orders || {};
       if (item.orders) {
         let utr = item.orders.transaction_id || item.orders.razorpay_payment_id;
@@ -578,18 +587,18 @@ exports.getMyArtisanOrders = async (req, res) => {
       }
       orderObj.utr_number = utr || null;
 
-      const isAccepted = Boolean(
-        ao.accepted_at ||
-        ao.status === 'accepted' ||
-        firstItem.item_status === 'accepted' ||
-        orderObj.status === 'accepted' ||
-        orderObj.order_status === 'accepted'
-      );
-      const resolvedStatus = isAccepted
-        ? (['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(ao.status || firstItem.item_status || orderObj.status)
-            ? (ao.status || firstItem.item_status || orderObj.status)
-            : 'accepted')
-        : (ao.status || firstItem.item_status || orderObj.status || 'pending');
+      const advancedStatuses = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'];
+      const candidates = [ao.status, firstItem.item_status, orderObj.order_status, orderObj.status].filter(Boolean);
+      const advancedFound = candidates.find(c => advancedStatuses.includes(c));
+
+      let resolvedStatus = 'pending';
+      if (advancedFound) {
+        resolvedStatus = advancedFound;
+      } else if (candidates.includes('accepted') || ao.accepted_at) {
+        resolvedStatus = 'accepted';
+      } else {
+        resolvedStatus = candidates[0] || 'pending';
+      }
 
       return {
         ...ao,
@@ -937,8 +946,8 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         }
       }
     }
-    // 2. Handling for REJECTED by artisan
-    else if (status === 'rejected') {
+    // 2. Handling for REJECTED or CANCELLED by artisan
+    else if (status === 'rejected' || status === 'cancelled') {
       // Step A: Restore inventory for this artisan's items only (preventing over-restoration in mixed-artisan orders)
       try {
         await restoreInventory(artOrder.order_id, profile?.id || artOrder.artisan_id);
@@ -946,25 +955,38 @@ exports.updateArtisanOrderStatus = async (req, res) => {
         console.warn('[artisanController] Inventory restoration notice:', invErr.message);
       }
 
-      // Step B: If prepaid, initiate refund
+      // Step B: Remove any recorded earnings for this order
+      await supabase.from('artisan_earnings').delete().eq('order_id', artOrder.order_id);
+
+      // Step C: If prepaid, initiate refund
       if (masterOrder?.payment_status === 'paid') {
         try {
-          await processRefund(artOrder.order_id, null, rejection_reason || 'Order rejected by artisan');
+          await processRefund(artOrder.order_id, null, rejection_reason || `Order ${status} by artisan`);
         } catch (refErr) {
-          console.warn('[artisanController] Refund notice on rejection:', refErr.message);
+          console.warn('[artisanController] Refund notice on rejection/cancellation:', refErr.message);
         }
       }
 
-      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || 'rejected';
+      // Step D: Reverse reward if applicable
+      if (customerUserId) {
+        try {
+          const { reverseRewardIfNeeded } = require('../services/rewardService');
+          await reverseRewardIfNeeded(customerUserId);
+        } catch (rErr) {
+          console.warn('[artisanController] reverseReward notice on rejection/cancellation:', rErr.message);
+        }
+      }
 
-      // Step C: In-app notification to customer
+      newMasterStatus = await syncMasterOrderStatus(artOrder.order_id) || status;
+
+      // Step E: In-app notification to customer
       if (customerUserId) {
         try {
           const { createSystemNotification } = require('./notificationController');
           const isPrepaid = masterOrder?.payment_status === 'paid';
           await createSystemNotification({
-            title: `Order #${orderNum} Update: Rejected by Artisan`,
-            message: `The artisan was unable to confirm order #${orderNum}. Reason: ${rejection_reason || 'Artisan unable to fulfill order'}. ${isPrepaid ? 'Your payment refund has been initiated.' : ''}`,
+            title: `Order #${orderNum} Update: ${status === 'cancelled' ? 'Cancelled' : 'Rejected'} by Artisan`,
+            message: `The artisan has ${status === 'cancelled' ? 'cancelled' : 'rejected'} order #${orderNum}. Reason: ${rejection_reason || 'Artisan unable to fulfill order'}. ${isPrepaid ? 'Your payment refund has been initiated.' : ''}`,
             target_audience: 'specific',
             target_user_id: customerUserId,
             sender_id: req.user.id,
@@ -1109,9 +1131,14 @@ exports.getMyEarnings = async (req, res) => {
       .eq('artisan_id', profile.id)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    // Filter active earnings strictly excluding cancelled and rejected orders
+    const activeEarnings = (earnings || []).filter(e => {
+      const aoSt = String(e.artisan_order?.status || '').toLowerCase();
+      const oSt = String(e.order?.status || '').toLowerCase();
+      return aoSt !== 'cancelled' && aoSt !== 'rejected' && oSt !== 'cancelled' && oSt !== 'rejected';
+    });
 
-    let totals = (earnings || []).reduce(
+    let totals = activeEarnings.reduce(
       (acc, e) => ({
         gross: acc.gross + (Number(e.gross_amount) || 0),
         commission: acc.commission + (Number(e.platform_commission) || 0),
@@ -1122,12 +1149,16 @@ exports.getMyEarnings = async (req, res) => {
       { gross: 0, commission: 0, net: 0, settled: 0, pending: 0 }
     );
 
-    // Calculate total orders for this artisan (count non-cancelled artisan_orders)
-    const validOrders = (artOrders || []).filter(o => o.status !== 'cancelled' && o.orders?.status !== 'cancelled');
-    const totalOrderCount = Math.max(earnings?.length || 0, validOrders.length);
+    // Calculate total orders for this artisan (count non-cancelled and non-rejected artisan_orders)
+    const validOrders = (artOrders || []).filter(o => {
+      const st = String(o.status || '').toLowerCase();
+      const mst = String(o.orders?.status || o.orders?.order_status || '').toLowerCase();
+      return st !== 'cancelled' && st !== 'rejected' && mst !== 'cancelled' && mst !== 'rejected';
+    });
+    const totalOrderCount = Math.max(activeEarnings.length, validOrders.length);
 
     // If earnings table has fewer records than valid orders, reflect expected totals
-    if (earnings.length === 0 && validOrders.length > 0) {
+    if (activeEarnings.length === 0 && validOrders.length > 0) {
       const grossVal = validOrders.reduce((sum, o) => sum + (Number(o.total_amount || o.subtotal) || 0), 0);
       const commissionVal = Math.round(grossVal * 0.10);
       const netVal = grossVal - commissionVal;

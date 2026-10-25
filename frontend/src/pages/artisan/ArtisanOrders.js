@@ -98,18 +98,22 @@ export default function ArtisanOrders() {
       if (e?.detail) {
         const payload = e.detail.payload || e.detail;
         const targetArtisanOrderId = payload.artisan_order_id || payload.artisanOrderId;
+        const targetOrderId = payload.order_id || payload.orderId || payload.id;
         const newStatus = payload.status || payload.order_status;
 
-        // Only update status if specifically targeted to an artisan sub-order (via artisan accept/reject)
-        if (newStatus && targetArtisanOrderId) {
+        // Apply updated status to matching artisan order in state
+        if (newStatus && (targetArtisanOrderId || targetOrderId)) {
           setOrders(prev => prev.map(item => {
-            const matches = item.id === targetArtisanOrderId || item.artisan_order_id === targetArtisanOrderId;
+            const matches = (targetArtisanOrderId && (item.id === targetArtisanOrderId || item.artisan_order_id === targetArtisanOrderId)) ||
+                            (targetOrderId && (item.order_id === targetOrderId || item.order?.id === targetOrderId || item.orders?.id === targetOrderId));
             if (matches) {
               return {
                 ...item,
                 status: newStatus,
                 item_status: newStatus,
                 accepted_at: newStatus === 'accepted' ? (item.accepted_at || new Date().toISOString()) : item.accepted_at,
+                order: item.order ? { ...item.order, status: newStatus, order_status: newStatus } : undefined,
+                orders: item.orders ? { ...item.orders, status: newStatus, order_status: newStatus } : undefined,
               };
             }
             return item;
@@ -462,16 +466,18 @@ export default function ArtisanOrders() {
 
   const filteredOrders = orders.filter(item => {
     const orderObj = item.orders || item.order || {};
-    const isAcceptedInRecord = Boolean(
-      item.accepted_at ||
-      item.status === 'accepted' ||
-      item.item_status === 'accepted'
-    );
-    const rawStatus = isAcceptedInRecord 
-      ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status)
-          ? (item.status || item.item_status)
-          : 'accepted')
-      : (item.status || item.item_status || 'pending');
+    const advancedStatuses = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'];
+    const candidates = [item.status, item.item_status, orderObj.order_status, orderObj.status].filter(Boolean);
+    const advancedFound = candidates.find(c => advancedStatuses.includes(c));
+
+    let rawStatus = 'pending';
+    if (advancedFound) {
+      rawStatus = advancedFound;
+    } else if (candidates.includes('accepted') || item.accepted_at) {
+      rawStatus = 'accepted';
+    } else {
+      rawStatus = candidates[0] || 'pending';
+    }
     const status = normalizeArtisanStatus(rawStatus);
     const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
     const isUtrPending = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
@@ -507,6 +513,9 @@ export default function ArtisanOrders() {
   });
 
   const totalRevenue = orders.reduce((sum, item) => {
+    const orderObj = item.orders || item.order || {};
+    const itemSt = String(item.status || item.item_status || orderObj.status || orderObj.order_status || '').toLowerCase();
+    if (itemSt === 'cancelled' || itemSt === 'rejected') return sum;
     const firstItem = (item.items && item.items[0]) || item;
     const price = item.subtotal || ((item.price_at_time || firstItem.price_at_time || firstItem.unit_price_snapshot || 0) * (item.quantity || firstItem.quantity || 1));
     return sum + price;
@@ -610,16 +619,18 @@ export default function ArtisanOrders() {
             const customerPhone = orderObj.phone || customerObj.phone || '';
             const customerEmail = customerObj.email || '';
             const loc = extractOrderLocation(orderObj);
-            const isAcceptedInRecord = Boolean(
-              item.accepted_at ||
-              item.status === 'accepted' ||
-              item.item_status === 'accepted'
-            );
-            const rawStatus = isAcceptedInRecord 
-              ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status)
-                  ? (item.status || item.item_status)
-                  : 'accepted')
-              : (item.status || item.item_status || 'pending');
+            const advancedStatuses = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'];
+            const candidates = [item.status, item.item_status, orderObj.order_status, orderObj.status].filter(Boolean);
+            const advancedFound = candidates.find(c => advancedStatuses.includes(c));
+
+            let rawStatus = 'pending';
+            if (advancedFound) {
+              rawStatus = advancedFound;
+            } else if (candidates.includes('accepted') || item.accepted_at) {
+              rawStatus = 'accepted';
+            } else {
+              rawStatus = candidates[0] || 'pending';
+            }
             const statusKey = normalizeArtisanStatus(rawStatus);
             const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG[rawStatus] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
@@ -879,10 +890,10 @@ export default function ArtisanOrders() {
 
                 {/* ── Real-Time Artisan Order Verification: Accept or Reject Banner ── */}
                 {(() => {
-                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted' || item.item_status === 'accepted' || Boolean(item.accepted_at);
-                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected' || item.item_status === 'rejected' || Boolean(item.rejected_at);
-                  const isFurther = ['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'completed'].includes(statusKey);
-                  const isAwaitingDecision = !isAccepted && !isRejected && !isFurther;
+                  const isAccepted = statusKey === 'accepted' || rawStatus === 'accepted';
+                  const isRejected = statusKey === 'rejected' || rawStatus === 'rejected' || Boolean(item.rejected_at);
+                  const isFurther = ['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'completed'].includes(statusKey) || ['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'completed'].includes(rawStatus);
+                  const isAwaitingDecision = !isAccepted && !isRejected && !isFurther && (statusKey === 'pending' || rawStatus === 'pending');
 
                   if (isAwaitingDecision) {
                     return (
@@ -957,18 +968,86 @@ export default function ArtisanOrders() {
                     );
                   }
 
-                  if ((isAccepted || isFurther) && !isRejected) {
+                  if (isAccepted && !isFurther && !isRejected && statusKey !== 'cancelled') {
                     return (
                       <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2.5">
                           <HiCheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
                           <div>
                             <span className="font-bold text-emerald-300">Order Confirmed by You:</span>
-                            <span className="text-gray-300 ml-1.5">Customer tracking status bar is showing "Accepted by Artisan". Handcrafted preparation is underway.</span>
+                            <span className="text-gray-300 ml-1.5">Customer tracking status bar is showing "Accepted by Artisan". Ready to begin preparation.</span>
                           </div>
                         </div>
                         <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-emerald-500/30">
                           Accepted ✓
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (statusKey === 'processing' && !isRejected) {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiShoppingBag className="w-5 h-5 text-blue-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-blue-300">Craft In Preparation:</span>
+                            <span className="text-gray-300 ml-1.5">You are actively crafting and packaging this order. Customer tracking is showing "In Preparation".</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-blue-400 bg-blue-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-blue-500/30">
+                          In Preparation 📦
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (statusKey === 'shipped' && !isRejected) {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiTruck className="w-5 h-5 text-purple-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-purple-300">Dispatched & In Transit:</span>
+                            <span className="text-gray-300 ml-1.5">Order is on the way to the customer. Live tracking is active for customer & admin.</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-purple-400 bg-purple-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-purple-500/30">
+                          Out for Delivery 🚚
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (statusKey === 'delivered' && !isRejected) {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-green-500/10 border border-green-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiCheckCircle className="w-5 h-5 text-green-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-green-300">Delivered Successfully:</span>
+                            <span className="text-gray-300 ml-1.5">Customer received craft item. Earnings recorded in your balance.</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-green-400 bg-green-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-green-500/30">
+                          Delivered ✓
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (statusKey === 'cancelled' || rawStatus === 'cancelled') {
+                    return (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <HiXCircle className="w-5 h-5 text-red-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-red-300">Order Cancelled:</span>
+                            <span className="text-gray-300 ml-1.5">This order is cancelled and is not counted towards your earnings, rewards, or leaderboard.</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-red-400 bg-red-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-red-500/30">
+                          Cancelled 🔴
                         </span>
                       </div>
                     );
@@ -985,7 +1064,7 @@ export default function ArtisanOrders() {
                           </div>
                         </div>
                         <span className="text-[11px] font-semibold text-red-400 bg-red-500/20 px-2.5 py-1 rounded-full self-start sm:self-auto border border-red-500/30">
-                          Rejected
+                          Rejected ❌
                         </span>
                       </div>
                     );

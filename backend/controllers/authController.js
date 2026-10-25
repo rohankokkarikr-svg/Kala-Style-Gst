@@ -382,32 +382,38 @@ exports.getRewards = async (req, res) => {
     // 1. Fetch ALL orders for this user
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select('id, total_price, status, created_at')
+      .select('id, total_price, total_amount, status, order_status, created_at')
       .eq('user_id', userId);
 
     if (ordersError) throw ordersError;
 
-    // Filter to only delivered orders for rewards progress
-    const deliveredOrders = orders.filter(o => o.status === 'delivered');
+    // Filter to only delivered orders for rewards progress (strictly excluding cancelled or rejected)
+    const deliveredOrders = (orders || []).filter(o => {
+      const st = String(o.order_status || o.status || '').toLowerCase();
+      return (st === 'delivered' || st === 'completed') && st !== 'cancelled' && st !== 'rejected';
+    });
     const deliveredOrderIds = deliveredOrders.map(o => o.id);
     let totalItemsOrdered = 0;
     let totalSpent = 0;
 
     if (deliveredOrderIds.length > 0) {
-      // 2. Count items only from delivered orders
+      // 2. Count items only from delivered orders, excluding cancelled items
       const { data: items, error: itemsError } = await supabase
         .from('order_items')
-        .select('quantity')
+        .select('quantity, item_status')
         .in('order_id', deliveredOrderIds);
 
       if (itemsError) throw itemsError;
 
-      items.forEach(item => {
-        totalItemsOrdered += (item.quantity || 1);
+      (items || []).forEach(item => {
+        const itemSt = String(item.item_status || '').toLowerCase();
+        if (itemSt !== 'cancelled' && itemSt !== 'rejected') {
+          totalItemsOrdered += (item.quantity || 1);
+        }
       });
 
       // Total spent only from delivered orders (for membership level)
-      totalSpent = deliveredOrders.reduce((sum, o) => sum + Number(o.total_price), 0);
+      totalSpent = deliveredOrders.reduce((sum, o) => sum + (Number(o.total_amount) || Number(o.total_price) || 0), 0);
     }
 
     // 3. Reward milestone: 10 items delivered = 90% OFF Super Voucher
@@ -546,10 +552,11 @@ exports.getLeaderboard = async (req, res) => {
     // ══════════════════════════════════════════════════════════════
     // 1. CUSTOMER / BUYER LEADERBOARD (Ranked by Total Purchases)
     // ══════════════════════════════════════════════════════════════
-    // Count all active, confirmed, paid, or delivered orders (excluding only cancelled/rejected)
-    const validOrders = orders.filter(o => {
-      const st = String(o.status || '').toLowerCase();
-      return st !== 'cancelled' && st !== 'rejected';
+    // Exclude cancelled and rejected orders from spend and count
+    const validOrders = (orders || []).filter(o => {
+      const st = String(o.order_status || o.status || '').toLowerCase();
+      const paySt = String(o.payment_status || '').toLowerCase();
+      return st !== 'cancelled' && st !== 'rejected' && paySt !== 'cancelled' && paySt !== 'refunded';
     });
 
     const userSpendMap = {};
@@ -611,9 +618,20 @@ exports.getLeaderboard = async (req, res) => {
     // ══════════════════════════════════════════════════════════════
     // 2. ARTISAN / CREATOR LEADERBOARD (Ranked by Total Sales)
     // ══════════════════════════════════════════════════════════════
-    const validArtOrders = artisanOrders.filter(ao => {
+    // Build set of cancelled/rejected order IDs
+    const cancelledOrderIds = new Set(
+      (orders || [])
+        .filter(o => {
+          const st = String(o.order_status || o.status || '').toLowerCase();
+          return st === 'cancelled' || st === 'rejected';
+        })
+        .map(o => String(o.id))
+    );
+
+    const validArtOrders = (artisanOrders || []).filter(ao => {
       const st = String(ao.status || '').toLowerCase();
-      return st !== 'cancelled' && st !== 'rejected';
+      const isCancelledOrder = cancelledOrderIds.has(String(ao.order_id));
+      return st !== 'cancelled' && st !== 'rejected' && !isCancelledOrder;
     });
 
     const artisanSalesMap = {};
@@ -627,10 +645,13 @@ exports.getLeaderboard = async (req, res) => {
       artisanOrdersCountMap[aid] = (artisanOrdersCountMap[aid] || 0) + 1;
     });
 
-    orderItems.forEach(oi => {
-      if (oi.artisan_id) {
-        const aid = String(oi.artisan_id);
-        artisanItemsSoldMap[aid] = (artisanItemsSoldMap[aid] || 0) + (Number(oi.quantity) || 1);
+    (orderItems || []).forEach(oi => {
+      if (oi.artisan_id && !cancelledOrderIds.has(String(oi.order_id))) {
+        const itemSt = String(oi.item_status || '').toLowerCase();
+        if (itemSt !== 'cancelled' && itemSt !== 'rejected') {
+          const aid = String(oi.artisan_id);
+          artisanItemsSoldMap[aid] = (artisanItemsSoldMap[aid] || 0) + (Number(oi.quantity) || 1);
+        }
       }
     });
 
@@ -638,10 +659,9 @@ exports.getLeaderboard = async (req, res) => {
       const artId = String(art.id);
       const userArtId = art.user_id ? String(art.user_id) : null;
 
-      // Consolidate sales attributed by profile ID or user ID
+      // Consolidate sales attributed by profile ID or user ID from active, non-cancelled orders
       const orderSales = (artisanSalesMap[artId] || 0) + (userArtId ? (artisanSalesMap[userArtId] || 0) : 0);
-      const baseEarnings = Number(art.earnings_total) || 0;
-      const totalSales = Math.round(Math.max(orderSales, baseEarnings));
+      const totalSales = Math.round(orderSales);
 
       const totalOrders = (artisanOrdersCountMap[artId] || 0) + (userArtId ? (artisanOrdersCountMap[userArtId] || 0) : 0);
       const totalItemsSold = (artisanItemsSoldMap[artId] || 0) + (userArtId ? (artisanItemsSoldMap[userArtId] || 0) : 0);

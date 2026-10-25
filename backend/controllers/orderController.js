@@ -749,19 +749,27 @@ exports.updateOrderStatus = async (req, res) => {
 
     if (error) throw error;
 
-    // Sync sub-orders and trigger earnings if delivered or cancelled
+    // Sync sub-orders and trigger earnings if delivered, or cancel/progress
     // NOTE: Do NOT overwrite artisan_orders status to 'confirmed' or 'accepted' from master order updates.
     // The artisan must exclusively confirm/accept or reject their own sub-orders in the Artisan Portal.
-    if (status && ['delivered', 'cancelled'].includes(status)) {
+    // However, operational progression (processing, preparing, shipped, delivered, cancelled, rejected) MUST sync.
+    const syncStatus = mappedStatus || status;
+    const isProgressionStatus = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(syncStatus);
+    if (status && isProgressionStatus) {
       try {
         const aoUpdate = {
-          status,
+          status: syncStatus,
           updated_at: new Date().toISOString(),
-          ...(status === 'delivered' ? { delivered_at: new Date().toISOString() } : {}),
-          ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
+          ...(syncStatus === 'delivered' ? { delivered_at: new Date().toISOString() } : {}),
+          ...(syncStatus === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
+          ...(syncStatus === 'rejected' ? { rejected_at: new Date().toISOString() } : {}),
         };
         await supabase.from('artisan_orders').update(aoUpdate).eq('order_id', id);
-        await supabase.from('order_items').update({ item_status: status }).eq('order_id', id);
+        await supabase.from('order_items').update({ item_status: syncStatus }).eq('order_id', id);
+
+        if (syncStatus === 'cancelled' || syncStatus === 'rejected') {
+          await supabase.from('artisan_earnings').delete().eq('order_id', id);
+        }
 
         if (status === 'delivered') {
           const isPaid = ['paid', 'completed'].includes(String(data.payment_status || '').toLowerCase());
@@ -908,6 +916,14 @@ exports.cancelOrder = async (req, res) => {
       updated_at: new Date().toISOString(),
     }).eq('order_id', id);
 
+    // Cancel order_items as well
+    await supabase.from('order_items').update({
+      item_status: 'cancelled',
+    }).eq('order_id', id);
+
+    // Remove any recorded earnings for cancelled order
+    await supabase.from('artisan_earnings').delete().eq('order_id', id);
+
     // Restore inventory
     await restoreInventory(id);
 
@@ -943,7 +959,8 @@ exports.cancelOrder = async (req, res) => {
       console.error('[cancelOrder] WhatsApp error:', wsErr.message);
     }
 
-    broadcastSync('ORDERS_UPDATED', { id, status: 'cancelled' });
+    broadcastSync('ORDERS_UPDATED', { id, orderId: id, status: 'cancelled' });
+    broadcastSync('ARTISAN_ORDERS_UPDATED', { id, orderId: id, order_id: id, status: 'cancelled' });
 
     res.json({ ...updatedOrder, refund: refundInfo });
   } catch (error) {
