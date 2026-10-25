@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { orderAPI } from '../services/api';
+import apiCache from '../utils/apiCache';
 import { supabase } from '../lib/supabase';
 import { HiShoppingBag, HiPencilAlt, HiLocationMarker, HiTruck } from 'react-icons/hi';
 import toast from 'react-hot-toast';
@@ -50,8 +51,11 @@ export default function Orders() {
   const fetchOrders = async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
+      apiCache.invalidateOrders();
       const { data } = await orderAPI.getMyOrders();
-      setOrders(data || []);
+      if (Array.isArray(data)) {
+        setOrders(data);
+      }
     } catch (err) {
       if (!quiet) toast.error('Failed to load orders');
     } finally {
@@ -84,16 +88,25 @@ export default function Orders() {
             targetIds.includes(String(o.order_number)) ||
             (Array.isArray(o.artisan_orders) && o.artisan_orders.some(ao => targetIds.includes(String(ao.id))));
           if (!isMatch) return o;
+
+          const updatedAos = (o.artisan_orders || []).map(ao => {
+            if (targetIds.includes(String(ao.id)) || (o.artisan_orders || []).length === 1) {
+              return { ...ao, status: nextStatus };
+            }
+            return ao;
+          });
+
           return {
             ...o,
             status: nextStatus,
             order_status: nextStatus,
+            artisan_orders: updatedAos.length > 0 ? updatedAos : o.artisan_orders,
             ...(payload.shipping_status ? { shipping_status: payload.shipping_status } : {}),
             ...(payload.payment_status ? { payment_status: payload.payment_status } : {})
           };
         }));
       }
-      // Always refresh to sync relation fields
+      // Refresh to sync complete relation fields
       fetchOrders(true);
     };
     window.addEventListener('kala:sync:orders_updated', handleSync);
@@ -143,11 +156,44 @@ export default function Orders() {
     return () => clearInterval(interval);
   }, []);
 
+  const getOrderEffectiveStatus = (order) => {
+    if (!order) return 'pending';
+
+    // 1. Check artisan_orders first for direct artisan updates
+    const aos = Array.isArray(order.artisan_orders) ? order.artisan_orders : [];
+    const aoStatuses = aos.map(ao => (ao?.status || '').toLowerCase().trim()).filter(Boolean);
+
+    if (aoStatuses.length > 0) {
+      if (aoStatuses.every(s => s === 'cancelled' || s === 'rejected')) {
+        return aoStatuses.includes('rejected') ? 'rejected' : 'cancelled';
+      }
+      if (aoStatuses.every(s => s === 'delivered' || s === 'completed')) return 'delivered';
+      if (aoStatuses.some(s => ['dispatched', 'shipped', 'out_for_delivery'].includes(s))) return 'dispatched';
+      if (aoStatuses.some(s => ['preparing', 'processing', 'ready_for_pickup', 'in_preparation'].includes(s))) return 'preparing';
+      if (aoStatuses.some(s => ['accepted', 'confirmed'].includes(s))) return 'accepted';
+      if (aoStatuses.some(s => s === 'delivered')) return 'delivered';
+    }
+
+    // 2. Master order status
+    const s = (order.order_status || order.status || '').toLowerCase().trim();
+    const ship = (order.shipping_status || '').toLowerCase().trim();
+
+    if (s === 'rejected') return 'rejected';
+    if (s === 'cancelled') return 'cancelled';
+    if (s === 'delivered' || s === 'completed' || ship === 'delivered') return 'delivered';
+    if (['dispatched', 'shipped', 'out_for_delivery'].includes(s) || ship === 'in_transit') return 'dispatched';
+    if (['preparing', 'processing', 'ready_for_pickup', 'in_preparation', 'partially_processing'].includes(s) || ship === 'ready_to_ship') return 'preparing';
+    if (['accepted', 'confirmed'].includes(s)) return 'accepted';
+    if (s === 'partially_delivered') return 'delivered';
+    return s || 'pending';
+  };
+
   const getStatusColor = (status) => {
     const s = (status || '').toLowerCase();
     switch(s) {
       case 'delivered':
       case 'completed':
+      case 'partially_delivered':
         return 'text-green-400 bg-green-500/10 border-green-500/20';
       case 'shipped':
       case 'dispatched':
@@ -156,6 +202,8 @@ export default function Orders() {
       case 'preparing':
       case 'processing':
       case 'ready_for_pickup':
+      case 'partially_processing':
+      case 'in_preparation':
         return 'text-purple-400 bg-purple-500/10 border-purple-500/20';
       case 'accepted':
       case 'confirmed':
@@ -178,12 +226,15 @@ export default function Orders() {
       accepted: '✅ Accepted by Artisan',
       preparing: '🎨 Crafting in Progress',
       processing: '🎨 Crafting in Progress',
+      in_preparation: '🎨 Crafting in Progress',
+      partially_processing: '🎨 Crafting in Progress',
       ready_for_pickup: '📬 Ready for Dispatch',
       dispatched: '🚚 Dispatched',
       shipped: '🚚 Out for Delivery',
       out_for_delivery: '🛵 Out for Delivery',
       delivered: '🎉 Delivered ✓',
       completed: '🎉 Delivered ✓',
+      partially_delivered: '🎉 Delivered (Craft Item) ✓',
       cancelled: '🚫 Cancelled',
       rejected: '❌ Rejected by Artisan',
       payment_verification_pending: '⏱️ Pending Verification',
@@ -257,9 +308,7 @@ export default function Orders() {
                   )}
                 </div>
                 {(() => {
-                  const effectiveStatus = (order.shipping_status === 'DELIVERED' || order.order_status === 'delivered' || order.status === 'delivered')
-                    ? 'delivered'
-                    : (order.order_status || order.status || 'pending');
+                  const effectiveStatus = getOrderEffectiveStatus(order);
                   return (
                     <span className={`badge border px-3 py-1 uppercase tracking-wider text-xs font-bold ${getStatusColor(effectiveStatus)}`}>
                       {renderStatusText(effectiveStatus)}
@@ -271,25 +320,23 @@ export default function Orders() {
 
             {/* Visual Real-Time Mini Status Track on Order Card */}
             {(() => {
-              const effectiveStatus = (order.shipping_status === 'DELIVERED' || order.order_status === 'delivered' || order.status === 'delivered')
-                ? 'delivered'
-                : (order.order_status || order.status || 'pending').toLowerCase();
+              const effectiveStatus = getOrderEffectiveStatus(order);
 
               const isRejected = effectiveStatus === 'rejected';
               const isCancelled = effectiveStatus === 'cancelled';
               let percent = 20;
               let barColor = 'from-amber-500 to-gold-400';
 
-              if (effectiveStatus === 'delivered' || effectiveStatus === 'completed') {
+              if (effectiveStatus === 'delivered' || effectiveStatus === 'completed' || effectiveStatus === 'partially_delivered') {
                 percent = 100;
                 barColor = 'from-emerald-500 to-green-400';
               } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(effectiveStatus)) {
                 percent = 80;
                 barColor = 'from-blue-500 to-cyan-400';
-              } else if (['preparing', 'processing', 'ready_for_pickup'].includes(effectiveStatus)) {
+              } else if (['preparing', 'processing', 'ready_for_pickup', 'in_preparation', 'partially_processing'].includes(effectiveStatus)) {
                 percent = 60;
                 barColor = 'from-purple-500 to-indigo-400';
-              } else if (effectiveStatus === 'accepted') {
+              } else if (effectiveStatus === 'accepted' || effectiveStatus === 'confirmed') {
                 percent = 40;
                 barColor = 'from-emerald-500 to-teal-400';
               } else if (isRejected || isCancelled) {

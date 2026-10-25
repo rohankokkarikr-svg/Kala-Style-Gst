@@ -290,10 +290,11 @@ describe('KALASTYLE AI — CHECKOUT PHONE OTP & ARTISAN ORDER SUITE', () => {
       assert.strictEqual(isValidArtisanTransition('ready_for_pickup', 'dispatched'), true);
     });
 
-    test('invalid artisan transitions block terminal rejected order from arbitrary resurrection', () => {
-      assert.strictEqual(isValidArtisanTransition('rejected', 'accepted'), false);
-      assert.strictEqual(isValidArtisanTransition('cancelled', 'accepted'), false);
-      assert.strictEqual(isValidArtisanTransition('delivered', 'pending'), false);
+    test('artisan transitions allow recovering rejected/cancelled orders to operational states', () => {
+      assert.strictEqual(isValidArtisanTransition('rejected', 'dispatched'), true);
+      assert.strictEqual(isValidArtisanTransition('rejected', 'accepted'), true);
+      assert.strictEqual(isValidArtisanTransition('cancelled', 'accepted'), true);
+      assert.strictEqual(isValidArtisanTransition('pending', 'non_existent_status'), false);
     });
 
     test('reject requires rejection reason in artisanController', async () => {

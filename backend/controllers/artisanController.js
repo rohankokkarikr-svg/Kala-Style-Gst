@@ -886,10 +886,19 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       rejected: 'rejected_at',
     };
 
-    const updateData = { status, updated_at: now };
+    const isTerminal = status === 'cancelled' || status === 'rejected';
+    const wasTerminal = artOrder.status === 'cancelled' || artOrder.status === 'rejected';
+
+    const updateData = {
+      status,
+      updated_at: now,
+      ...(status === 'delivered' ? { delivered_at: now } : { delivered_at: null }),
+      ...(isTerminal ? { cancelled_at: now } : { cancelled_at: null }),
+      ...(status === 'rejected' ? { rejected_at: now } : { rejected_at: null }),
+      ...(status === 'rejected' && rejection_reason ? { rejection_reason } : { rejection_reason: null }),
+    };
     if (timestampMap[status]) updateData[timestampMap[status]] = now;
     if (status !== 'delivered') {
-      updateData.delivered_at = null;
       // If order was previously marked delivered, clean up premature earnings record on backward transition
       if (artOrder.status === 'delivered') {
         try {
@@ -910,7 +919,6 @@ exports.updateArtisanOrderStatus = async (req, res) => {
     if (['pending', 'confirmed'].includes(status)) {
       updateData.accepted_at = null;
     }
-    if (status === 'rejected' && rejection_reason) updateData.rejection_reason = rejection_reason;
     if (!artOrder.artisan_id && profile?.id) updateData.artisan_id = profile.id;
 
     // Update using verified artisan_orders primary key
@@ -929,6 +937,24 @@ exports.updateArtisanOrderStatus = async (req, res) => {
       .update({ item_status: status })
       .eq('order_id', artOrder.order_id)
       .or(`artisan_id.eq.${profile.id},artisan_id.eq.${req.user.id},artisan_id.is.null`);
+
+    // If recovering/reverting FROM rejected/cancelled back to active, re-deduct atomic stock
+    if (wasTerminal && !isTerminal) {
+      try {
+        const { atomicDeductStock } = require('../services/orderService');
+        const { data: itemsToDeduct } = await supabase
+          .from('order_items')
+          .select('id, product_id, quantity, item_status')
+          .eq('order_id', artOrder.order_id);
+        for (const it of (itemsToDeduct || [])) {
+          if (it.product_id && it.quantity > 0) {
+            await atomicDeductStock(it.product_id, it.quantity);
+          }
+        }
+      } catch (reDeductErr) {
+        console.warn('[artisanController] Inventory re-deduction notice on order reactivation:', reDeductErr.message);
+      }
+    }
 
     let newMasterStatus = status;
 

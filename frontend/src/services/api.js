@@ -171,7 +171,14 @@ export const orderAPI = {
   phoneOtpSend:       (data)     => api.post('/orders/phone-otp/send', data),
   phoneOtpVerify:     (data)     => api.post('/orders/phone-otp/verify', data),
   calculateTotal:     (data)     => api.post('/orders/calculate-total', data),
-  getMyOrders:        ()         => api.get('/orders/my'),
+  getMyOrders:        ()         => api.get('/orders/my', {
+    params: { _t: Date.now() },
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+  }),
   getAll:             (params)   => api.get('/orders', { params }),
   getById:            (id)       => api.get(`/orders/${id}`),
   getTracking:        (id)       => api.get(`/orders/${id}/tracking`, { params: { _t: Date.now() } }),

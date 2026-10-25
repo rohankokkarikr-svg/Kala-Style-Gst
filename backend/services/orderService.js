@@ -595,10 +595,6 @@ exports.syncMasterOrderStatus = async (orderId) => {
       updatePayload.shipping_status = 'PENDING';
     }
 
-    if (newStatus !== 'delivered') {
-      updatePayload.delivered_at = null;
-    }
-
     const { error: updateErr } = await supabase
       .from('orders')
       .update(updatePayload)

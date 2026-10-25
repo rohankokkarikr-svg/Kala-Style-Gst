@@ -21,12 +21,15 @@ describe('Order Status Bidirectional & Payment Audit Suite', () => {
     assert.strictEqual(isValidArtisanTransition('delivered', 'accepted'), true, 'delivered can revert to accepted');
   });
 
-  test('Terminal statuses remain strictly guarded against unauthorized reopening', () => {
-    assert.strictEqual(isValidArtisanTransition('rejected', 'accepted'), false);
-    assert.strictEqual(isValidArtisanTransition('cancelled', 'accepted'), false);
-    assert.strictEqual(isValidArtisanTransition('rejected', 'processing'), false);
-    assert.strictEqual(isValidArtisanTransition('cancelled', 'processing'), false);
-    assert.strictEqual(isValidArtisanTransition('delivered', 'pending'), false, 'delivered cannot jump directly to pending');
+  test('Artisan has access to freely transition and recover orders across valid statuses', () => {
+    assert.strictEqual(isValidArtisanTransition('rejected', 'dispatched'), true);
+    assert.strictEqual(isValidArtisanTransition('rejected', 'accepted'), true);
+    assert.strictEqual(isValidArtisanTransition('cancelled', 'accepted'), true);
+    assert.strictEqual(isValidArtisanTransition('rejected', 'processing'), true);
+    assert.strictEqual(isValidArtisanTransition('cancelled', 'processing'), true);
+    assert.strictEqual(isValidArtisanTransition('delivered', 'pending'), true);
+    // Invalid unknown statuses are properly rejected
+    assert.strictEqual(isValidArtisanTransition('pending', 'invalid_status_xyz'), false);
   });
 
   test('Payment method invariants: non-COD orders must never be cod_pending', () => {

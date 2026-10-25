@@ -298,6 +298,12 @@ exports.createOrder = async (req, res) => {
 
 exports.getMyOrders = async (req, res) => {
   try {
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+
     const { data, error } = await supabase
       .from('orders')
       .select(`
@@ -624,11 +630,16 @@ exports.updateOrderStatus = async (req, res) => {
         cancelled: 'cancelled_at',
         rejected: 'rejected_at',
       };
+      const isTerminal = mappedStatus === 'cancelled' || mappedStatus === 'rejected';
+      const wasTerminal = mySubOrder.status === 'cancelled' || mySubOrder.status === 'rejected';
+
       const aoUpdate = {
         status: mappedStatus,
         updated_at: now,
         ...(mappedStatus === 'delivered' ? { delivered_at: now } : { delivered_at: null }),
-        ...(mappedStatus === 'cancelled' || mappedStatus === 'rejected' ? { cancelled_at: now } : {}),
+        ...(isTerminal ? { cancelled_at: now } : { cancelled_at: null }),
+        ...(mappedStatus === 'rejected' ? { rejected_at: now } : { rejected_at: null }),
+        ...(mappedStatus === 'rejected' && req.body.rejection_reason ? { rejection_reason: req.body.rejection_reason } : { rejection_reason: null }),
       };
       if (timestampMap[mappedStatus]) aoUpdate[timestampMap[mappedStatus]] = now;
       if (mappedStatus !== 'delivered' && mySubOrder.status === 'delivered') {
@@ -647,7 +658,6 @@ exports.updateOrderStatus = async (req, res) => {
       if (['pending', 'confirmed'].includes(mappedStatus)) {
         aoUpdate.accepted_at = null;
       }
-      if (mappedStatus === 'rejected' && req.body.rejection_reason) aoUpdate.rejection_reason = req.body.rejection_reason;
       if (!mySubOrder.artisan_id && callerArtisanId) {
         aoUpdate.artisan_id = callerArtisanId;
       }
@@ -657,7 +667,8 @@ exports.updateOrderStatus = async (req, res) => {
 
       await supabase.from('order_items').update({ item_status: mappedStatus }).eq('order_id', id).or(`artisan_id.eq.${callerArtisanId},artisan_id.is.null`);
 
-      // Inventory and refund processing for rejection
+      // Inventory processing:
+      // 1. If newly rejected, restore stock
       if (mappedStatus === 'rejected') {
         try {
           const { restoreInventory, processRefund } = require('../services/orderService');
@@ -667,6 +678,23 @@ exports.updateOrderStatus = async (req, res) => {
           }
         } catch (invErr) {
           console.warn('[orderController] Inventory/refund notice on rejection:', invErr.message);
+        }
+      }
+      // 2. If recovering/reverting FROM rejected/cancelled back to active, re-deduct atomic stock
+      else if (wasTerminal && !isTerminal) {
+        try {
+          const { atomicDeductStock } = require('../services/orderService');
+          const { data: itemsToDeduct } = await supabase
+            .from('order_items')
+            .select('id, product_id, quantity, item_status')
+            .eq('order_id', id);
+          for (const it of (itemsToDeduct || [])) {
+            if (it.product_id && it.quantity > 0) {
+              await atomicDeductStock(it.product_id, it.quantity);
+            }
+          }
+        } catch (reDeductErr) {
+          console.warn('[orderController] Inventory re-deduction notice on order reactivation:', reDeductErr.message);
         }
       }
 

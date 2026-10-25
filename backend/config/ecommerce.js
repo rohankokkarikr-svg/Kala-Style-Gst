@@ -115,26 +115,34 @@ const VALID_OPERATIONAL_STATUSES = [
 const OPERATIONAL_STATUSES = [
   'pending', 'confirmed', 'accepted', 'preparing', 'processing',
   'in_preparation', 'ready_for_pickup', 'packed', 'dispatched',
-  'shipped', 'out_for_delivery', 'on_the_way', 'delivered', 'completed'
+  'shipped', 'out_for_delivery', 'on_the_way', 'delivered', 'completed',
+  'cancelled', 'rejected'
+];
+
+const ALL_FLOW_STATUSES = [
+  'pending', 'confirmed', 'accepted', 'preparing', 'processing',
+  'in_preparation', 'ready_for_pickup', 'packed', 'dispatched',
+  'shipped', 'out_for_delivery', 'on_the_way', 'delivered', 'completed',
+  'cancelled', 'rejected'
 ];
 
 const ARTISAN_STATUS_TRANSITIONS = {
-  pending:           ['accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
-  confirmed:         ['pending', 'accepted', 'preparing', 'processing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'rejected', 'cancelled'],
-  accepted:          ['pending', 'confirmed', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  preparing:         ['pending', 'confirmed', 'accepted', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  processing:        ['pending', 'confirmed', 'accepted', 'preparing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  in_preparation:    ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'ready_for_pickup', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  ready_for_pickup:  ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'packed', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  packed:            ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  dispatched:        ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  shipped:           ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  out_for_delivery:  ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'shipped', 'dispatched', 'delivered', 'cancelled', 'rejected'],
-  on_the_way:        ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'shipped', 'dispatched', 'delivered', 'cancelled', 'rejected'],
-  delivered:         ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'shipped', 'dispatched', 'out_for_delivery', 'cancelled', 'rejected'],
-  completed:         ['pending', 'confirmed', 'accepted', 'preparing', 'processing', 'in_preparation', 'ready_for_pickup', 'packed', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'],
-  rejected:          ['cancelled'],
-  cancelled:         ['rejected'],
+  pending:           ALL_FLOW_STATUSES,
+  confirmed:         ALL_FLOW_STATUSES,
+  accepted:          ALL_FLOW_STATUSES,
+  preparing:         ALL_FLOW_STATUSES,
+  processing:        ALL_FLOW_STATUSES,
+  in_preparation:    ALL_FLOW_STATUSES,
+  ready_for_pickup:  ALL_FLOW_STATUSES,
+  packed:            ALL_FLOW_STATUSES,
+  dispatched:        ALL_FLOW_STATUSES,
+  shipped:           ALL_FLOW_STATUSES,
+  out_for_delivery:  ALL_FLOW_STATUSES,
+  on_the_way:        ALL_FLOW_STATUSES,
+  delivered:         ALL_FLOW_STATUSES,
+  completed:         ALL_FLOW_STATUSES,
+  rejected:          ALL_FLOW_STATUSES,
+  cancelled:         ALL_FLOW_STATUSES,
 };
 
 function isValidArtisanTransition(from, to) {
@@ -146,22 +154,8 @@ function isValidArtisanTransition(from, to) {
 
   if (fromClean === toClean) return true;
 
-  // Terminal guard: rejected and cancelled orders cannot later be accepted without a controlled admin workflow
-  if ((fromClean === 'rejected' || fromClean === 'cancelled') && (toClean === 'accepted' || toClean === 'preparing' || toClean === 'processing' || toClean === 'dispatched' || toClean === 'delivered')) {
-    return false;
-  }
-
-  // Delivered orders can revert to active fulfillment states (out_for_delivery, shipped, dispatched, processing, accepted)
-  // but cannot jump directly back to unconfirmed pending
-  if (fromClean === 'delivered' && toClean === 'pending') {
-    return false;
-  }
-
-  // Cancellation and rejection are always allowed from active states (including returns or exceptions)
-  if (toClean === 'cancelled' || toClean === 'rejected') return true;
-
-  // Operational states can freely move forward AND backward between each other
-  if (OPERATIONAL_STATUSES.includes(fromClean) && OPERATIONAL_STATUSES.includes(toClean)) {
+  // Artisans have full access to transition and revert order status across all valid statuses
+  if (VALID_OPERATIONAL_STATUSES.includes(toClean) || OPERATIONAL_STATUSES.includes(toClean)) {
     return true;
   }
 

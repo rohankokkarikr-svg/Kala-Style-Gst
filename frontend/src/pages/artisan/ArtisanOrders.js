@@ -619,18 +619,8 @@ export default function ArtisanOrders() {
             const customerPhone = orderObj.phone || customerObj.phone || '';
             const customerEmail = customerObj.email || '';
             const loc = extractOrderLocation(orderObj);
-            const advancedStatuses = ['processing', 'preparing', 'ready_for_pickup', 'dispatched', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'];
-            const candidates = [item.status, item.item_status, orderObj.order_status, orderObj.status].filter(Boolean);
-            const advancedFound = candidates.find(c => advancedStatuses.includes(c));
-
-            let rawStatus = 'pending';
-            if (advancedFound) {
-              rawStatus = advancedFound;
-            } else if (candidates.includes('accepted') || item.accepted_at) {
-              rawStatus = 'accepted';
-            } else {
-              rawStatus = candidates[0] || 'pending';
-            }
+            let rawStatus = item.status || item.item_status || orderObj.order_status || orderObj.status || 'pending';
+            if (rawStatus === 'confirmed') rawStatus = 'accepted';
             const statusKey = normalizeArtisanStatus(rawStatus);
             const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG[rawStatus] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
