@@ -212,28 +212,14 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      // Directly complete registration to guarantee storage in Supabase users & artisan_profiles
-      await signup(
-        name.trim(),
-        cleanPhone,
-        password,
-        role,
-        storeName.trim() || name.trim(),
-        artisanType,
-        cleanEmail
-      );
-
-      toast.success(
-        role === 'artisan'
-          ? '🎨 Artisan account created! Welcome to KalaStyle Studio!'
-          : `✨ Account created! Welcome to KalaStyle AI, ${name}!`
-      );
-
-      setTimeout(() => {
-        navigate(role === 'artisan' ? '/artisan' : '/');
-      }, 1000);
+      // Send OTP to the provided email address via Supabase Auth / SMTP proxy (isSignup: true)
+      await sendOtp(cleanEmail, true);
+      setStep('otp');
+      setCountdown(60);
+      setOtp(Array(OTP_LENGTH).fill(''));
+      toast.success('Verification OTP sent to your email! 📩');
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to create account';
+      const errMsg = err.response?.data?.error || err.message || 'Failed to send verification OTP';
       toast.error(errMsg);
     } finally {
       setLoading(false);
@@ -593,10 +579,10 @@ export default function Signup() {
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-dark-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Creating Account & Securing Studio...</span>
+                  <span>Sending Verification OTP...</span>
                 </>
               ) : (
-                <span>{role === 'artisan' ? 'Create Artisan Account & Open Studio →' : 'Create Account & Get Started →'}</span>
+                <span>Send Verification OTP →</span>
               )}
             </button>
           </form>

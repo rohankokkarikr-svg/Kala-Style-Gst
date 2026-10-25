@@ -1037,6 +1037,19 @@ exports.sendOtp = async (req, res) => {
       if (existingUser.status && (existingUser.status === 'blocked' || existingUser.status === 'suspended')) {
         return res.status(403).json({ error: 'Your account has been deactivated or suspended by the administrator.' });
       }
+    } else {
+      // If this is a signup attempt, verify that an account with this email does not already exist
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id, phone')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (existingUser && existingUser.phone) {
+        return res.status(400).json({
+          error: 'An account with this email address already exists. Please log in instead.'
+        });
+      }
     }
 
     // 1. DIRECT SMTP DELIVERY ENGINE:
