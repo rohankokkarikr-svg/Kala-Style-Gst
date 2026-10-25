@@ -219,12 +219,42 @@ exports.getMyStats = async (req, res) => {
       totalRevenue = sortedItems.reduce((sum, item) => sum + (item.price_at_time * item.quantity), 0);
     }
 
+    // Compute real customer review average rating for this artisan's products
+    let avgRating = null;
+    let totalReviews = 0;
+
+    if (productIds.length > 0) {
+      try {
+        const { data: revStats } = await supabase
+          .from('reviews')
+          .select('rating, is_approved, status')
+          .in('product_id', productIds);
+
+        if (Array.isArray(revStats) && revStats.length > 0) {
+          // Include valid ratings (approved or pending publication, excluding rejected)
+          const validReviews = revStats.filter(
+            r => r.rating && (r.is_approved === true || String(r.status || '').toLowerCase() === 'approved' || r.is_approved !== false)
+          );
+
+          if (validReviews.length > 0) {
+            const sum = validReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+            avgRating = Number((sum / validReviews.length).toFixed(1));
+            totalReviews = validReviews.length;
+          }
+        }
+      } catch (revErr) {
+        console.warn('Error computing artisan review stats:', revErr.message);
+      }
+    }
+
     res.json({
       verificationStatus: profile.verification_status,
       storeName: profile.store_name,
       totalProducts: (products || []).length,
       totalOrders,
       totalRevenue,
+      avgRating,
+      totalReviews,
       earningsTotal: profile.earnings_total || totalRevenue,
       products: products || [],
       recentOrders

@@ -13,11 +13,17 @@ export default function ArtisanDashboard() {
     artisanAPI.getMyStats().then(({ data }) => { setStats(data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
+  const hasRatings = stats && stats.totalReviews > 0 && stats.avgRating != null;
+  const ratingValue = hasRatings ? `${Number(stats.avgRating).toFixed(1)} ★` : 'No ratings yet';
+  const ratingSubtext = hasRatings
+    ? `${stats.totalReviews} customer ${stats.totalReviews === 1 ? 'rating' : 'ratings'}`
+    : 'Awaiting customer reviews';
+
   const statCards = stats ? [
     { icon: HiCollection,    label: 'Total Products', value: stats.totalProducts,     color: 'text-blue-400',   bg: 'bg-blue-400/10' },
     { icon: HiShoppingBag,   label: 'Total Orders',   value: stats.totalOrders,       color: 'text-purple-400', bg: 'bg-purple-400/10' },
     { icon: HiCurrencyRupee, label: 'Total Revenue',  value: '₹' + (stats.totalRevenue || 0).toLocaleString(), color: 'text-green-400', bg: 'bg-green-400/10' },
-    { icon: HiStar,          label: 'Avg. Rating',    value: '4.5 ★',                 color: 'text-gold-400',   bg: 'bg-gold-400/10' },
+    { icon: HiStar,          label: 'Avg. Rating',    value: ratingValue,             subtext: ratingSubtext, color: 'text-gold-400',   bg: 'bg-gold-400/10' },
   ] : [];
 
   return (
@@ -69,7 +75,11 @@ export default function ArtisanDashboard() {
           {statCards.map((s, i) => (
             <div key={i} className="stat-card">
               <div className={'p-3 rounded-xl ' + s.bg}><s.icon className={'w-6 h-6 ' + s.color} /></div>
-              <div><p className="text-gray-400 text-sm">{s.label}</p><p className="text-2xl font-bold text-white">{s.value}</p></div>
+              <div>
+                <p className="text-gray-400 text-sm">{s.label}</p>
+                <p className={`font-bold text-white ${String(s.value).length > 6 ? 'text-lg sm:text-xl' : 'text-2xl'}`}>{s.value}</p>
+                {s.subtext && <p className="text-gray-500 text-xs mt-0.5">{s.subtext}</p>}
+              </div>
             </div>
           ))}
         </div>
