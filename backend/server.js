@@ -170,10 +170,12 @@ const { checkSupabaseConnectivity } = require('./config/supabase');
 const handleHealthCheck = async (req, res) => {
   const conn = await checkSupabaseConnectivity();
   const isHealthy = conn.ok;
+  const { getSupabaseDiagnostics } = require('./config/supabase');
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'ok' : 'degraded',
     service: 'KalaStyle AI Backend API',
     database: isHealthy ? 'connected' : conn.category,
+    diagnostics: getSupabaseDiagnostics(),
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });

@@ -212,8 +212,12 @@ exports.register = async (req, res) => {
       token
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Server error during registration' });
+    console.error('[authController.register] Registration exception:', error);
+    res.status(500).json({
+      error: 'Server error during registration',
+      message: error?.message || String(error),
+      details: error?.details || error?.code || null
+    });
   }
 };
 
