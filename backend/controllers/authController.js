@@ -263,9 +263,20 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('[authController.register] Registration exception:', error);
+    const errText = error?.message || String(error);
+    if (errText.includes('users_email_key') || error?.code === '23505' || errText.includes('duplicate key')) {
+      return res.status(400).json({
+        error: 'An account with this email address already exists. Please login instead.'
+      });
+    }
+    if (errText.includes('users_phone_key')) {
+      return res.status(400).json({
+        error: 'An account with this phone number already exists.'
+      });
+    }
     res.status(500).json({
       error: 'Server error during registration',
-      message: error?.message || String(error),
+      message: errText,
       details: error?.details || error?.code || null
     });
   }
@@ -849,38 +860,46 @@ exports.syncSupabaseSession = async (req, res) => {
       return res.status(401).json({ error: 'Failed to verify Supabase session token' });
     }
 
-    if (!verifiedEmail) {
-      return res.status(400).json({ error: 'Verified email is required from Supabase session' });
-    }
-
     // Canonical identity resolution priority:
-    // 1. Resolve by verified supabase_uid if present
+    // 1. Resolve by verified supabase_uid or id if present
     // 2. Resolve by normalized verified email
     // 3. Create new public.users record
     let user = null;
     let existingArtisanProfile = null;
     let portalNotice = null;
 
+    const lookupConditions = [`email.ilike.${verifiedEmail}`];
     if (verifiedUid) {
-      try {
-        const { data: userByUid } = await supabase
-          .from('users')
-          .select('*')
-          .eq('supabase_uid', verifiedUid)
-          .maybeSingle();
-        if (userByUid) {
-          user = userByUid;
-        }
-      } catch (_) {}
+      lookupConditions.push(`supabase_uid.eq.${verifiedUid}`);
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
+        lookupConditions.push(`id.eq.${verifiedUid}`);
+      }
     }
 
-    if (!user) {
-      const { data: existingUsers } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('email', verifiedEmail)
-        .limit(1);
-      user = existingUsers && existingUsers[0];
+    try {
+      const { data: matchedUsers } = await safeQuery(() =>
+        supabase.from('users').select('*').or(lookupConditions.join(',')).limit(5)
+      );
+
+      if (matchedUsers && matchedUsers.length > 0) {
+        user = matchedUsers.find(u => u.supabase_uid === verifiedUid || String(u.id) === verifiedUid) ||
+               matchedUsers.find(u => u.email && u.email.toLowerCase() === verifiedEmail) ||
+               matchedUsers[0];
+      }
+    } catch (_) {}
+
+    // Fallback direct email lookup if or-condition query didn't find the user
+    if (!user && verifiedEmail) {
+      try {
+        const { data: directUsers } = await supabase
+          .from('users')
+          .select('*')
+          .ilike('email', verifiedEmail)
+          .limit(1);
+        if (directUsers && directUsers.length > 0) {
+          user = directUsers[0];
+        }
+      } catch (_) {}
     }
 
     if (user) {
@@ -970,37 +989,47 @@ exports.syncSupabaseSession = async (req, res) => {
         name: defaultName,
         email: verifiedEmail,
         password: placeholderHash,
-        role: 'user', // STRICT: Default role is 'user' for customer portal
+        role: targetRole,
         status: 'active',
       };
-      if (targetRole === 'artisan') {
-        newUserData.role = 'artisan';
+      if (verifiedUid) {
+        newUserData.supabase_uid = verifiedUid;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verifiedUid)) {
+          newUserData.id = verifiedUid;
+        }
       }
 
       let newUser = null;
-      if (verifiedUid) {
-        const { data, error } = await supabase
-          .from('users')
-          .insert([{ ...newUserData, supabase_uid: verifiedUid }])
-          .select()
-          .single();
-        if (!error && data) {
-          newUser = data;
-        }
-      }
+      const { data: createdUser, error: createErr } = await supabase
+        .from('users')
+        .upsert([newUserData], { onConflict: 'email' })
+        .select()
+        .single();
 
-      if (!newUser) {
-        const { data, error: createErr } = await supabase
+      if (createErr) {
+        console.warn('[syncSupabaseSession] Upsert collision, resolving existing row:', createErr?.message);
+        const { data: fallbackUsers } = await supabase
           .from('users')
-          .insert([newUserData])
-          .select()
-          .single();
+          .select('*')
+          .ilike('email', verifiedEmail)
+          .limit(1);
 
-        if (createErr) {
-          console.error('Error creating user profile after OAuth:', createErr);
-          throw createErr;
+        const fallbackUser = fallbackUsers && fallbackUsers[0];
+
+        if (fallbackUser) {
+          newUser = fallbackUser;
+          if (verifiedUid && (!newUser.supabase_uid || newUser.supabase_uid !== verifiedUid)) {
+            await supabase.from('users').update({ supabase_uid: verifiedUid }).eq('id', newUser.id);
+            newUser.supabase_uid = verifiedUid;
+          }
+        } else {
+          const cleanMsg = (createErr.message?.includes('users_email_key') || createErr.message?.includes('duplicate key'))
+            ? 'An account with this email address already exists. Please log in.'
+            : (createErr.message || 'Failed to create user profile');
+          return res.status(409).json({ error: cleanMsg });
         }
-        newUser = data;
+      } else {
+        newUser = createdUser;
       }
       user = newUser;
       user.role = targetRole;
@@ -1030,7 +1059,7 @@ exports.syncSupabaseSession = async (req, res) => {
               store_name: newProfile.store_name,
               user_id: user.id,
               bio: newProfile.bio,
-              artisan_type: newProfile.artisan_type
+              artisan_type: newProfile.artisan_type,
             });
           } catch (_) {}
         }
@@ -1063,7 +1092,11 @@ exports.syncSupabaseSession = async (req, res) => {
     });
   } catch (error) {
     console.error('Session sync error:', error?.message || error);
-    res.status(500).json({ error: error?.message || 'Server error during session synchronization' });
+    let userMsg = error?.message || 'Server error during session synchronization';
+    if (userMsg.includes('users_email_key') || userMsg.includes('duplicate key')) {
+      userMsg = 'An account with this email address already exists. Please log in with your credentials.';
+    }
+    res.status(500).json({ error: userMsg });
   }
 };
 

@@ -161,8 +161,12 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (e) {
         const isNotFound = e.response?.status === 404 || e.response?.data?.notFound;
-        const errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
+        let errMsg = e.response?.data?.error || e.message || 'Authentication synchronization failed. Please try again.';
         console.error('[syncSupabaseSessionSingleFlight] Sync error:', errMsg);
+
+        if (typeof errMsg === 'string' && (errMsg.includes('users_email_key') || errMsg.includes('duplicate key') || errMsg.includes('violates unique constraint'))) {
+          errMsg = 'An account with this email address already exists. Please log in with your credentials.';
+        }
 
         if (isNotFound) {
           // Strict: When user has not registered, immediately sign out of Supabase to prevent unlinked session
@@ -814,6 +818,10 @@ export const AuthProvider = ({ children }) => {
     toast.success('Signed out successfully');
   };
 
+  const clearOauthError = useCallback(() => {
+    setOauthError(null);
+  }, []);
+
   const currentUser = user;
   const currentRole = normalizeRole(currentUser?.role);
   const isAdmin = currentRole === 'admin';
@@ -827,6 +835,7 @@ export const AuthProvider = ({ children }) => {
       initializing,
       oauthProcessing,
       oauthError,
+      clearOauthError,
       login,
       signup,
       signInWithGoogle,

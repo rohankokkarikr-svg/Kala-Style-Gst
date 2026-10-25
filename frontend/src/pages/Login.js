@@ -16,7 +16,8 @@ export default function Login() {
     signInWithGoogle,
     logout,
     oauthProcessing,
-    oauthError
+    oauthError,
+    clearOauthError
   } = useAuth();
 
   const navigate = useNavigate();
@@ -505,21 +506,44 @@ export default function Login() {
           </p>
         </div>
 
-        {/* ─── Google OAuth Account Not Found Alert ─── */}
-        {oauthError && (
-          <div className="p-3.5 rounded-xl text-xs flex flex-col gap-2 bg-amber-500/15 border border-amber-500/40 text-amber-200">
-            <div className="flex items-start gap-2">
-              <span className="text-base shrink-0">🔍</span>
-              <span className="leading-relaxed font-medium">{oauthError}</span>
+        {/* ─── Google OAuth / Session Account Alert ─── */}
+        {oauthError && (() => {
+          const isExistingUserNotice = typeof oauthError === 'string' && (
+            oauthError.includes('users_email_key') ||
+            oauthError.includes('already exists') ||
+            oauthError.includes('duplicate key')
+          );
+          const sanitizedMsg = isExistingUserNotice
+            ? 'An account with this email address already exists. Please log in with your credentials below.'
+            : oauthError;
+
+          return (
+            <div className="p-3.5 rounded-xl text-xs flex flex-col gap-2 bg-amber-500/15 border border-amber-500/40 text-amber-200 relative">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-base shrink-0">{isExistingUserNotice ? 'ℹ️' : '🔍'}</span>
+                  <span className="leading-relaxed font-medium">{sanitizedMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => clearOauthError && clearOauthError()}
+                  className="text-amber-300 hover:text-white text-sm font-bold px-1 transition-colors"
+                  title="Dismiss notice"
+                >
+                  ✕
+                </button>
+              </div>
+              {!isExistingUserNotice && (
+                <Link
+                  to={portalMode === 'artisan' ? '/signup?role=artisan' : '/signup'}
+                  className="mt-1 py-2 px-3 bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold rounded-lg text-center transition-all inline-block shadow-gold"
+                >
+                  Create Account First →
+                </Link>
+              )}
             </div>
-            <Link
-              to={portalMode === 'artisan' ? '/signup?role=artisan' : '/signup'}
-              className="mt-1 py-2 px-3 bg-gold-500 hover:bg-gold-400 text-dark-950 font-bold rounded-lg text-center transition-all inline-block shadow-gold"
-            >
-              Create Account First →
-            </Link>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ─── Portal Switcher Tabs (Customer vs Artisan vs Admin) ─── */}
         <div className="grid grid-cols-3 rounded-xl overflow-hidden border border-dark-600 bg-dark-900/90 p-1 gap-1">
@@ -532,6 +556,7 @@ export default function Login() {
               setLoginNotFound(false);
               setOtpError('');
               setOtpNotFound(false);
+              if (clearOauthError) clearOauthError();
             }}
             className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
               portalMode === 'customer'
@@ -551,6 +576,7 @@ export default function Login() {
               setLoginNotFound(false);
               setOtpError('');
               setOtpNotFound(false);
+              if (clearOauthError) clearOauthError();
             }}
             className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
               portalMode === 'artisan'
@@ -570,6 +596,7 @@ export default function Login() {
               setLoginNotFound(false);
               setOtpError('');
               setOtpNotFound(false);
+              if (clearOauthError) clearOauthError();
             }}
             className={`py-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${
               portalMode === 'admin'
@@ -589,6 +616,7 @@ export default function Login() {
               setAuthMethod('password');
               setLoginError('');
               setLoginNotFound(false);
+              if (clearOauthError) clearOauthError();
             }}
             className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
               authMethod === 'password'
@@ -604,6 +632,7 @@ export default function Login() {
               setAuthMethod('otp');
               setOtpError('');
               setOtpNotFound(false);
+              if (clearOauthError) clearOauthError();
             }}
             className={`pb-1.5 font-medium transition-all border-b-2 cursor-pointer ${
               authMethod === 'otp'
@@ -646,6 +675,7 @@ export default function Login() {
                   setIdentifier(e.target.value);
                   if (loginError) setLoginError('');
                   if (loginNotFound) setLoginNotFound(false);
+                  if (clearOauthError) clearOauthError();
                 }}
               />
             </div>
@@ -806,6 +836,7 @@ export default function Login() {
                       setOtpEmail(e.target.value);
                       if (otpError) setOtpError('');
                       if (otpNotFound) setOtpNotFound(false);
+                      if (clearOauthError) clearOauthError();
                     }}
                   />
                   {otpError && (
