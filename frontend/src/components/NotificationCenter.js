@@ -51,20 +51,33 @@ export default function NotificationCenter({ className = '', buttonClassName = '
           is_read: Boolean(n.is_read || localReadIds.has(n.id))
         }));
 
-        // Strict role filtering for customer/user side:
-        // Always show direct messages targeted specifically to this user (target_user_id === user.id)
-        // For broadcasts: show only admin broadcasts targeting 'all' or 'customers'
+        // Strict role and recipient isolation:
+        // 1. Direct message or order notification (target_user_id exists): strictly show ONLY to that user.
+        // 2. Broadcast (target_user_id is null): show only if it matches this role's audience and is from admin/system.
         const currentRole = (user?.role || 'user').toLowerCase();
-        let roleFiltered = syncedNotifs;
-        if (currentRole === 'user' || currentRole === 'customer') {
-          roleFiltered = syncedNotifs.filter(n => {
-            if (n.target_user_id && n.target_user_id === user?.id) return true;
-            const senderRole = (n.sender?.role || '').toLowerCase();
-            const isFromAdmin = senderRole === 'admin' || !n.sender_id;
-            const isCustomerBroadcast = n.target_audience === 'all' || n.target_audience === 'customers';
-            return isCustomerBroadcast && isFromAdmin;
-          });
-        }
+        const myUserId = user?.id;
+
+        const roleFiltered = syncedNotifs.filter(n => {
+          if (n.target_user_id) {
+            return n.target_user_id === myUserId;
+          }
+
+          // If target_user_id is missing, check broadcast audience
+          const aud = (n.target_audience || '').toLowerCase();
+          if (aud === 'specific') return false;
+
+          const senderRole = (n.sender?.role || '').toLowerCase();
+          const isFromAdmin = senderRole === 'admin' || !n.sender_id;
+
+          if (currentRole === 'admin') {
+            return aud === 'all' || aud === 'admins';
+          }
+          if (currentRole === 'artisan') {
+            return (aud === 'all' || aud === 'artisans') && isFromAdmin;
+          }
+          // Customer / regular user
+          return (aud === 'all' || aud === 'customers') && isFromAdmin;
+        });
 
         setNotifications(roleFiltered);
         setUnreadCount(roleFiltered.filter(n => !n.is_read).length);

@@ -1279,8 +1279,13 @@ exports.sendNotification = async (req, res) => {
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const isValidUuid = (val) => typeof val === 'string' && UUID_REGEX.test(val.trim());
 
-    // If target_user_id is an artisan_profile id, resolve to user_id
-    if (target_user_id && isValidUuid(target_user_id)) {
+    // If target_user_id is provided or target_audience is specific, validate recipient strictly
+    if (target_user_id || target_audience === 'specific') {
+      if (!isValidUuid(target_user_id)) {
+        return res.status(400).json({ error: 'Valid recipient ID is required for targeted notifications.' });
+      }
+
+      // If target_user_id is an artisan_profile id, resolve to user_id
       try {
         const { data: artProfile } = await supabase
           .from('artisan_profiles')
@@ -1290,7 +1295,7 @@ exports.sendNotification = async (req, res) => {
         if (artProfile && isValidUuid(artProfile.user_id)) {
           target_user_id = artProfile.user_id;
         }
-      } catch {}
+      } catch (_) {}
 
       // Verify target_user_id exists in users table
       try {
@@ -1299,15 +1304,21 @@ exports.sendNotification = async (req, res) => {
           .select('id')
           .eq('id', target_user_id)
           .maybeSingle();
-        if (!targetUser) target_user_id = null;
-      } catch {
-        target_user_id = null;
+
+        if (!targetUser) {
+          return res.status(400).json({ error: 'Target recipient user does not exist.' });
+        }
+      } catch (_) {
+        return res.status(400).json({ error: 'Failed to verify recipient identity.' });
       }
+
+      // Targeted notification strictly forced to 'specific'
+      target_audience = 'specific';
     } else {
       target_user_id = null;
     }
 
-    const audience = target_audience || (target_user_id ? 'specific' : 'all');
+    const audience = target_user_id ? 'specific' : (target_audience || 'all');
 
     const notif = {
       title: title.trim(),

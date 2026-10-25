@@ -787,18 +787,44 @@ exports.updateOrderStatus = async (req, res) => {
     broadcastSync('PAYMENTS_UPDATED', { id, status, payment_status });
     broadcastSync('EARNINGS_UPDATED', { orderId: id, status });
 
-    if (data?.user_id && status) {
+    if (status) {
+      const orderNum = data?.order_number || String(id).substring(0, 8);
+
+      // 1. Notify the customer who placed this order
+      if (data?.user_id) {
+        try {
+          await createSystemNotification({
+            title: `Order #${orderNum} Status: ${status.toUpperCase()}`,
+            message: `Your order #${orderNum} has been updated to "${status}". Thank you for supporting authentic Indian artisans.`,
+            target_audience: 'specific',
+            target_user_id: data.user_id,
+            sender_id: req.user?.id || null,
+          });
+        } catch (e) {
+          console.warn('Notification error on order status update to customer:', e.message);
+        }
+      }
+
+      // 2. Notify only the specific artisan(s) whose items are in this order
       try {
-        const orderNum = data.order_number || String(id).substring(0, 8);
-        await createSystemNotification({
-          title: `Order #${orderNum} Status: ${status.toUpperCase()}`,
-          message: `Your order #${orderNum} has been updated to "${status}". Thank you for supporting authentic Indian artisans.`,
-          target_audience: 'specific',
-          target_user_id: data.user_id,
-          sender_id: req.user?.id || null,
-        });
-      } catch (e) {
-        console.warn('Notification error on order status update:', e.message);
+        const { data: artOrders } = await supabase
+          .from('artisan_orders')
+          .select('*, artisan_profiles(user_id, store_name)')
+          .eq('order_id', id);
+
+        for (const ao of (artOrders || [])) {
+          if (ao.artisan_profiles?.user_id) {
+            await createSystemNotification({
+              title: `Order #${orderNum} Status: ${status.toUpperCase()}`,
+              message: `Order #${orderNum} status has been updated to "${status}".`,
+              target_audience: 'specific',
+              target_user_id: ao.artisan_profiles.user_id,
+              sender_id: req.user?.id || null,
+            });
+          }
+        }
+      } catch (artErr) {
+        console.warn('Notification error to artisan on order update:', artErr.message);
       }
     }
 
@@ -981,15 +1007,33 @@ exports.switchToCOD = async (req, res) => {
     broadcastSync('ORDERS_UPDATED', { id, status: 'confirmed', payment_method: 'cod' });
     broadcastSync('PAYMENTS_UPDATED', { id, payment_status: 'cod_pending' });
 
-    // Send notifications to Admin & WhatsApp
+    // Send notifications to Admin, related Artisans & WhatsApp
     try {
       const orderNum = order.order_number || String(order.id).substring(0, 8);
       await createSystemNotification({
         title: `Order #${orderNum} switched to COD`,
         message: `Customer switched payment method to Cash on Delivery for ₹${order.total_amount || order.total_price}.`,
-        target_audience: 'admin',
+        target_audience: 'admins',
         target_user_id: null,
       });
+
+      // Notify the related artisan(s) of this specific order
+      const { data: artOrders } = await supabase
+        .from('artisan_orders')
+        .select('*, artisan_profiles(user_id, store_name)')
+        .eq('order_id', order.id);
+
+      for (const ao of (artOrders || [])) {
+        if (ao.artisan_profiles?.user_id) {
+          await createSystemNotification({
+            title: `Order #${orderNum} Payment Mode: COD`,
+            message: `Order #${orderNum} will be paid via Cash on Delivery upon shipment arrival.`,
+            target_audience: 'specific',
+            target_user_id: ao.artisan_profiles.user_id,
+            sender_id: order.user_id,
+          });
+        }
+      }
     } catch (notifyErr) {
       console.warn('[switchToCOD] Notification error:', notifyErr.message);
     }

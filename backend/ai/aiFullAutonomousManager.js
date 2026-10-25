@@ -137,9 +137,9 @@ async function executeFullAutonomousCycle(options = {}) {
                 await createSystemNotification({
                   title: 'Storefront Verified & Live! 🌟',
                   message: `Congratulations! KalaStyle AI Operations has verified your artisan profile. Your store "${artisan.store_name}" is now live to customers across India.`,
-                  targetUserId: artisan.user_id,
-                  audience: 'artisan',
-                  senderId: adminId || null,
+                  target_user_id: artisan.user_id,
+                  target_audience: 'specific',
+                  sender_id: adminId || null,
                 });
               }
             } catch (vErr) {
@@ -198,9 +198,9 @@ async function executeFullAutonomousCycle(options = {}) {
                   await createSystemNotification({
                     title: 'Product Approved Live! 🛍️',
                     message: `Your handcrafted creation "${prod.name}" has been approved by AI Operations and is now live in the catalog.`,
-                    targetUserId: artRow.user_id,
-                    audience: 'artisan',
-                    senderId: adminId || null,
+                    target_user_id: artRow.user_id,
+                    target_audience: 'specific',
+                    sender_id: adminId || null,
                   });
                 }
               }

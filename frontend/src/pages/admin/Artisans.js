@@ -77,7 +77,7 @@ export default function Artisans() {
         title: `Message from Admin to ${notifyModal.store_name}`,
         message: notifMessage,
         target_audience: 'specific',
-        target_user_id: notifyModal.user_id
+        target_user_id: notifyModal.user_id || notifyModal.id
       });
       toast.success('Notification sent to artisan!');
       setNotifyModal(null);

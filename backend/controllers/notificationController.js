@@ -72,14 +72,16 @@ exports.getMyNotifications = async (req, res) => {
       console.warn('[notificationController] DB query failed, falling back to memory:', dbErr.message);
     }
 
-    // Merge in-memory matching notifications
+    // Merge in-memory matching notifications with strict target isolation
     const memMatching = inMemoryNotifications.filter(n => {
-      if (n.target_user_id === userId) return true;
-      if (n.target_audience === 'all') return true;
-      if (userRole === 'artisan' && n.target_audience === 'artisans') return true;
-      if (userRole === 'admin' && n.target_audience === 'admins') return true;
-      if ((userRole === 'user' || userRole === 'customer') && n.target_audience === 'customers') return true;
-      return false;
+      if (n.target_user_id) {
+        return n.target_user_id === userId;
+      }
+      const aud = (n.target_audience || '').toLowerCase();
+      if (aud === 'specific') return false;
+      if (userRole === 'admin') return aud === 'all' || aud === 'admins';
+      if (userRole === 'artisan') return aud === 'all' || aud === 'artisans';
+      return aud === 'all' || aud === 'customers';
     });
 
     // Combine & deduplicate by id
@@ -93,19 +95,37 @@ exports.getMyNotifications = async (req, res) => {
     // Sort descending by created_at
     combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    // STRICT USER / CUSTOMER SIDE FILTERING:
-    // In user side show:
-    // 1. Direct messages specifically addressed to this user (target_user_id === userId) - always shown
-    // 2. Broadcasts from admin intended for 'all' or 'customers'
-    if (userRole === 'user' || userRole === 'customer') {
-      combined = combined.filter(n => {
-        if (n.target_user_id === userId) return true;
-        const isCustomerBroadcast = n.target_audience === 'all' || n.target_audience === 'customers';
-        const senderRole = (n.sender?.role || '').toLowerCase();
-        const isFromAdmin = senderRole === 'admin' || !n.sender_id;
-        return isCustomerBroadcast && isFromAdmin;
-      });
-    }
+    // STRICT RECIPIENT & ROLE ISOLATION:
+    // 1. Direct messages/notifications (target_user_id present): ONLY the targeted user receives it.
+    // 2. Broadcasts (target_user_id null): Only platform-wide broadcasts from admin/system matching user's role.
+    // 3. Under NO condition does an artisan receive another artisan's notifications or customer-specific messages.
+    // 4. Under NO condition does a customer receive another customer's notifications or artisan-specific messages.
+    combined = combined.filter(n => {
+      if (n.target_user_id) {
+        return n.target_user_id === userId;
+      }
+
+      // If target_user_id is missing/null, check broadcast audience
+      const aud = (n.target_audience || '').toLowerCase();
+      if (aud === 'specific') {
+        // Orphaned specific notification with no user id should not be broadcast
+        return false;
+      }
+
+      const senderRole = (n.sender?.role || '').toLowerCase();
+      const isSystemOrAdmin = senderRole === 'admin' || !n.sender_id;
+
+      if (userRole === 'admin') {
+        return aud === 'all' || aud === 'admins';
+      }
+
+      if (userRole === 'artisan') {
+        return (aud === 'all' || aud === 'artisans') && isSystemOrAdmin;
+      }
+
+      // Regular customer / user
+      return (aud === 'all' || aud === 'customers') && isSystemOrAdmin;
+    });
 
     const unread_count = combined.filter(n => !n.is_read).length;
 
@@ -177,38 +197,39 @@ exports.sendMessage = async (req, res) => {
     // 2. If targetUserId is provided, validate & resolve if it's an artisan_profile id
     if (targetUserId) {
       if (!isValidUuid(targetUserId)) {
-        console.warn(`[sendMessage] Non-UUID recipient_id "${targetUserId}" provided; resetting to null`);
-        targetUserId = null;
-      } else {
-        // Check if targetUserId is an artisan_profile.id and needs resolution to user_id
-        try {
-          const { data: artProfile } = await supabase
-            .from('artisan_profiles')
-            .select('user_id, store_name')
-            .eq('id', targetUserId)
-            .maybeSingle();
-
-          if (artProfile && isValidUuid(artProfile.user_id)) {
-            targetUserId = artProfile.user_id;
-          }
-        } catch (_) {}
-
-        // Verify targetUserId exists in users table to prevent FK constraint failure
-        try {
-          const { data: targetUser } = await supabase
-            .from('users')
-            .select('id')
-            .eq('id', targetUserId)
-            .maybeSingle();
-
-          if (!targetUser) {
-            console.warn(`[sendMessage] Target user ${targetUserId} not found in users table, clearing target_user_id`);
-            targetUserId = null;
-          }
-        } catch (_) {
-          targetUserId = null;
-        }
+        return res.status(400).json({ error: 'Invalid recipient ID format. Please select a valid artisan or customer.' });
       }
+
+      // Check if targetUserId is an artisan_profile.id and needs resolution to user_id
+      try {
+        const { data: artProfile } = await supabase
+          .from('artisan_profiles')
+          .select('user_id, store_name')
+          .eq('id', targetUserId)
+          .maybeSingle();
+
+        if (artProfile && isValidUuid(artProfile.user_id)) {
+          targetUserId = artProfile.user_id;
+        }
+      } catch (_) {}
+
+      // Verify targetUserId exists in users table to prevent FK constraint failure
+      try {
+        const { data: targetUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', targetUserId)
+          .maybeSingle();
+
+        if (!targetUser) {
+          return res.status(400).json({ error: 'Target recipient could not be found in active user records.' });
+        }
+      } catch (_) {
+        return res.status(400).json({ error: 'Failed to verify recipient identity' });
+      }
+
+      // For direct messages targeted to a specific user, force targetAudience to 'specific'
+      targetAudience = 'specific';
     }
 
     // Ensure targetAudience is valid and never null (schema constraint: VARCHAR(50) NOT NULL)
@@ -335,14 +356,20 @@ exports.markAsRead = async (req, res) => {
     );
 
     if (notif) {
-      const audiences = ['all'];
-      if (userRole === 'admin') audiences.push('admins');
-      else if (userRole === 'artisan') audiences.push('artisans');
-      else audiences.push('customers');
+      if (userRole !== 'admin') {
+        if (notif.target_user_id) {
+          if (notif.target_user_id !== userId) {
+            return res.status(403).json({ error: 'Unauthorized to mark this notification as read' });
+          }
+        } else {
+          const audiences = ['all'];
+          if (userRole === 'artisan') audiences.push('artisans');
+          else audiences.push('customers');
 
-      const isAllowed = notif.target_user_id === userId || audiences.includes(notif.target_audience) || userRole === 'admin';
-      if (!isAllowed) {
-        return res.status(403).json({ error: 'Unauthorized to mark this notification as read' });
+          if (!audiences.includes(notif.target_audience)) {
+            return res.status(403).json({ error: 'Unauthorized to mark this notification as read' });
+          }
+        }
       }
     }
 
@@ -509,15 +536,39 @@ exports.getRecipients = async (req, res) => {
 /**
  * 6. Internal System Notification Helper (called by orderController, reviewController, etc.)
  */
-exports.createSystemNotification = async ({ title, message, target_audience = 'all', target_user_id = null, sender_id = null }) => {
-  let validTargetUserId = isValidUuid(target_user_id) ? target_user_id : null;
-  let validSenderId = isValidUuid(sender_id) ? sender_id : null;
-  let audience = target_audience || (validTargetUserId ? 'specific' : 'all');
+exports.createSystemNotification = async (params = {}) => {
+  const {
+    title = 'System Notification',
+    message = '',
+    target_audience = null,
+    audience = null,
+    target_user_id = null,
+    targetUserId = null,
+    sender_id = null,
+    senderId = null
+  } = params;
+
+  const rawTargetUserId = target_user_id || targetUserId;
+  let validTargetUserId = isValidUuid(rawTargetUserId) ? String(rawTargetUserId).trim() : null;
+  let validSenderId = isValidUuid(sender_id || senderId) ? String(sender_id || senderId).trim() : null;
+
+  let resolvedAudience = (target_audience || audience || '').toLowerCase().trim();
+  if (resolvedAudience === 'admin') resolvedAudience = 'admins';
+  if (resolvedAudience === 'artisan') resolvedAudience = 'artisans';
+  if (resolvedAudience === 'customer') resolvedAudience = 'customers';
+
+  // CRITICAL: If a specific target user ID is provided, force audience to 'specific'
+  // This strictly prevents targeted order or direct messages from leaking to all artisans or all users!
+  if (validTargetUserId) {
+    resolvedAudience = 'specific';
+  } else if (!resolvedAudience) {
+    resolvedAudience = 'all';
+  }
 
   const record = {
-    title: (title || 'System Notification').trim(),
-    message: (message || '').trim(),
-    target_audience: audience,
+    title: String(title || 'System Notification').trim(),
+    message: String(message || '').trim(),
+    target_audience: resolvedAudience,
     target_user_id: validTargetUserId,
     sender_id: validSenderId,
     is_read: false,
@@ -533,7 +584,7 @@ exports.createSystemNotification = async ({ title, message, target_audience = 'a
         broadcastSync('NOTIFICATION_RECEIVED', {
           notification: data,
           target_user_id: validTargetUserId,
-          target_audience: audience
+          target_audience: resolvedAudience
         });
       } catch (_) {}
       return data;
@@ -551,7 +602,7 @@ exports.createSystemNotification = async ({ title, message, target_audience = 'a
     broadcastSync('NOTIFICATION_RECEIVED', {
       notification: mem,
       target_user_id: validTargetUserId,
-      target_audience: audience
+      target_audience: resolvedAudience
     });
   } catch (_) {}
   return mem;

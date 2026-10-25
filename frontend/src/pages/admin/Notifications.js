@@ -80,6 +80,10 @@ export default function Notifications() {
       toast.error('Please fill in both title and message');
       return;
     }
+    if (targetAudience === 'specific' && !specificUserId) {
+      toast.error('Please choose a specific artisan or customer to notify.');
+      return;
+    }
     setSending(true);
     try {
       await adminAPI.sendNotification({
@@ -88,15 +92,15 @@ export default function Notifications() {
         target_audience: specificUserId ? 'specific' : targetAudience,
         target_user_id: specificUserId || undefined,
       });
-      toast.success('Notification dispatched successfully! 🚀');
+      toast.success(specificUserId ? 'Direct notification dispatched to recipient! 🚀' : 'Broadcast dispatched successfully! 🚀');
       setTitle('');
       setMessage('');
       setSpecificUserId('');
       setPreviewOpen(false);
       window.dispatchEvent(new CustomEvent('kala:notification:refresh'));
       fetchNotifications();
-    } catch {
-      toast.error('Failed to broadcast notification');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to dispatch notification');
     } finally {
       setSending(false);
     }

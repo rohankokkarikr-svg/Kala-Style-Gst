@@ -163,7 +163,9 @@ const runAudit = async () => {
 
   const checkNotificationAuthorization = (notification, caller) => {
     if (caller.role === 'admin') return true;
-    if (notification.target_user_id && notification.target_user_id === caller.id) return true;
+    if (notification.target_user_id) {
+      return notification.target_user_id === caller.id;
+    }
     if (notification.target_audience === 'all') return true;
     if (notification.target_audience === 'artisans' && caller.role === 'artisan') return true;
     if (notification.target_audience === 'customers' && caller.role === 'customer') return true;
