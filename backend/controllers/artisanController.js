@@ -814,7 +814,7 @@ exports.updateArtisanOrderStatus = async (req, res) => {
               subtotal,
               delivery_fee: 0,
               total_amount: subtotal,
-              status: masterOrder.order_status || masterOrder.status || 'pending',
+              status: ['cancelled', 'delivered'].includes(masterOrder.status) ? masterOrder.status : 'pending',
             }])
             .select()
             .single();

@@ -175,27 +175,18 @@ Please review quality, pricing, and craft authenticity. If approved, approve or 
     }
 
     case 'ORDER_CREATED': {
-      if (rules.order_auto_processing === false) {
-        return { skipped: true, reason: 'order_auto_processing rule is disabled' };
-      }
-
+      // Admin automation is strictly reserved for the Admin page.
+      // Do NOT auto-confirm or mutate artisan orders in the background when a customer places an order.
+      // The artisan must manually click the Accept / Reject button in their Artisan Portal.
+      const domainAgents = require('./domainAgents');
       const { data: order } = await safeQuery(() =>
         supabase.from('orders').select('*').eq('id', job.entity_id).single()
       );
-      if (!order) throw new Error(`Order ${job.entity_id} not found`);
+      if (!order) return { skipped: true, reason: `Order ${job.entity_id} not found` };
 
-      const prompt = `New order #${order.id} placed:
-Total: ₹${order.total_amount}
-Payment Method: ${order.payment_method || 'COD'}
-Shipping Address: ${JSON.stringify(order.shipping_address || {})}
-Please analyze order risk using analyze_order_risk. If high risk, hold order; otherwise confirm.`;
-
-      const aiResponse = await runAutonomousLoop({
-        userMessage: prompt,
-        agentName: 'ORDER_FULFILLMENT_AGENT',
-        conversationId: `order-risk-${job.entity_id}`,
-      });
-      result = aiResponse;
+      // Passive risk analysis for Admin Dashboard audit visibility only (zero mutation to order status)
+      const risk = await domainAgents.analyzeOrderRisk(order);
+      result = { risk_analyzed: true, order_id: order.id, risk_score: risk.risk_score, risk_level: risk.risk_level };
       break;
     }
 

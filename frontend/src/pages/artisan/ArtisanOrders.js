@@ -77,35 +77,8 @@ export default function ArtisanOrders() {
       }
 
       if (rawData && Array.isArray(rawData)) {
-        // Resiliently merge fresh data with local accepted state to prevent stale server snapshots from reverting confirmed orders
-        setOrders(prev => {
-          const locallyAcceptedIds = new Set(
-            prev.filter(p => p.status === 'accepted' || p.accepted_at || p.item_status === 'accepted').map(p => p.id || p.order_id)
-          );
-          return rawData.map(item => {
-            const orderObj = item.orders || item.order || {};
-            const itemKey = item.id || item.order_id || orderObj.id;
-            const wasAccepted = locallyAcceptedIds.has(itemKey) || Boolean(
-              item.accepted_at ||
-              item.status === 'accepted' ||
-              item.item_status === 'accepted' ||
-              orderObj.status === 'accepted' ||
-              orderObj.order_status === 'accepted'
-            );
-
-            if (wasAccepted && (item.status === 'pending' || !item.status || orderObj.status === 'confirmed' || orderObj.status === 'pending')) {
-              return {
-                ...item,
-                status: 'accepted',
-                item_status: 'accepted',
-                accepted_at: item.accepted_at || new Date().toISOString(),
-                order: item.order ? { ...item.order, status: 'accepted', order_status: 'accepted' } : undefined,
-                orders: item.orders ? { ...item.orders, status: 'accepted', order_status: 'accepted' } : undefined,
-              };
-            }
-            return item;
-          });
-        });
+        // Directly set raw artisan orders from server without auto-accepting
+        setOrders(rawData);
       }
     } finally {
       setLoading(false);
@@ -116,30 +89,27 @@ export default function ArtisanOrders() {
     fetchOrders();
   }, []);
 
-  // 1. DOM Real-time listener: instantly reflect when a customer places or updates an order
+  // 1. DOM Real-time listener: reflect artisan order updates in real time
   useEffect(() => {
     const handleSync = (e) => { 
       // Skip background refetch if user has an update currently in-flight
       if (updatingId) return;
 
-      // If sync event carries updated status, immediately apply it to local state for 0ms visual feedback
       if (e?.detail) {
         const payload = e.detail.payload || e.detail;
-        const targetOrderId = payload.order_id || payload.orderId || payload.id;
         const targetArtisanOrderId = payload.artisan_order_id || payload.artisanOrderId;
         const newStatus = payload.status || payload.order_status;
-        if (newStatus && (targetOrderId || targetArtisanOrderId)) {
+
+        // Only update status if specifically targeted to an artisan sub-order (via artisan accept/reject)
+        if (newStatus && targetArtisanOrderId) {
           setOrders(prev => prev.map(item => {
-            const matches = (targetArtisanOrderId && (item.id === targetArtisanOrderId || item.artisan_order_id === targetArtisanOrderId)) ||
-                            (targetOrderId && (item.order_id === targetOrderId || item.order?.id === targetOrderId || item.orders?.id === targetOrderId));
+            const matches = item.id === targetArtisanOrderId || item.artisan_order_id === targetArtisanOrderId;
             if (matches) {
               return {
                 ...item,
                 status: newStatus,
                 item_status: newStatus,
                 accepted_at: newStatus === 'accepted' ? (item.accepted_at || new Date().toISOString()) : item.accepted_at,
-                order: item.order ? { ...item.order, status: newStatus, order_status: newStatus } : undefined,
-                orders: item.orders ? { ...item.orders, status: newStatus, order_status: newStatus } : undefined,
               };
             }
             return item;
@@ -495,15 +465,13 @@ export default function ArtisanOrders() {
     const isAcceptedInRecord = Boolean(
       item.accepted_at ||
       item.status === 'accepted' ||
-      item.item_status === 'accepted' ||
-      orderObj.status === 'accepted' ||
-      orderObj.order_status === 'accepted'
+      item.item_status === 'accepted'
     );
     const rawStatus = isAcceptedInRecord 
-      ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status || orderObj.status)
-          ? (item.status || item.item_status || orderObj.status)
+      ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status)
+          ? (item.status || item.item_status)
           : 'accepted')
-      : (item.status || item.item_status || orderObj.status || 'pending');
+      : (item.status || item.item_status || 'pending');
     const status = normalizeArtisanStatus(rawStatus);
     const utrNo = orderObj.utr_number || orderObj.transaction_id || orderObj.razorpay_payment_id || orderObj.shipping_address?.match(/(?:Ref\.?\s*No|UTR)[:\s]+([A-Za-z0-9_-]+)/i)?.[1] || null;
     const isUtrPending = (orderObj.payment_status === 'pending_verification' || orderObj.status === 'payment_verification_pending') || (utrNo && orderObj.payment_status !== 'paid' && orderObj.status !== 'cancelled');
@@ -645,15 +613,13 @@ export default function ArtisanOrders() {
             const isAcceptedInRecord = Boolean(
               item.accepted_at ||
               item.status === 'accepted' ||
-              item.item_status === 'accepted' ||
-              orderObj.status === 'accepted' ||
-              orderObj.order_status === 'accepted'
+              item.item_status === 'accepted'
             );
             const rawStatus = isAcceptedInRecord 
-              ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status || orderObj.status)
-                  ? (item.status || item.item_status || orderObj.status)
+              ? (['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'rejected'].includes(item.status || item.item_status)
+                  ? (item.status || item.item_status)
                   : 'accepted')
-              : (item.status || item.item_status || orderObj.status || 'pending');
+              : (item.status || item.item_status || 'pending');
             const statusKey = normalizeArtisanStatus(rawStatus);
             const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG[rawStatus] || STATUS_CONFIG.pending;
             const StatusIcon = statusConfig.icon;
@@ -913,10 +879,10 @@ export default function ArtisanOrders() {
 
                 {/* ── Real-Time Artisan Order Verification: Accept or Reject Banner ── */}
                 {(() => {
-                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted' || item.item_status === 'accepted' || orderObj.status === 'accepted' || orderObj.order_status === 'accepted' || Boolean(item.accepted_at);
-                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected' || item.item_status === 'rejected' || orderObj.status === 'rejected' || orderObj.order_status === 'rejected' || Boolean(item.rejected_at);
+                  const isAccepted = rawStatus === 'accepted' || item.status === 'accepted' || item.item_status === 'accepted' || Boolean(item.accepted_at);
+                  const isRejected = rawStatus === 'rejected' || item.status === 'rejected' || item.item_status === 'rejected' || Boolean(item.rejected_at);
                   const isFurther = ['processing', 'preparing', 'ready_for_pickup', 'shipped', 'dispatched', 'out_for_delivery', 'delivered', 'completed'].includes(statusKey);
-                  const isAwaitingDecision = !isAccepted && !isRejected && !isFurther && (rawStatus === 'pending' || rawStatus === 'confirmed' || statusKey === 'pending');
+                  const isAwaitingDecision = !isAccepted && !isRejected && !isFurther;
 
                   if (isAwaitingDecision) {
                     return (

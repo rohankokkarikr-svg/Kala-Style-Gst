@@ -749,8 +749,10 @@ exports.updateOrderStatus = async (req, res) => {
 
     if (error) throw error;
 
-    // Sync sub-orders and trigger earnings if delivered
-    if (status) {
+    // Sync sub-orders and trigger earnings if delivered or cancelled
+    // NOTE: Do NOT overwrite artisan_orders status to 'confirmed' or 'accepted' from master order updates.
+    // The artisan must exclusively confirm/accept or reject their own sub-orders in the Artisan Portal.
+    if (status && ['delivered', 'cancelled'].includes(status)) {
       try {
         const aoUpdate = {
           status,

@@ -342,23 +342,9 @@ async function executeFullAutonomousCycle(options = {}) {
               summary.orders_held += 1;
               summary.details.orders.push({ id: order.id, status: 'held', risk_score: risk.risk_score, reason: risk.evidence.join('; ') });
             } else {
-              // Low or normal risk -> Auto-confirm order if payment is verified or COD
-              const isPaid = order.payment_status === 'completed' || order.payment_status === 'paid';
-              const isCOD = (order.payment_method || '').toLowerCase() === 'cod';
-
-              if (isPaid || isCOD) {
-                await safeQuery(() =>
-                  supabase
-                    .from('orders')
-                    .update({
-                      status: 'confirmed',
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', order.id)
-                );
-                summary.orders_confirmed += 1;
-                summary.details.orders.push({ id: order.id, status: 'confirmed', risk_score: risk.risk_score });
-              }
+              // Low or normal risk: Do NOT auto-confirm or mutate artisan orders!
+              // The artisan must manually click "Accept & Confirm Order" in their Artisan Portal.
+              summary.details.orders.push({ id: order.id, status: order.status, risk_score: risk.risk_score, note: 'Pending artisan manual confirmation' });
             }
           } catch (oErr) {
             console.warn(`[Full Autonomous AI] Failed to screen order ${order.id}:`, oErr.message);
