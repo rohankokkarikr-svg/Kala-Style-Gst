@@ -90,7 +90,7 @@ export default function HeroSlider() {
       subtitle: s.subtitle || '',
       buttonText: s.buttonText || 'Explore Now',
       buttonLink: s.buttonLink || '/products',
-      align: s.align || 'left',
+      align: s.align || 'center',
       badge: (s.badgeText || s.badge?.text) ? {
         text: s.badgeText || s.badge?.text,
         type: s.badgeType || s.badge?.type || 'new'
@@ -161,6 +161,7 @@ export default function HeroSlider() {
 
   if (!totalSlides) return null;
   const slide = activeSlides[current] || activeSlides[0];
+  const isCenter = slide.align !== 'left';
 
   return (
     <section
@@ -191,7 +192,13 @@ export default function HeroSlider() {
             }}
           />
           {/* Multi-layer dark gradient overlay for optimal readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-transparent" />
+          <div
+            className={`absolute inset-0 ${
+              isCenter
+                ? 'bg-black/60 sm:bg-black/50'
+                : 'bg-gradient-to-r from-black/85 via-black/50 to-transparent'
+            }`}
+          />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
           {/* Animated gold shimmer line at top */}
           <motion.div
@@ -206,13 +213,15 @@ export default function HeroSlider() {
       {/* ── Slide Content with Staggered Entrance ── */}
       <div
         className={`absolute inset-0 flex items-center z-10 px-5 sm:px-10 md:px-16 lg:px-24 ${
-          slide.align === 'center' ? 'justify-center text-center' : 'justify-start text-left'
+          isCenter ? 'justify-center text-center' : 'justify-start text-left'
         }`}
       >
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={`content-${slide.id || current}-${current}`}
-            className="max-w-2xl pt-2 sm:pt-0"
+            className={`w-full max-w-3xl pt-2 sm:pt-0 flex flex-col ${
+              isCenter ? 'items-center text-center mx-auto' : 'items-start text-left'
+            }`}
             custom={direction}
             variants={contentVariants}
             initial="enter"
@@ -221,7 +230,10 @@ export default function HeroSlider() {
           >
             {/* Badge */}
             {slide.badge && (
-              <motion.div variants={textItemVariants} className="mb-3 sm:mb-5">
+              <motion.div
+                variants={textItemVariants}
+                className={`mb-3 sm:mb-5 ${isCenter ? 'flex justify-center w-full' : ''}`}
+              >
                 <span
                   className={`inline-block px-3.5 py-1 text-[11px] sm:text-xs font-bold uppercase tracking-[0.2em] rounded-full border backdrop-blur-sm ${
                     slide.badge.type === 'sale'
@@ -237,12 +249,14 @@ export default function HeroSlider() {
             {/* Headline */}
             <motion.h1
               variants={textItemVariants}
-              className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-[1.15] sm:leading-[1.08] tracking-tight mb-3 sm:mb-5 drop-shadow-md"
+              className={`w-full text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-[1.15] sm:leading-[1.08] tracking-tight mb-3 sm:mb-5 drop-shadow-md ${
+                isCenter ? 'text-center mx-auto' : 'text-left'
+              }`}
               style={{ fontFamily: "'Playfair Display', 'Georgia', serif" }}
             >
-              {slide.headline.split(' ').map((word, i) =>
-                i === slide.headline.split(' ').length - 1 ? (
-                  <span key={i} className="text-gold-400">{word} </span>
+              {slide.headline.split(' ').map((word, i, arr) =>
+                i === arr.length - 1 ? (
+                  <span key={i} className="text-gold-400">{word}</span>
                 ) : (
                   <span key={i}>{word} </span>
                 )
@@ -252,7 +266,9 @@ export default function HeroSlider() {
             {/* Subtitle */}
             <motion.p
               variants={textItemVariants}
-              className="text-gray-200 text-xs sm:text-base md:text-lg leading-relaxed mb-6 sm:mb-8 max-w-lg line-clamp-3 sm:line-clamp-none drop-shadow"
+              className={`text-gray-200 text-xs sm:text-base md:text-lg leading-relaxed mb-6 sm:mb-8 max-w-2xl line-clamp-3 sm:line-clamp-none drop-shadow ${
+                isCenter ? 'text-center mx-auto' : 'text-left'
+              }`}
               style={{ fontFamily: "'Inter', sans-serif" }}
             >
               {slide.subtitle}
@@ -261,12 +277,19 @@ export default function HeroSlider() {
             {/* Divider line */}
             <motion.div
               variants={textItemVariants}
-              className={`h-px w-16 sm:w-20 mb-6 sm:mb-8 ${slide.align === 'center' ? 'mx-auto' : ''}`}
-              style={{ background: 'linear-gradient(90deg, #C9A84C, transparent)' }}
+              className={`h-px w-20 sm:w-28 mb-6 sm:mb-8 ${isCenter ? 'mx-auto' : ''}`}
+              style={{
+                background: isCenter
+                  ? 'linear-gradient(90deg, transparent, #C9A84C, transparent)'
+                  : 'linear-gradient(90deg, #C9A84C, transparent)',
+              }}
             />
 
             {/* CTA Button */}
-            <motion.div variants={textItemVariants}>
+            <motion.div
+              variants={textItemVariants}
+              className={`w-full ${isCenter ? 'flex justify-center' : 'flex justify-start'}`}
+            >
               <Link
                 to={slide.buttonLink}
                 className="group inline-flex items-center gap-2.5 px-6 py-3 sm:px-8 sm:py-4 font-semibold text-xs sm:text-sm uppercase tracking-[0.15em] rounded-full transition-all duration-300 shadow-lg"

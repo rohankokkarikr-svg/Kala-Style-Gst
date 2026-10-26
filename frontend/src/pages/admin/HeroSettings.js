@@ -195,7 +195,7 @@ export default function HeroSettings() {
       subtitle: '',
       buttonText: 'Explore Now',
       buttonLink: '/products',
-      align: 'left',
+      align: 'center',
     });
   };
 
@@ -343,7 +343,7 @@ export default function HeroSettings() {
                   CTA: <span className="text-gray-200 font-normal">{slide.buttonText}</span> → <span className="text-gray-400 font-mono text-[11px]">{slide.buttonLink}</span>
                 </span>
                 <span className="text-gray-500 capitalize bg-dark-700 px-2 py-0.5 rounded text-[11px]">
-                  Align: {slide.align || 'left'}
+                  Align: {slide.align || 'center'}
                 </span>
               </div>
             </div>
@@ -566,11 +566,11 @@ export default function HeroSettings() {
                   </label>
                   <select
                     className="input-field text-sm"
-                    value={editingSlide.align || 'left'}
+                    value={editingSlide.align || 'center'}
                     onChange={(e) => setEditingSlide({ ...editingSlide, align: e.target.value })}
                   >
-                    <option value="left">Left Align (Standard)</option>
                     <option value="center">Center Align (Heroic)</option>
+                    <option value="left">Left Align (Standard)</option>
                   </select>
                 </div>
 

@@ -28,7 +28,7 @@ export const DEFAULT_HERO_SLIDES = [
     subtitle: 'Authentic Banarasi, Kanchipuram, and Pashmina handwoven by master generational weavers across India.',
     buttonText: 'Explore Handlooms',
     buttonLink: '/products?category=Handloom+%26+Textiles',
-    align: 'left',
+    align: 'center',
   },
   {
     id: 2,
@@ -50,7 +50,7 @@ export const DEFAULT_HERO_SLIDES = [
     subtitle: 'Intricate Saharanpur woodcrafts, ornate jharokha mirrors, and vibrant Channapatna organic toy craft.',
     buttonText: 'Shop Wooden Crafts',
     buttonLink: '/products?category=Wooden+Handicrafts',
-    align: 'left',
+    align: 'center',
   },
   {
     id: 4,
