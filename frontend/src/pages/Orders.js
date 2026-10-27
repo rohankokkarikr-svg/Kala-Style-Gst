@@ -76,6 +76,7 @@ export default function Orders() {
   useEffect(() => {
     const handleSync = (e) => {
       const payload = e.detail?.payload || e.detail || {};
+      const eventType = String(e.type || e.detail?.type || '').toLowerCase();
       const targetIds = [
         payload.orderId,
         payload.order_id,
@@ -86,13 +87,35 @@ export default function Orders() {
         payload.artisan_order_id,
       ].filter(Boolean).map(String);
 
-      const nextStatus = payload.order_status || payload.status;
-      if (targetIds.length > 0 && nextStatus) {
+      const isPaymentEvent = eventType.includes('payments');
+      const isShipmentEvent = eventType.includes('shipment');
+
+      if (targetIds.length > 0) {
         setOrders(prev => prev.map(o => {
           const isMatch = targetIds.includes(String(o.id)) ||
             targetIds.includes(String(o.order_number)) ||
             (Array.isArray(o.artisan_orders) && o.artisan_orders.some(ao => targetIds.includes(String(ao.id))));
           if (!isMatch) return o;
+
+          if (isPaymentEvent) {
+            const nextPaymentStatus = payload.payment_status || payload.status;
+            return {
+              ...o,
+              ...(nextPaymentStatus ? { payment_status: nextPaymentStatus } : {}),
+              ...(payload.transaction_id ? { transaction_id: payload.transaction_id } : {}),
+            };
+          }
+
+          if (isShipmentEvent) {
+            const nextShipStatus = payload.shipping_status || payload.status;
+            return {
+              ...o,
+              ...(nextShipStatus ? { shipping_status: nextShipStatus } : {}),
+            };
+          }
+
+          const nextStatus = payload.order_status || payload.status;
+          if (!nextStatus || nextStatus === 'paid') return o;
 
           const updatedAos = (o.artisan_orders || []).map(ao => {
             if (targetIds.includes(String(ao.id)) || (o.artisan_orders || []).length === 1) {
@@ -161,90 +184,99 @@ export default function Orders() {
     return () => clearInterval(interval);
   }, []);
 
+  const normalizeStatus = (st) => {
+    if (!st) return 'pending';
+    const clean = String(st).toLowerCase().trim();
+    const aliases = {
+      confirmed: 'pending', // Buyer placed order; awaits artisan acceptance before moving to 'accepted'
+      approved: 'accepted',
+      processing: 'preparing',
+      in_preparation: 'preparing',
+      partially_processing: 'preparing',
+      packed: 'ready_for_pickup',
+      ready: 'ready_for_pickup',
+      shipped: 'dispatched',
+      on_the_way: 'out_for_delivery',
+      completed: 'delivered',
+      partially_delivered: 'delivered',
+    };
+    return aliases[clean] || clean;
+  };
+
   const getOrderEffectiveStatus = (order) => {
     if (!order) return 'pending';
 
-    // 1. Check artisan_orders first for direct artisan updates
+    // 1. Check artisan_orders first for direct artisan updates (primary source of truth)
     const aos = Array.isArray(order.artisan_orders) ? order.artisan_orders : [];
-    const aoStatuses = aos.map(ao => (ao?.status || '').toLowerCase().trim()).filter(Boolean);
+    const aoStatuses = aos.map(ao => normalizeStatus(ao?.status)).filter(Boolean);
 
     if (aoStatuses.length > 0) {
       if (aoStatuses.every(s => s === 'cancelled' || s === 'rejected')) {
         return aoStatuses.includes('rejected') ? 'rejected' : 'cancelled';
       }
-      if (aoStatuses.every(s => s === 'delivered' || s === 'completed')) return 'delivered';
-      if (aoStatuses.some(s => ['dispatched', 'shipped', 'out_for_delivery'].includes(s))) return 'dispatched';
-      if (aoStatuses.some(s => ['preparing', 'processing', 'ready_for_pickup', 'in_preparation'].includes(s))) return 'preparing';
-      if (aoStatuses.some(s => ['accepted', 'confirmed'].includes(s))) return 'accepted';
-      if (aoStatuses.some(s => s === 'delivered')) return 'delivered';
+      if (aoStatuses.every(s => s === 'delivered')) return 'delivered';
+      if (aoStatuses.some(s => ['dispatched', 'out_for_delivery'].includes(s))) return 'dispatched';
+      if (aoStatuses.some(s => s === 'ready_for_pickup')) return 'ready_for_pickup';
+      if (aoStatuses.some(s => s === 'preparing')) return 'preparing';
+      if (aoStatuses.some(s => s === 'accepted')) return 'accepted';
+      if (aoStatuses.some(s => s === 'pending')) return 'pending';
     }
 
-    // 2. Master order status
-    const s = (order.order_status || order.status || '').toLowerCase().trim();
+    // 2. Master order status fallback
+    const s = normalizeStatus(order.order_status || order.status);
     const ship = (order.shipping_status || '').toLowerCase().trim();
 
     if (s === 'rejected') return 'rejected';
     if (s === 'cancelled') return 'cancelled';
-    if (s === 'delivered' || s === 'completed' || ship === 'delivered') return 'delivered';
-    if (['dispatched', 'shipped', 'out_for_delivery'].includes(s) || ship === 'in_transit') return 'dispatched';
-    if (['preparing', 'processing', 'ready_for_pickup', 'in_preparation', 'partially_processing'].includes(s) || ship === 'ready_to_ship') return 'preparing';
-    if (['accepted', 'confirmed'].includes(s)) return 'accepted';
-    if (s === 'partially_delivered') return 'delivered';
-    return s || 'pending';
+    if (s === 'delivered' || ship === 'delivered') return 'delivered';
+    if (['dispatched', 'out_for_delivery'].includes(s) || ['in_transit', 'out_for_delivery'].includes(ship)) return 'dispatched';
+    if (s === 'ready_for_pickup') return 'ready_for_pickup';
+    if (s === 'preparing') return 'preparing';
+    if (s === 'accepted') return 'accepted';
+    if (s === 'payment_verification_pending') return 'payment_verification_pending';
+    return 'pending';
   };
 
   const getStatusColor = (status) => {
-    const s = (status || '').toLowerCase();
+    const s = normalizeStatus(status);
     switch(s) {
       case 'delivered':
-      case 'completed':
-      case 'partially_delivered':
         return 'text-green-400 bg-green-500/10 border-green-500/20';
-      case 'shipped':
       case 'dispatched':
       case 'out_for_delivery':
         return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-      case 'preparing':
-      case 'processing':
       case 'ready_for_pickup':
-      case 'partially_processing':
-      case 'in_preparation':
+        return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20';
+      case 'preparing':
         return 'text-purple-400 bg-purple-500/10 border-purple-500/20';
       case 'accepted':
-      case 'confirmed':
-        return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20';
+        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
       case 'cancelled':
       case 'rejected':
         return 'text-red-400 bg-red-500/10 border-red-500/20';
       case 'payment_verification_pending':
         return 'text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse';
+      case 'pending':
       default:
-        return 'text-gold-400 bg-gold-500/10 border-gold-500/20';
+        return 'text-amber-300 bg-amber-500/10 border-amber-500/20';
     }
   };
 
   const renderStatusText = (status) => {
-    const s = (status || '').toLowerCase();
+    const s = normalizeStatus(status);
     const map = {
       pending: '⏳ Awaiting Artisan Confirmation',
-      confirmed: '⏳ Awaiting Artisan Confirmation',
       accepted: '✅ Accepted by Artisan',
       preparing: '🎨 Crafting in Progress',
-      processing: '🎨 Crafting in Progress',
-      in_preparation: '🎨 Crafting in Progress',
-      partially_processing: '🎨 Crafting in Progress',
       ready_for_pickup: '📬 Ready for Dispatch',
       dispatched: '🚚 Dispatched',
-      shipped: '🚚 Out for Delivery',
       out_for_delivery: '🛵 Out for Delivery',
       delivered: '🎉 Delivered ✓',
-      completed: '🎉 Delivered ✓',
-      partially_delivered: '🎉 Delivered (Craft Item) ✓',
       cancelled: '🚫 Cancelled',
       rejected: '❌ Rejected by Artisan',
       payment_verification_pending: '⏱️ Pending Verification',
     };
-    return map[s] || status;
+    return map[s] || (status ? String(status).toUpperCase() : 'Pending');
   };
 
   const getEffectivePaymentMethod = (order) => {
@@ -329,24 +361,30 @@ export default function Orders() {
 
               const isRejected = effectiveStatus === 'rejected';
               const isCancelled = effectiveStatus === 'cancelled';
-              let percent = 20;
+              let percent = 15;
               let barColor = 'from-amber-500 to-gold-400';
 
-              if (effectiveStatus === 'delivered' || effectiveStatus === 'completed' || effectiveStatus === 'partially_delivered') {
+              if (effectiveStatus === 'delivered') {
                 percent = 100;
                 barColor = 'from-emerald-500 to-green-400';
-              } else if (['dispatched', 'shipped', 'out_for_delivery'].includes(effectiveStatus)) {
+              } else if (['dispatched', 'out_for_delivery'].includes(effectiveStatus)) {
                 percent = 80;
                 barColor = 'from-blue-500 to-cyan-400';
-              } else if (['preparing', 'processing', 'ready_for_pickup', 'in_preparation', 'partially_processing'].includes(effectiveStatus)) {
-                percent = 60;
+              } else if (effectiveStatus === 'ready_for_pickup') {
+                percent = 65;
+                barColor = 'from-indigo-500 to-purple-400';
+              } else if (effectiveStatus === 'preparing') {
+                percent = 50;
                 barColor = 'from-purple-500 to-indigo-400';
-              } else if (effectiveStatus === 'accepted' || effectiveStatus === 'confirmed') {
-                percent = 40;
+              } else if (effectiveStatus === 'accepted') {
+                percent = 35;
                 barColor = 'from-emerald-500 to-teal-400';
               } else if (isRejected || isCancelled) {
                 percent = 100;
                 barColor = 'from-red-600 to-rose-500';
+              } else {
+                percent = 15;
+                barColor = 'from-amber-500 to-gold-400';
               }
 
               return (
