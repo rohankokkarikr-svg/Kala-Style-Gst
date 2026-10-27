@@ -978,32 +978,48 @@ exports.syncSupabaseSession = async (req, res) => {
       }
 
       let newUser = null;
-      if (verifiedUid) {
-        const { data, error } = await supabase
-          .from('users')
-          .insert([{ ...newUserData, supabase_uid: verifiedUid }])
-          .select()
-          .single();
-        if (!error && data) {
-          newUser = data;
+      const insertPayloadWithUid = verifiedUid ? { ...newUserData, supabase_uid: verifiedUid } : newUserData;
+
+      // Use upsert with conflict on email to prevent duplicate key errors
+      const { data: upsertedUser, error: upsertErr } = await supabase
+        .from('users')
+        .upsert([insertPayloadWithUid], { onConflict: 'email', ignoreDuplicates: false })
+        .select()
+        .single();
+
+      if (!upsertErr && upsertedUser) {
+        newUser = upsertedUser;
+      } else {
+        // Fallback: if duplicate key or upsert issue, fetch the existing user by email
+        const isDuplicateKey = upsertErr?.code === '23505' || (upsertErr?.message || '').includes('duplicate key');
+        if (isDuplicateKey || upsertErr) {
+          console.warn('[syncSupabaseSession] Upsert conflict, fetching existing user by email:', verifiedEmail);
+          const { data: existingByEmail, error: fetchErr } = await supabase
+            .from('users')
+            .select('*')
+            .ilike('email', verifiedEmail)
+            .limit(1)
+            .single();
+          if (!fetchErr && existingByEmail) {
+            newUser = existingByEmail;
+            // Link supabase_uid if not already linked
+            if (verifiedUid && !existingByEmail.supabase_uid) {
+              await supabase.from('users').update({ supabase_uid: verifiedUid }).eq('id', existingByEmail.id);
+              newUser.supabase_uid = verifiedUid;
+            }
+          } else {
+            console.error('[syncSupabaseSession] Error creating user profile after OAuth:', upsertErr);
+            throw upsertErr;
+          }
+        } else {
+          console.error('[syncSupabaseSession] Error creating user profile after OAuth:', upsertErr);
+          throw upsertErr;
         }
       }
 
-      if (!newUser) {
-        const { data, error: createErr } = await supabase
-          .from('users')
-          .insert([newUserData])
-          .select()
-          .single();
-
-        if (createErr) {
-          console.error('Error creating user profile after OAuth:', createErr);
-          throw createErr;
-        }
-        newUser = data;
-      }
       user = newUser;
-      user.role = targetRole;
+      // Preserve existing role — never downgrade an existing user's role
+      user.role = normalizeRole(user.role) || targetRole;
 
       // Section 12: If new account was created via Artisan portal, provision matching artisan_profiles record
       if (targetRole === 'artisan') {
